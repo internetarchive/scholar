@@ -40,8 +40,8 @@ class Creator(Entity):
 
 
 class Release(Entity):
-    work = models.ForeignKey(Work, on_delete=models.CASCADE, db_index=True)
-    container = models.ForeignKey(Container, on_delete=models.CASCADE, db_index=True)  # noqa: E501
+    work = models.ForeignKey(Work, on_delete=models.CASCADE)
+    container = models.ForeignKey(Container, on_delete=models.CASCADE)
 
     title = models.CharField()
     original_title = models.CharField()
@@ -101,8 +101,7 @@ class ReleaseExtId(models.Model):
 
 class ReleaseAbstract(models.Model):
     """The text of a release's abstract"""
-    release = models.ForeignKey(Release, on_delete=models.CASCADE,
-                                db_index=True)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE)
     mimetype = models.CharField()
     lang = models.CharField()
     sha1 = models.CharField(max_length=40)
@@ -111,10 +110,8 @@ class ReleaseAbstract(models.Model):
 
 class ReleaseContrib(models.Model):
     """A record of a given author's contribution to a release."""
-    release = models.ForeignKey(Release, on_delete=models.CASCADE,
-                                db_index=True)
-    creator = models.ForeignKey(Creator, on_delete=models.CASCADE,
-                                db_index=True)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE)
+    creator = models.ForeignKey(Creator, on_delete=models.CASCADE)
     raw_name = models.CharField()
     given_name = models.CharField()
     surname = models.CharField()
@@ -127,10 +124,9 @@ class ReleaseContrib(models.Model):
 class ReleaseRef(models.Model):
     """A reference (citation) from one paper to another"""
     position = models.SmallIntegerField()
-    release = models.ForeignKey(Release, on_delete=models.CASCADE,
-                                db_index=True)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE)
     target_release = models.ForeignKey(Release, on_delete=models.CASCADE,
-                                       related_name="target", db_index=True)
+                                       related_name="target")
 
 
 class BaseFile(models.Model):
@@ -145,42 +141,36 @@ class BaseFile(models.Model):
 
 
 class ReleaseFile(Entity, BaseFile):
-    release = models.ForeignKey(Release, on_delete=models.CASCADE,
-                                db_index=True)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE)
     content_scope = models.CharField()
 
 
 class FileURL(models.Model):
-    file = models.ForeignKey(ReleaseFile, on_delete=models.CASCADE,
-                             db_index=True)
+    file = models.ForeignKey(ReleaseFile, on_delete=models.CASCADE)
     rel = models.CharField()
     url = models.CharField()
 
 
 class Fileset(Entity):
-    release = models.ForeignKey(Release, on_delete=models.CASCADE,
-                                db_index=True)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE)
     content_scope = models.CharField()
 
 
 class FilesetFile(Entity, BaseFile):
-    fileset = models.ForeignKey(Fileset, on_delete=models.CASCADE,
-                                db_index=True)
+    fileset = models.ForeignKey(Fileset, on_delete=models.CASCADE)
 
 
 class Webcapture(Entity):
-    release = models.ForeignKey(Release, on_delete=models.CASCADE,
-                                db_index=True)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE)
     original_url = models.TextField()
     ts = models.DateTimeField()
     content_scope = models.CharField()
 
 
 class WebcaptureCDX(models.Model):
-    webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE,
-                                   db_index=True)
+    webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE)
     surt = models.TextField()
-    ts = models.DateTimeField(null=False)
+    ts = models.DateTimeField()
     url = models.TextField()
     mimetype = models.CharField()
     status_code = models.SmallIntegerField()
@@ -190,7 +180,6 @@ class WebcaptureCDX(models.Model):
 
 
 class WebcaptureURL(models.Model):
-    webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE,
-                                   db_index=True)
+    webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE)
     rel = models.CharField()
     url = models.CharField()

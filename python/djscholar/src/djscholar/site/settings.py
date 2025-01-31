@@ -76,8 +76,9 @@ WSGI_APPLICATION = 'djscholar.site.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'fatcat2',
+        'HOST': BASE_DIR / 'devdb/pgdata/sockets',
     }
 }
 

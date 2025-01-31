@@ -3,10 +3,11 @@ from django.db.models.functions import Now
 
 
 class Entity(models.Model):
-    created = models.TimeField(db_default=Now())
-    updated = models.TimeField(db_default=Now(), db_index=True)
-    deleted = models.TimeField(null=True)
-    source = models.CharField()
+    created = models.DateTimeField(db_default=Now())
+    updated = models.DateTimeField(db_default=Now(),
+                                   auto_now=True, db_index=True)
+    deleted = models.DateTimeField(null=True)
+    source = models.CharField(db_index=True)
     hidden = models.BooleanField(default=False)
     hidden_reason = models.TextField()
     extra = models.JSONField()
@@ -63,8 +64,8 @@ class Release(Entity):
     version = models.CharField()
 
     withdrawn_status = models.CharField()
-    withdrawn_date = models.DateField()
-    withdrawn_year = models.SmallIntegerField()
+    withdrawn_date = models.DateField(null=True)
+    withdrawn_year = models.SmallIntegerField(null=True)
 
     refs = models.JSONField()
 
@@ -171,7 +172,7 @@ class Webcapture(Entity):
     release = models.ForeignKey(Release, on_delete=models.CASCADE,
                                 db_index=True)
     original_url = models.TextField()
-    ts = models.TimeField()
+    ts = models.DateTimeField()
     content_scope = models.CharField()
 
 
@@ -179,7 +180,7 @@ class WebcaptureCDX(models.Model):
     webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE,
                                    db_index=True)
     surt = models.TextField()
-    ts = models.TimeField(null=False)
+    ts = models.DateTimeField(null=False)
     url = models.TextField()
     mimetype = models.CharField()
     status_code = models.SmallIntegerField()

@@ -13,14 +13,14 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-v5h7&o7x#h_&y$h)n3oc69wbw@^*ogzn$cs5^8m^r8nz*=$b*y'
+SECRET_KEY = 'django-insecure-v5h7&o7x#h_&y$h)n3oc69wbw@^*ogzn$cs5^8m^r8nz*=$b*y'  # noqa: E501
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'djscholar.fcapi',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

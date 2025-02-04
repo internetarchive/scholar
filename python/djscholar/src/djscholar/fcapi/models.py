@@ -198,30 +198,31 @@ class Release(Entity):
 
 
 class ReleaseExtId(models.Model):
-    """a mapping of external ID types to values.
-
-    Possible types:
-    - doi
-    - pmid
-    - pmcid
-    - wikidata_qid
-    - core_id
-    - ark
-    - arxiv
-    - dblp
-    - doaj
-    - hdl
-    - isbn13
-    - jstor
-    - mag
+    """
+    This model maps releases to a set of external identifiers expressed as key
+    value pairs. Most releases in our system will have at least a doi.
     """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    id_type = models.CharField()
+    id_type = models.CharField(choices=[
+        "doi",
+        "pmid",
+        "pmcid",
+        "wikidata_qid",
+        "core_id",
+        "ark",
+        "arxiv",
+        "dblp",
+        "doaj",
+        "hdl",
+        "isbn13",
+        "jstor",
+        "mag",
+        ])
     id_value = models.CharField()
 
     class Meta:
         indexes = [
-                models.Index(fields=['release_id', 'id_type']),
+                # we need to quickly query by external value
                 models.Index(fields=['id_type', 'id_value']),
                 ]
 
@@ -229,8 +230,14 @@ class ReleaseExtId(models.Model):
 class ReleaseAbstract(models.Model):
     """The text of a release's abstract"""
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    mimetype = models.CharField()
-    lang = models.CharField()
+    mimetype = models.CharField(default="text/plain")
+    language = models.CharField(
+            help_text="Primary language of abstract. Two-letter RFC1766/ISO639-1 language code.",
+            max_length=2,
+            null=True, blank=True)
+    license_slug = models.CharField(
+            help_text="short name for a license covering this release. for example, 'CC-BY-NA'.",
+            null=True, blank=True)
     sha1 = models.CharField(max_length=40)
     content = models.TextField()
 
@@ -239,23 +246,46 @@ class ReleaseContrib(models.Model):
     """A record of a given author's contribution to a release."""
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
     creator = models.ForeignKey(Creator, on_delete=models.CASCADE)
-    raw_name = models.CharField()
-    given_name = models.CharField()
-    surname = models.CharField()
-    role = models.CharField()
-    raw_affiliation = models.CharField()
-    index_val = models.SmallIntegerField()
-    extra = models.JSONField()
+    raw_name = models.CharField(
+            help_text="Name of the author as listed in the reference. If this reference is matched to an author in our database, this value might differ from the linked author's display name.")
+    given_name = models.CharField(
+            help_text="'first' name of a human depending on context",
+            null=True, blank=True)
+    surname = models.CharField(
+            help_text="'last' name of a human depending on context",
+            null=True, blank=True)
+    role = models.CharField(
+            help_text="role played by contributor",
+            choices=[
+                "author",
+                "editor",
+                "translator"],
+            null=True, blank=True)
+    raw_affiliation = models.CharField(
+            help_text="Name of instituion or organization to which contributor belonged",
+            null=True, blank=True)
+    index_val = models.SmallIntegerField(
+            help_text="Position in list of contributors")
+    extra = models.JSONField(
+            help_text="JSON blob for additional metadata")
 
 
 class ReleaseRef(models.Model):
     """A reference (citation) from one paper to another"""
-    position = models.SmallIntegerField()
-    release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    target_release = models.ForeignKey(Release, on_delete=models.CASCADE,
-                                       related_name="target")
+    release = models.ForeignKey(
+            Release,
+            help_text="release in which this citation occurred",
+            on_delete=models.CASCADE)
+    position = models.SmallIntegerField(
+            help_text="Position in list of references")
+    target_release = models.ForeignKey(
+            Release,
+            on_delete=models.CASCADE,
+            help_text="Release referenced by this citation",
+            related_name="target")
 
 
+# TODO continue audit/documentation here
 class BaseFile(models.Model):
     size_bytes = models.BigIntegerField()
     sha1 = models.CharField(max_length=40)

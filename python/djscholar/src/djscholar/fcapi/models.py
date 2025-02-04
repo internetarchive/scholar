@@ -3,71 +3,198 @@ from django.db.models.functions import Now
 
 
 class Entity(models.Model):
+    """
+    This abstract model defines the common columns we want for all of the items
+    for which we store metadata records (ie, papers, journals, authors).
+
+    We index the updated column on all entities since a common access pattern
+    for fatcat is to determine what has been newly added or changed in the
+    catalog (for example, to see what to index or re-index in scholar's
+    elasticsearch).
+    """
     created = models.DateTimeField(db_default=Now())
-    updated = models.DateTimeField(db_default=Now(),
-                                   auto_now=True, db_index=True)
-    deleted = models.DateTimeField(null=True)
-    source = models.CharField(db_index=True)
-    hidden = models.BooleanField(default=False)
-    hidden_reason = models.TextField()
-    extra = models.JSONField()
+    updated = models.DateTimeField(db_default=Now(), auto_now=True,
+                                   db_index=True)
+    source = models.CharField(
+            help_text="an arbitrary string denoting the data source whence a record was found",
+            db_index=True)
+    hidden_reason = models.TextField(
+            help_text="explanatory information for the value of hidden")
+    hidden_when = models.DateTimeField(
+            help_text="when a given record was hidden",
+            null=True)
+    extra = models.JSONField(
+            help_text="arbitrary storage for additional key/value data found in upstream sources")
 
     class Meta:
         abstract = True
 
 
 class Container(Entity):
+    """
+    This entity represents, most commonly, an academic journal that publishes
+    papers. However, it might also refer to a conference that published
+    proceedings.
+    """
     name = models.CharField()
     container_type = models.CharField()
     publisher = models.CharField()
-    issnl = models.CharField(db_index=True)
-    issne = models.CharField(db_index=True)
-    issnp = models.CharField(db_index=True)
-    wikidata_qid = models.CharField(db_index=True)
-    publication_status = models.CharField()
+    issnl = models.CharField(
+            help_text="an ISSN-L, or linking ISSN. This is a grouping ISSN for publications that print in various media (eg, print and digital",
+            unique=True, null=True, blank=True)
+    issne = models.CharField(
+            help_text="an e-ISSN, or electronic ISSN. for digital versions of publications. This can be linked to a p-ISSN (issnp column) via an ISSN-L.",
+            unique=True, null=True, blank=True)
+    issnp = models.CharField(
+            help_text="a p-ISSN, or print ISSN. for print versions of publications. This can be linked to an e-ISSN (issne column) via an ISSN-L.",
+            unique=True, null=True, blank=True)
+    wikidata_qid = models.CharField(
+            help_text="ID from the wikidata project. See https://www.wikidata.org/wiki/Wikidata:Identifiers",
+            unique=True, null=True, blank=True)
 
 
 class Work(Entity):
+    """
+    This entity is for the logical grouping of releases. Imagine multiple
+    versions of a paper: a pre-print or two, a published version, a retracted
+    version. All are grouped under a single "work." Thus, all releases have an
+    associated work record. However, many works may only contain a single
+    release.
+
+    A work entity has no columns of its own; a work is really just an ID.
+    """
     pass
 
 
 class Creator(Entity):
-    display_name = models.CharField()
-    given_name = models.CharField()
-    surname = models.CharField()
-    orcid = models.CharField(db_index=True)
-    wikidata_qid = models.CharField(db_index=True)
+    """
+    This entity represents someone who contributed to a work: perhaps the
+    author of a paper or the creator of a conference talk.
+
+    We require that creators at least have a display_name. with luck we'll have
+    given_name and surname columns populated, too.
+    """
+    display_name = models.CharField(
+            help_text="full name of a human to show in web front-ends")
+    given_name = models.CharField(
+            help_text="'first' name of a human depending on context",
+            null=True, blank=True)
+    surname = models.CharField(
+            help_text="'last' name of a human depending on context",
+            null=True, blank=True)
+    orcid = models.CharField(
+            help_text="external, unique identifier of a human author. See https://orcid.org/",
+            unique=True, null=True, blank=True)
 
 
 class Release(Entity):
-    work = models.ForeignKey(Work, on_delete=models.CASCADE)
-    container = models.ForeignKey(Container, on_delete=models.CASCADE)
+    """
+    The bulk of our data. A release is most likely an academic paper, but we
+    track things like a conference talk or book a release also.
+    """
+    work = models.ForeignKey(
+            Work,
+            help_text="the work under which this release is grouped",
+            on_delete=models.CASCADE)
+    container = models.ForeignKey(
+            Container,
+            help_text="the thing in which this release was published. for example, for a paper, its container is likely an academic journal",
+            on_delete=models.CASCADE)
 
-    title = models.CharField()
-    original_title = models.CharField()
-    subtitle = models.CharField()
+    title = models.CharField(help_text="a title for the release")
+    original_title = models.CharField(
+            help_text="title in original language if title field value has been tranlasted",
+            null=True, blank=True)
+    subtitle = models.CharField(
+            help_text="subtitle, if any, for a release",
+            null=True, blank=True)
 
-    release_type = models.CharField()
-    release_stage = models.CharField()
-    release_date = models.DateField(null=True)
-    release_year = models.SmallIntegerField(null=True)
+    release_type = models.CharField(
+            help_text="Kind of release. Mostly, we have article or article-journal. The choices were extracted from the original fatcat dataset",
+            choices=[
+                "abstract",
+                "article",
+                "article-journal",
+                "article-newspaper",
+                "book",
+                "chapter",
+                "component",
+                "dataset",
+                "editorial",
+                "entry",
+                "graphic",
+                "interview",
+                "legal_case",
+                "legislation",
+                "letter",
+                "paper-conference",
+                "peer_review",
+                "post",
+                "post-weblog",
+                "report",
+                "retraction",
+                "review-book",
+                "software",
+                "song",
+                "speech",
+                "standard",
+                "stub",
+                "thesis",
+                ],
+            null=True, blank=True)
 
-    volume = models.CharField()
-    issue = models.CharField()
-    pages = models.CharField()
+    release_stage = models.CharField(
+            help_text="Location of release in publishing pipeline",
+            choices=[
+                 "accepted",
+                 "draft",
+                 "published",
+                 "retraction",
+                 "submitted",
+                 "updated",
+                ],
+            null=True, blank=True)
+    release_date = models.DateField(
+            help_text="exact date on which this release was published, if known",
+            null=True, blank=True)
+    release_year = models.SmallIntegerField(
+            help_text="Year in which this release was published. Separate from release_date since we often only know a year",
+            null=True)
 
-    publisher = models.CharField()
-    language = models.CharField()
-    license_slug = models.CharField()
+    volume = models.CharField(
+            help_text="Volume of parent container in which this was published",
+            null=True, blank=True)
+    issue = models.CharField(
+            help_text="Issue of parent container in which this was published",
+            null=True, blank=True)
+    pages = models.CharField(
+            help_text="Free form text describing the page or page range that contains this release in its parent container",
+            null=True, blank=True)
+    number = models.CharField(
+            help_text="Arbitrary number in parent container in which this release was published. For example, technical reports use numbers instead of volumes.",
+            null=True, blank=True)
+    version = models.CharField(
+            help_text="Arbitrary version string. Might be used by technical reports or software packages",
+            null=True, blank=True)
 
-    number = models.CharField()
-    version = models.CharField()
+    publisher = models.CharField(
+            help_text="Name of publisher, if known",
+            null=True, blank=True)
+    language = models.CharField(
+            help_text="Primary language of release content. Two-letter RFC1766/ISO639-1 language code.",
+            max_length=2,
+            null=True, blank=True)
+    license_slug = models.CharField(
+            help_text="short name for a license covering this release. for example, 'CC-BY-NA'",
+            null=True, blank=True)
 
-    withdrawn_status = models.CharField()
-    withdrawn_date = models.DateField(null=True)
-    withdrawn_year = models.SmallIntegerField(null=True)
+    withdrawn_status = models.CharField(
+            help_text="free form field for stating why a release has been withdrawn. currently used values: concern, retracted, safety, spam, withdrawn.",
+            blank=True, null=True)
 
-    refs = models.JSONField()
+    refs = models.JSONField(
+            help_text="a JSON blob describing the citations of this release.",
+            null=True, blank=True)
 
 
 class ReleaseExtId(models.Model):

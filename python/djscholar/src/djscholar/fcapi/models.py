@@ -1,6 +1,11 @@
 from django.db import models
 from django.db.models.functions import Now
 
+URL_MAX_LENGTH = 100000 # we have some weird URLs.
+SHA1_MAX_LENGTH = 40
+SHA256_MAX_LENGTH = 64
+MD5_MAX_LENGTH = 32
+
 
 class Entity(models.Model):
     """
@@ -238,7 +243,7 @@ class ReleaseAbstract(models.Model):
     license_slug = models.CharField(
             help_text="short name for a license covering this release. for example, 'CC-BY-NA'.",
             null=True, blank=True)
-    sha1 = models.CharField(max_length=40)
+    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
     content = models.TextField()
 
 
@@ -285,12 +290,16 @@ class ReleaseRef(models.Model):
             related_name="target")
 
 
-# TODO continue audit/documentation here
 class BaseFile(models.Model):
-    size_bytes = models.BigIntegerField()
-    sha1 = models.CharField(max_length=40)
-    sha256 = models.CharField(max_length=64)
-    md5 = models.CharField(max_length=32)
+    """
+    We track a few different kinds of files so this abstract base class
+    collects their common columns.
+    """
+    size_bytes = models.BigIntegerField(
+            help_text="size in bytes of this file")
+    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
+    sha256 = models.CharField(max_length=SHA256_MAX_LENGTH)
+    md5 = models.CharField(max_length=MD5_MAX_LENGTH)
     mimetype = models.CharField()
 
     class Meta:
@@ -298,45 +307,82 @@ class BaseFile(models.Model):
 
 
 class ReleaseFile(Entity, BaseFile):
+    """
+    A file associated with a release. Actual file content is stored in seaweedfs.
+    """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    content_scope = models.CharField()
 
 
 class FileURL(models.Model):
+    """
+    A URL at which a release's file can be found.
+    """
     file = models.ForeignKey(ReleaseFile, on_delete=models.CASCADE)
-    rel = models.CharField()
-    url = models.CharField()
+    rel = models.CharField(choices=[
+        ("web", "general public web site"),
+        ("webarchive", "a resource in a long-term web archive"),
+        ("repository", "a resource stored in an academic repository"),
+        ("academicsocial", "academic social network content"),
+        ("publisher", "a resource on a publisher's homepage"),
+        ("aggregator", "full text aggregator or search engine like Semantic Scholar"),
+        ("dweb", "content on a distributed or decentralized web protocol like dat:// or ipfs://"),
+        ], default="web")
+    url = models.URLField(max_length=URL_MAX_LENGTH)
 
 
 class Fileset(Entity):
+    """
+    A set of files that should be associated with a release, possibly figures or datasets.
+    """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    content_scope = models.CharField()
 
 
 class FilesetFile(Entity, BaseFile):
+    """
+    A file within a fileset.
+    """
     fileset = models.ForeignKey(Fileset, on_delete=models.CASCADE)
 
 
 class Webcapture(Entity):
+    """
+    A complete record of release captured as a webpage snapshot.
+    """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    original_url = models.TextField()
-    ts = models.DateTimeField()
-    content_scope = models.CharField()
+    original_url = models.URLField(
+            max_length=URL_MAX_LENGTH,
+            help_text="base URL of the resource.")
+    captured = models.DateTimeField(
+            help_text="date and time of capture")
 
 
 class WebcaptureCDX(models.Model):
+    """
+    A CDX line that constitutes part of a webcapture.
+    """
     webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE)
-    surt = models.TextField()
-    ts = models.DateTimeField()
-    url = models.TextField()
+    surt = models.TextField(help_text="sortable URL format")
+    captured = models.DateTimeField(help_text="capture time")
+    url = models.URLField(max_length=URL_MAX_LENGTH)
     mimetype = models.CharField()
-    status_code = models.SmallIntegerField()
-    sha1 = models.CharField(max_length=40)
-    sha256 = models.CharField(max_length=64)
+    status_code = models.SmallIntegerField(help_text="HTTP status code")
+    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
+    sha256 = models.CharField(max_length=SHA256_MAX_LENGTH)
     size_bytes = models.BigIntegerField()
 
 
 class WebcaptureURL(models.Model):
+    """
+    A set of URLs at which a given web capture can be found.
+
+    Can be wayback/memento instances, or direct links to a WARC file containing
+    all the capture resources.  Often will only be a single archive. Order is not
+    meaningful, and may not be preserved.
+    """
     webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE)
-    rel = models.CharField()
-    url = models.CharField()
+    rel = models.CharField(choices=[
+        "warc",
+        "wayback",
+        "webarchive",
+        ])
+    url = models.URLField(max_length=URL_MAX_LENGTH)

@@ -24,7 +24,8 @@ class Entity(models.Model):
             help_text="an arbitrary string denoting the data source whence a record was found",
             db_index=True)
     hidden_reason = models.TextField(
-            help_text="explanatory information for the value of hidden")
+            help_text="explanatory information why an entity was hidden",
+            null=True, blank=True)
     hidden_when = models.DateTimeField(
             help_text="when a given record was hidden",
             null=True)
@@ -42,8 +43,20 @@ class Container(Entity):
     proceedings.
     """
     name = models.CharField()
-    container_type = models.CharField()
-    publisher = models.CharField()
+    container_type = models.CharField(
+            choices=[
+                "blog",
+                "book-series",
+                "conference",
+                "conference-series",
+                "journal",
+                "magazine",
+                "proceedings",
+                "repository",
+                ],
+            null=True, blank=True)
+    publisher = models.CharField(
+            help_text="name of container's publisher")
     issnl = models.CharField(
             help_text="an ISSN-L, or linking ISSN. This is a grouping ISSN for publications that print in various media (eg, print and digital",
             unique=True, null=True, blank=True)

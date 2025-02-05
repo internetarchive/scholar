@@ -256,7 +256,7 @@ class ReleaseAbstract(models.Model):
     license_slug = models.CharField(
             help_text="short name for a license covering this release. for example, 'CC-BY-NA'.",
             null=True, blank=True)
-    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
+    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH, db_index=True)
     content = models.TextField()
 
 
@@ -310,9 +310,9 @@ class BaseFile(models.Model):
     """
     size_bytes = models.BigIntegerField(
             help_text="size in bytes of this file")
-    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
-    sha256 = models.CharField(max_length=SHA256_MAX_LENGTH)
-    md5 = models.CharField(max_length=MD5_MAX_LENGTH)
+    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH, db_index=True)
+    sha256 = models.CharField(max_length=SHA256_MAX_LENGTH, db_index=True)
+    md5 = models.CharField(max_length=MD5_MAX_LENGTH, db_index=True)
     mimetype = models.CharField()
 
     class Meta:

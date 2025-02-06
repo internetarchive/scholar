@@ -129,35 +129,72 @@ class Release(Entity):
 
     release_type = models.CharField(
             help_text="Kind of release. Mostly, we have article or article-journal. The choices were extracted from the original fatcat dataset",
+            # this is an arbitrary subset of types from the Citation Style
+            # Language. I included all the ones in the previous fatcat schema
+            # and added some that might come up in the future. The types I left
+            # out are things we are unlikely to ever track as "releases".
             choices=[
-                "abstract",
+                # in CSL:
                 "article",
                 "article-journal",
+                "article-magazine",
                 "article-newspaper",
                 "book",
+                "broadcast",
                 "chapter",
-                "component",
                 "dataset",
-                "editorial",
                 "entry",
+                "event",
+                "figure",
                 "graphic",
+                "hearing",
                 "interview",
                 "legal_case",
                 "legislation",
-                "letter",
+                "manuscript",
+                "map",
+                "motion_picture",
+                "musical_score",
+                "pamphlet",
                 "paper-conference",
-                "peer_review",
+                "patent",
+                "personal_communication",
                 "post",
                 "post-weblog",
+                "regulation",
                 "report",
-                "retraction",
+                "review",
                 "review-book",
                 "software",
                 "song",
                 "speech",
                 "standard",
-                "stub",
                 "thesis",
+                "treaty",
+                "webpage",
+
+                # not in CSL, fatcat extensions:
+
+                # releases that are only an abstract of a larger work. In
+                # particular, translations. Many are granted DOIs.
+                "abstract",
+
+                # columns, "in this issue", and other content published along
+                # peer-reviewed content in journals. Many are granted DOIs.
+                "editorial",
+
+                # sub-components of a full paper or other work. Eg, tables, or individual files as part of a dataset.
+                "component",
+
+                "peer_review",
+
+                # releases which have notable external identifiers, and thus
+                # are included "for completeness", but don't seem to represent
+                # a "full work".
+                "stub",
+
+                # used when a release is retracted; release_stage should match this
+                "retraction",
                 ],
             null=True, blank=True)
 

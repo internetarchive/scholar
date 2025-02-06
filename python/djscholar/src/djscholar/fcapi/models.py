@@ -69,6 +69,8 @@ class Container(Entity):
     wikidata_qid = models.CharField(
             help_text="ID from the wikidata project. See https://www.wikidata.org/wiki/Wikidata:Identifiers",
             unique=True, null=True, blank=True)
+    # TODO temporary field for importing
+    legacy_ident = models.UUIDField(db_index=True)
 
 
 class Work(Entity):
@@ -81,7 +83,8 @@ class Work(Entity):
 
     A work entity has no columns of its own; a work is really just an ID.
     """
-    pass
+    # TODO temporary field for importing
+    legacy_ident = models.UUIDField(db_index=True)
 
 
 class Creator(Entity):
@@ -103,6 +106,8 @@ class Creator(Entity):
     orcid = models.CharField(
             help_text="external, unique identifier of a human author. See https://orcid.org/",
             unique=True, null=True, blank=True)
+    # TODO temporary field for importing
+    legacy_ident = models.UUIDField(db_index=True)
 
 
 class Release(Entity):
@@ -250,6 +255,9 @@ class Release(Entity):
     refs = models.JSONField(
             help_text="a JSON blob describing the citations of this release.",
             null=True, blank=True)
+    # TODO temporary fields for importing
+    legacy_ident = models.UUIDField(db_index=True)
+    legacy_rev = models.UUIDField(db_index=True)
 
 
 class ReleaseExtId(models.Model):
@@ -361,6 +369,8 @@ class ReleaseFile(Entity, BaseFile):
     A file associated with a release. Actual file content is stored in seaweedfs.
     """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
+    # TODO temporary fields for importing
+    legacy_rev = models.UUIDField(db_index=True)
 
 
 class FileURL(models.Model):
@@ -385,6 +395,8 @@ class Fileset(Entity):
     A set of files that should be associated with a release, possibly figures or datasets.
     """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
+    # TODO temporary fields for importing
+    legacy_rev = models.UUIDField(db_index=True)
 
 
 class FilesetFile(Entity, BaseFile):
@@ -404,6 +416,8 @@ class Webcapture(Entity):
             help_text="base URL of the resource.")
     captured = models.DateTimeField(
             help_text="date and time of capture")
+    # TODO temporary fields for importing
+    legacy_rev = models.UUIDField(db_index=True)
 
 
 class WebcaptureCDX(models.Model):

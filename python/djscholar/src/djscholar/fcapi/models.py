@@ -45,14 +45,14 @@ class Container(Entity):
     name = models.CharField()
     container_type = models.CharField(
             choices=[
-                "blog",
-                "book-series",
-                "conference",
-                "conference-series",
-                "journal",
-                "magazine",
-                "proceedings",
-                "repository",
+                ("blog", "blog"),
+                ("book-series", "book-series"),
+                ("conference", "conference"),
+                ("conference-series", "conference-series"),
+                ("journal", "journal"),
+                ("magazine", "magazine"),
+                ("proceedings", "proceedings"),
+                ("repository", "repository"),
                 ],
             null=True, blank=True)
     publisher = models.CharField(
@@ -135,78 +135,78 @@ class Release(Entity):
             # out are things we are unlikely to ever track as "releases".
             choices=[
                 # in CSL:
-                "article",
-                "article-journal",
-                "article-magazine",
-                "article-newspaper",
-                "book",
-                "broadcast",
-                "chapter",
-                "dataset",
-                "entry",
-                "event",
-                "figure",
-                "graphic",
-                "hearing",
-                "interview",
-                "legal_case",
-                "legislation",
-                "manuscript",
-                "map",
-                "motion_picture",
-                "musical_score",
-                "pamphlet",
-                "paper-conference",
-                "patent",
-                "personal_communication",
-                "post",
-                "post-weblog",
-                "regulation",
-                "report",
-                "review",
-                "review-book",
-                "software",
-                "song",
-                "speech",
-                "standard",
-                "thesis",
-                "treaty",
-                "webpage",
+                ("article", "article"),
+                ("article-journal", "article-journal"),
+                ("article-magazine", "article-magazine"),
+                ("article-newspaper", "article-newspaper"),
+                ("book", "book"),
+                ("broadcast", "broadcast"),
+                ("chapter", "chapter"),
+                ("dataset", "dataset"),
+                ("entry", "entry"),
+                ("event", "event"),
+                ("figure", "figure"),
+                ("graphic", "graphic"),
+                ("hearing", "hearing"),
+                ("interview", "interview"),
+                ("legal_case", "legal_case"),
+                ("legislation", "legislation"),
+                ("manuscript", "manuscript"),
+                ("map", "map"),
+                ("motion_picture", "motion_picture"),
+                ("musical_score", "musical_score"),
+                ("pamphlet", "pamphlet"),
+                ("paper-conference", "paper-conference"),
+                ("patent", "patent"),
+                ("personal_communication", "personal_communication"),
+                ("post", "post"),
+                ("post-weblog", "post-weblog"),
+                ("regulation", "regulation"),
+                ("report", "report"),
+                ("review", "review"),
+                ("review-book", "review-book"),
+                ("software", "software"),
+                ("song", "song"),
+                ("speech", "speech"),
+                ("standard", "standard"),
+                ("thesis", "thesis"),
+                ("treaty", "treaty"),
+                ("webpage", "webpage"),
 
                 # not in CSL, fatcat extensions:
 
                 # releases that are only an abstract of a larger work. In
                 # particular, translations. Many are granted DOIs.
-                "abstract",
+                ("abstract", "abstract"),
 
                 # columns, "in this issue", and other content published along
                 # peer-reviewed content in journals. Many are granted DOIs.
-                "editorial",
+                ("editorial", "editorial"),
 
                 # sub-components of a full paper or other work. Eg, tables, or individual files as part of a dataset.
-                "component",
+                ("component", "component"),
 
-                "peer_review",
+                ("peer_review", "peer_review"),
 
                 # releases which have notable external identifiers, and thus
                 # are included "for completeness", but don't seem to represent
                 # a "full work".
-                "stub",
+                ("stub", "stub"),
 
                 # used when a release is retracted; release_stage should match this
-                "retraction",
+                ("retraction", "retraction"),
                 ],
             null=True, blank=True)
 
     release_stage = models.CharField(
             help_text="Location of release in publishing pipeline",
             choices=[
-                 "accepted",
-                 "draft",
-                 "published",
-                 "retraction",
-                 "submitted",
-                 "updated",
+                 ("accepted", "accepted"),
+                 ("draft", "draft"),
+                 ("published", "published"),
+                 ("retraction", "retraction"),
+                 ("submitted", "submitted"),
+                 ("updated", "updated"),
                 ],
             null=True, blank=True)
     release_date = models.DateField(
@@ -259,19 +259,19 @@ class ReleaseExtId(models.Model):
     """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
     id_type = models.CharField(choices=[
-        "doi",
-        "pmid",
-        "pmcid",
-        "wikidata_qid",
-        "core_id",
-        "ark",
-        "arxiv",
-        "dblp",
-        "doaj",
-        "hdl",
-        "isbn13",
-        "jstor",
-        "mag",
+        ("doi", "doi"),
+        ("pmid", "pmid"),
+        ("pmcid", "pmcid"),
+        ("wikidata_qid", "wikidata_qid"),
+        ("core_id", "core_id"),
+        ("ark", "ark"),
+        ("arxiv", "arxiv"),
+        ("dblp", "dblp"),
+        ("doaj", "doaj"),
+        ("hdl", "hdl"),
+        ("isbn13", "isbn13"),
+        ("jstor", "jstor"),
+        ("mag", "mag"),
         ])
     id_value = models.CharField()
 
@@ -312,9 +312,9 @@ class ReleaseContrib(models.Model):
     role = models.CharField(
             help_text="role played by contributor",
             choices=[
-                "author",
-                "editor",
-                "translator"],
+                ("author", "author"),
+                ("editor", "editor"),
+                ("translator", "translator")],
             null=True, blank=True)
     raw_affiliation = models.CharField(
             help_text="Name of instituion or organization to which contributor belonged",
@@ -431,8 +431,8 @@ class WebcaptureURL(models.Model):
     """
     webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE)
     rel = models.CharField(choices=[
-        "warc",
-        "wayback",
-        "webarchive",
+        ("warc", "warc"),
+        ("wayback", "wayback"),
+        ("webarchive", "webarchive"),
         ])
     url = models.URLField(max_length=URL_MAX_LENGTH)

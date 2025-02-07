@@ -30,7 +30,8 @@ class Entity(models.Model):
             help_text="when a given record was hidden",
             null=True)
     extra = models.JSONField(
-            help_text="arbitrary storage for additional key/value data found in upstream sources")
+            help_text="arbitrary storage for additional key/value data found in upstream sources",
+            null=True, blank=True)
 
     class Meta:
         abstract = True
@@ -56,19 +57,32 @@ class Container(Entity):
                 ],
             null=True, blank=True)
     publisher = models.CharField(
-            help_text="name of container's publisher")
+            help_text="name of container's publisher",
+            null=True, blank=True)
+
+    # ISSNs
+    # ISSNs *should* be unique; and, largely, are within our data. We're not
+    # enforcing uniqueness however since the legacy database had some
+    # duplication and, purportedly, ISSNs can be recycled sometimes.
     issnl = models.CharField(
             help_text="an ISSN-L, or linking ISSN. This is a grouping ISSN for publications that print in various media (eg, print and digital",
-            unique=True, null=True, blank=True)
+            null=True, blank=True, db_index=True)
     issne = models.CharField(
             help_text="an e-ISSN, or electronic ISSN. for digital versions of publications. This can be linked to a p-ISSN (issnp column) via an ISSN-L.",
-            unique=True, null=True, blank=True)
+            null=True, blank=True, db_index=True)
     issnp = models.CharField(
             help_text="a p-ISSN, or print ISSN. for print versions of publications. This can be linked to an e-ISSN (issne column) via an ISSN-L.",
-            unique=True, null=True, blank=True)
+            null=True, blank=True, db_index=True)
+
+    # This ID might at first glance seem like something that should be unique;
+    # however, while we tend to differentiate journals based on ISSN some
+    # journals have multiple ISSNs that might all end up grouped under the same
+    # wikidata_qid. Unless we switch to having a concept of a journal that is
+    # distinct from ISSN, wikidata_qid can't be unique for us.
     wikidata_qid = models.CharField(
             help_text="ID from the wikidata project. See https://www.wikidata.org/wiki/Wikidata:Identifiers",
-            unique=True, null=True, blank=True)
+            null=True, blank=True, db_index=True)
+
     # TODO temporary field for importing
     legacy_ident = models.UUIDField(db_index=True)
 

@@ -426,6 +426,25 @@ class FilesetFile(Entity, BaseFile):
     """
     fileset = models.ForeignKey(Fileset, on_delete=models.CASCADE)
 
+class FilesetURL(models.Model):
+    """
+    One of possibly many URLs associated with a fileset.
+    """
+    fileset = models.ForeignKey(Fileset, on_delete=models.CASCADE)
+    rel = models.CharField(choices=[
+        ("webarchive", "web archive version of repository landing page"),
+        ("repository", "url of a live-web landing page or other location where content can be found"),
+        ("platform", "url of a live-web landing page or other location where content can be found"),
+        ("web", "url of a live-web landing page or other location where content can be found"),
+        ("repository-bundle", "direct URL to a live-web 'archive' file like .zip"),
+        ("webarchive-bundle", "webarchive version of repository-bundle"),
+        ("archive-bundle", "file archive version of repository bundle"),
+        ("repository-base", "live-web base URL whence file paths can be appended to fetch individual files"),
+        ("archive-base", "base URL whence file paths can be appended to fetch individual files"),
+        ], default="web")
+    url = models.URLField(max_length=URL_MAX_LENGTH)
+    legacy_fileset_rev = models.UUIDField(db_index=True)
+
 
 class Webcapture(Entity):
     """

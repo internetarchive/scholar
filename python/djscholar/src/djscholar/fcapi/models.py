@@ -303,6 +303,7 @@ class ReleaseExtId(models.Model):
         ("mag", "mag"),
         ])
     id_value = models.CharField()
+    legacy_release_rev = models.UUIDField(db_index=True)
 
     class Meta:
         indexes = [
@@ -319,11 +320,9 @@ class ReleaseAbstract(models.Model):
             help_text="Primary language of abstract. Two-letter RFC1766/ISO639-1 language code.",
             max_length=2,
             null=True, blank=True)
-    license_slug = models.CharField(
-            help_text="short name for a license covering this release. for example, 'CC-BY-NA'.",
-            null=True, blank=True)
     sha1 = models.CharField(max_length=SHA1_MAX_LENGTH, db_index=True)
     content = models.TextField()
+    legacy_release_rev = models.UUIDField(db_index=True)
 
 
 class ReleaseContrib(models.Model):
@@ -348,10 +347,12 @@ class ReleaseContrib(models.Model):
     raw_affiliation = models.CharField(
             help_text="Name of instituion or organization to which contributor belonged",
             null=True, blank=True)
-    index_val = models.SmallIntegerField(
+    position = models.SmallIntegerField(
             help_text="Position in list of contributors")
     extra = models.JSONField(
             help_text="JSON blob for additional metadata")
+    legacy_release_rev = models.UUIDField(db_index=True)
+    legacy_creator_ident = models.UUIDField(db_index=True)
 
 
 class ReleaseRef(models.Model):
@@ -367,6 +368,8 @@ class ReleaseRef(models.Model):
             on_delete=models.CASCADE,
             help_text="Release referenced by this citation",
             related_name="target")
+    legacy_release_rev = models.UUIDField(db_index=True)
+    legacy_target_release_ident = models.UUIDField(db_index=True)
 
 
 class BaseFile(models.Model):
@@ -392,6 +395,7 @@ class ReleaseFile(Entity, BaseFile):
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
     # TODO temporary fields for importing
     legacy_rev = models.UUIDField(db_index=True)
+    legacy_release_ident = models.UUIDField(db_index=True)
 
 
 class FileURL(models.Model):
@@ -409,6 +413,7 @@ class FileURL(models.Model):
         ("dweb", "content on a distributed or decentralized web protocol like dat:// or ipfs://"),
         ], default="web")
     url = models.URLField(max_length=URL_MAX_LENGTH)
+    legacy_file_rev = models.UUIDField(db_index=True)
 
 
 class Fileset(Entity):
@@ -425,6 +430,8 @@ class FilesetFile(Entity, BaseFile):
     A file within a fileset.
     """
     fileset = models.ForeignKey(Fileset, on_delete=models.CASCADE)
+    legacy_release_ident = models.UUIDField(db_index=True)
+    path_name = models.TextField(blank=True, null=True)
 
 class FilesetURL(models.Model):
     """
@@ -473,6 +480,7 @@ class WebcaptureCDX(models.Model):
     sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
     sha256 = models.CharField(max_length=SHA256_MAX_LENGTH)
     size_bytes = models.BigIntegerField()
+    legacy_webcapture_rev = models.UUIDField(db_index=True)
 
 
 class WebcaptureURL(models.Model):
@@ -490,3 +498,4 @@ class WebcaptureURL(models.Model):
         ("webarchive", "webarchive"),
         ])
     url = models.URLField(max_length=URL_MAX_LENGTH)
+    legacy_webcapture_rev = models.UUIDField(db_index=True)

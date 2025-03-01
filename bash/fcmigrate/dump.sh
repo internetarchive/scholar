@@ -5,22 +5,22 @@
 
 SOURCE="legacy_import"
 PSQL="psql -D fatcat_pod"
-CONTAINERS_OUT="containers.tsv"
-CREATORS_OUT="creators.tsv"
-WORKS_OUT="works.tsv"
-RELEASES_OUT="releases.tsv"
-RELEASES_EXTID_OUT="releaseextids.tsv"
-RELEASES_ABSTRACT_OUT="releaseabstracts.tsv"
-RELEASES_CONTRIB_OUT="releasecontribs.tsv"
-RELEASES_REF_OUT="releaserefs.tsv"
-FILES_OUT="files.tsv"
-FILES_URL_OUT="fileurls.tsv"
-FILESETS_OUT="fileurls.tsv"
-FILESETS_URL_OUT="fileseturls.tsv"
-FILESETS_FILE_OUT="filesetfiles.tsv"
-WEBCAPTURES_OUT="webcaptures.tsv"
-WEBCAPTURES_URL_OUT="webcaptureurls.tsv"
-WEBCAPTURES_CDX_OUT="webcapturecdx.tsv"
+export CONTAINERS_OUT="containers.tsv"
+export CREATORS_OUT="creators.tsv"
+export WORKS_OUT="works.tsv"
+export RELEASES_OUT="releases.tsv"
+export RELEASES_EXTID_OUT="releaseextids.tsv"
+export RELEASES_ABSTRACT_OUT="releaseabstracts.tsv"
+export RELEASES_CONTRIB_OUT="releasecontribs.tsv"
+export RELEASES_REF_OUT="releaserefs.tsv"
+export FILES_OUT="files.tsv"
+export FILES_URL_OUT="fileurls.tsv"
+export FILESETS_OUT="fileurls.tsv"
+export FILESETS_URL_OUT="fileseturls.tsv"
+export FILESETS_FILE_OUT="filesetfiles.tsv"
+export WEBCAPTURES_OUT="webcaptures.tsv"
+export WEBCAPTURES_URL_OUT="webcaptureurls.tsv"
+export WEBCAPTURES_CDX_OUT="webcapturecdx.tsv"
 
 dump_containers() {
   echo "dumping containers to $CONTAINERS_OUT"
@@ -311,7 +311,7 @@ EOF
 # hidden_when   | timestamp with time zone |           |          |
 # legacy_rev    | uuid                     |           | not null |
 
-dump_file() {
+dump_files() {
   echo "dumping files to $FILES_OUT"
   cat << EOF | $PSQL
 \copy (
@@ -512,8 +512,6 @@ EOF
 # captured      | timestamp with time zone  |           | not null |
 # hidden_when   | timestamp with time zone  |           |          |
 # legacy_rev    | uuid                      |           | not null |
-
-
 
 dump_webcaptures() {
   echo "dumping webcaptures to $WEBCAPTURES_OUT"

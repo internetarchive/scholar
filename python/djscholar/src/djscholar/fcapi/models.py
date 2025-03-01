@@ -272,6 +272,13 @@ class Release(Entity):
     # TODO temporary fields for importing
     legacy_ident = models.UUIDField(db_index=True)
     legacy_rev = models.UUIDField(db_index=True)
+    legacy_work_ident = models.UUIDField(db_index=True)
+    legacy_container_ident = models.UUIDField(db_index=True)
+    legacy_doi = models.CharField(blank=True, null=True)
+    legacy_pmid = models.CharField(blank=True, null=True)
+    legacy_pmcid = models.CharField(blank=True, null=True)
+    legacy_wikidata_qid = models.CharField(blank=True, null=True)
+    legacy_core_id = models.CharField(blank=True, null=True)
 
 
 class ReleaseExtId(models.Model):

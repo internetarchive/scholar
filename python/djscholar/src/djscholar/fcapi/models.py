@@ -35,9 +35,9 @@ class Entity(models.Model):
         abstract = True
         indexes = [
                 models.Index(fields=["updated"],
-                             name="%(app_label)s_%(class)_updated_idx"),
+                             name="%(app_label)s_%(class)s_updated_idx"),
                 models.Index(fields=["source"],
-                             name="%(app_label)s_%(class)_source_idx"),
+                             name="%(app_label)s_%(class)s_source_idx"),
                 ]
 
 
@@ -93,15 +93,15 @@ class Container(Entity):
     class Meta(Entity.Meta):
         indexes = [
                 models.Index(fields=["issnl"],
-                             name="%(app_label)s_%(class)_issnl_idx"),
+                             name="%(app_label)s_%(class)s_issnl_idx"),
                 models.Index(fields=["issne"],
-                             name="%(app_label)s_%(class)_issne_idx"),
+                             name="%(app_label)s_%(class)s_issne_idx"),
                 models.Index(fields=["issnp"],
-                             name="%(app_label)s_%(class)_issnp_idx"),
+                             name="%(app_label)s_%(class)s_issnp_idx"),
                 models.Index(fields=["wikidata_qid"],
-                             name="%(app_label)s_%(class)_wikidata_qid_idx"),
+                             name="%(app_label)s_%(class)s_wikidata_qid_idx"),
                 models.Index(fields=["legacy_ident"],
-                             name="%(app_label)s_%(class)_legacy_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 ]
 
 
@@ -121,7 +121,7 @@ class Work(Entity):
     class Meta(Entity.Meta):
         indexes = [
                 models.Index(fields=["legacy_ident"],
-                             name="%(app_label)s_%(class)_legacy_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 ]
 
 
@@ -150,7 +150,7 @@ class Creator(Entity):
     class Meta(Entity.Meta):
         indexes = [
                 models.Index(fields=["legacy_ident"],
-                             name="%(app_label)s_%(class)_legacy_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 ]
 
 
@@ -313,13 +313,13 @@ class Release(Entity):
     class Meta(Entity.Meta):
         indexes = [
                 models.Index(fields=["legacy_ident"],
-                             name="%(app_label)s_%(class)_legacy_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 models.Index(fields=["legacy_rev"],
-                             name="%(app_label)s_%(class)_legacy_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
                 models.Index(fields=["legacy_work_ident"],
-                             name="%(app_label)s_%(class)_legacy_work_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_work_ident_idx"),
                 models.Index(fields=["legacy_container_ident"],
-                             name="%(app_label)s_%(class)_legacy_container_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_container_ident_idx"),
                 ]
 
 class ReleaseExtId(models.Model):
@@ -352,7 +352,7 @@ class ReleaseExtId(models.Model):
                 models.Index(fields=["id_type", "id_value"],
                              name="extid_lookup_idx"),
                 models.Index(fields=["legacy_release_rev"],
-                             name="%(app_label)s_%(class)_legacy_release_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_release_rev_idx"),
                 ]
 
 
@@ -371,9 +371,9 @@ class ReleaseAbstract(models.Model):
     class Meta:
         indexes = [
                 models.Index(fields=["sha1"],
-                             name="%(app_label)s_%(class)_sha1_idx"),
+                             name="%(app_label)s_%(class)s_sha1_idx"),
                 models.Index(fields=["legacy_release_rev"],
-                             name="%(app_label)s_%(class)_legacy_release_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_release_rev_idx"),
                 ]
 
 
@@ -409,9 +409,9 @@ class ReleaseContrib(models.Model):
     class Meta:
         indexes = [
                 models.Index(fields=["legacy_release_rev"],
-                             name="%(app_label)s_%(class)_legacy_release_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_release_rev_idx"),
                 models.Index(fields=["legacy_creator_ident"],
-                             name="%(app_label)s_%(class)_legacy_creator_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_creator_ident_idx"),
                 ]
 
 
@@ -434,9 +434,9 @@ class ReleaseRef(models.Model):
     class Meta:
         indexes = [
                 models.Index(fields=["legacy_release_rev"],
-                             name="%(app_label)s_%(class)_legacy_release_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_release_rev_idx"),
                 models.Index(fields=["legacy_target_release_ident"],
-                             name="%(app_label)s_%(class)_legacy_target_release_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_target_release_ident_idx"),
                 ]
 
 
@@ -456,11 +456,11 @@ class BaseFile(models.Model):
         abstract = True
         indexes = [
                 models.Index(fields=["sha1"],
-                             name="%(app_label)s_%(class)_sha1_idx"),
+                             name="%(app_label)s_%(class)s_sha1_idx"),
                 models.Index(fields=["sha256"],
-                             name="%(app_label)s_%(class)_sha256_idx"),
+                             name="%(app_label)s_%(class)s_sha256_idx"),
                 models.Index(fields=["md5"],
-                             name="%(app_label)s_%(class)_md5_idx"),
+                             name="%(app_label)s_%(class)s_md5_idx"),
                 ]
 
 
@@ -476,9 +476,9 @@ class ReleaseFile(Entity, BaseFile):
     class Meta(Entity.Meta, BaseFile.Meta):
         indexes = [
                 models.Index(fields=["legacy_rev"],
-                             name="%(app_label)s_%(class)_legacy_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
                 models.Index(fields=["legacy_release_ident"],
-                             name="%(app_label)s_%(class)_legacy_release_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_release_ident_idx"),
                 ]
 
 
@@ -502,7 +502,7 @@ class FileURL(models.Model):
     class Meta:
         indexes = [
                 models.Index(fields=["legacy_file_rev"],
-                             name="%(app_label)s_%(class)_legacy_file_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_file_rev_idx"),
                 ]
 
 class Fileset(Entity):
@@ -516,7 +516,7 @@ class Fileset(Entity):
     class Meta(Entity.Meta):
         indexes = [
                 models.Index(fields=["legacy_rev"],
-                             name="%(app_label)s_%(class)_legacy_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
                 ]
 
 
@@ -531,7 +531,7 @@ class FilesetFile(Entity, BaseFile):
     class Meta(Entity.Meta, BaseFile.Meta):
         indexes = [
                 models.Index(fields=["legacy_release_ident"],
-                             name="%(app_label)s_%(class)_legacy_release_ident_idx"),
+                             name="%(app_label)s_%(class)s_legacy_release_ident_idx"),
                 ]
 
 class FilesetURL(models.Model):
@@ -556,7 +556,7 @@ class FilesetURL(models.Model):
     class Meta:
         indexes = [
                 models.Index(fields=["legacy_fileset_rev"],
-                             name="%(app_label)s_%(class)_legacy_fileset_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_fileset_rev_idx"),
                 ]
 
 class Webcapture(Entity):
@@ -575,7 +575,7 @@ class Webcapture(Entity):
     class Meta(Entity.Meta):
         indexes = [
                 models.Index(fields=["legacy_rev"],
-                             name="%(app_label)s_%(class)_legacy_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
                 ]
 
 class WebcaptureCDX(models.Model):
@@ -596,7 +596,7 @@ class WebcaptureCDX(models.Model):
     class Meta:
         indexes = [
                 models.Index(fields=["legacy_webcapture_rev"],
-                             name="%(app_label)s_%(class)_legacy_webcapture_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_webcapture_rev_idx"),
                 ]
 
 class WebcaptureURL(models.Model):
@@ -619,5 +619,5 @@ class WebcaptureURL(models.Model):
     class Meta:
         indexes = [
                 models.Index(fields=["legacy_webcapture_rev"],
-                             name="%(app_label)s_%(class)_legacy_webcapture_rev_idx"),
+                             name="%(app_label)s_%(class)s_legacy_webcapture_rev_idx"),
                 ]

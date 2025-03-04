@@ -4,7 +4,7 @@
 # make sure you have about a TB to work with if you're running this.
 
 SOURCE="legacy_import"
-PSQL="psql -D fatcat_pod"
+PSQL="psql -d fatcat_prod"
 export CONTAINERS_OUT="containers.tsv"
 export CREATORS_OUT="creators.tsv"
 export WORKS_OUT="works.tsv"

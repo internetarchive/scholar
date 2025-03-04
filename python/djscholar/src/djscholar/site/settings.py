@@ -123,3 +123,6 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# we target postgresql which has a index name length limit of 63, not 30
+SILENCED_SYSTEM_CHECKS = ["models.E034"]

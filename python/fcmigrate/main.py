@@ -5,6 +5,8 @@ from fastapi import FastAPI
 from dbos import DBOS, Queue
 
 SOURCE = "legacy_import"
+OLD_DB = "fatcat_prod"
+NEW_DB = "fatcat2"
 
 CWD = os.getcwd()
 
@@ -100,7 +102,7 @@ def dump_containers() -> int:
         cr.container_type != 'test'
      ) TO '{CONTAINERS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"containers: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -124,7 +126,7 @@ def dump_creators() -> int:
         AND
         ci.redirect_id IS NULL
       ) TO '{CREATORS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);"""
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"creators: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -146,7 +148,7 @@ def dump_works() -> str:
       ) TO '{WORKS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
 
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"works: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -196,7 +198,7 @@ def dump_releases() -> int:
       AND ri.redirect_id IS NULL
       ) TO '{RELEASES_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"releases: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -209,12 +211,12 @@ def dump_release_extid() -> int:
         ei.extid_type AS id_type,
         ei.value AS id_value
       FROM release_ident ri
-      JOIN release_rev_extid ei ON ri.rev_id = ri.release_rev
+      JOIN release_rev_extid ei ON ri.release_rev = ri.release_rev
       WHERE ri.is_live = true
       AND ri.redirect_id IS NULL
     ) TO '{RELEASES_EXTID_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"extid: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -307,7 +309,7 @@ def dump_files():
       AND fi.redirect_id IS NULL
       ) TO '{RELEASES_REF_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"files: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -326,7 +328,7 @@ def dump_file_url():
       AND fi.redirect_id IS NULL
       ) TO '{FILES_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"file urls: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -350,7 +352,7 @@ def dump_filesets():
       AND fi.redirect_id IS NULL
       ) TO '{FILESETS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"filesets: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -395,7 +397,7 @@ def dump_fileset_file():
       ) TO '{FILESETS_FILE_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
 
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"fileset files: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -419,7 +421,7 @@ def dump_webcaptures():
       AND wi.redirect_id IS NULL
       ) TO '{WEBCAPTURES_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"webcaptures: {out.strip()}")
     return copy_result_to_int(out)
 
@@ -462,7 +464,7 @@ def dump_webcapture_cdx():
       AND wi.redirect_id IS NULL
       ) TO '{WEBCAPTURES_CDX_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"webcapture cdx: {out.strip()}")
     return copy_result_to_int(out)
 

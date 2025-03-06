@@ -119,7 +119,7 @@ class Work(Entity):
     legacy_ident = models.UUIDField()
 
     class Meta(Entity.Meta):
-        indexes = [
+        indexes = Entity.Meta.indexes + [
                 models.Index(fields=["legacy_ident"],
                              name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 ]

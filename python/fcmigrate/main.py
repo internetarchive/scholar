@@ -258,7 +258,7 @@ def dump_release_contrib():
         rc.role,
         rc.raw_affiliation,
         rc.index_val AS position,
-        to_json(rc.extra_json) AS extra,
+        to_json(rc.extra_json) AS extra
       FROM release_ident ri
       JOIN release_contrib rc ON ri.rev_id = rc.release_rev
       WHERE ri.is_live = true

@@ -162,11 +162,13 @@ class Release(Entity):
     work = models.ForeignKey(
             Work,
             help_text="the work under which this release is grouped",
-            on_delete=models.CASCADE)
+            on_delete=models.CASCADE,
+            db_index=False) # index added in Meta below so we can name it explicitly
     container = models.ForeignKey(
             Container,
             help_text="the thing in which this release was published. for example, for a paper, its container is likely an academic journal",
-            on_delete=models.CASCADE)
+            on_delete=models.CASCADE,
+            db_index=False) # index added in Meta below so we can name it explicitly
 
     title = models.CharField(help_text="a title for the release")
     original_title = models.CharField(
@@ -312,6 +314,10 @@ class Release(Entity):
 
     class Meta(Entity.Meta):
         indexes = Entity.Meta.indexes + [
+                models.Index(fields=["work_id"],
+                             name="%(app_label)s_%(class)s_work_id_idx"),
+                models.Index(fields=["container_id"],
+                             name="%(app_label)s_%(class)s_container_id_idx"),
                 models.Index(fields=["legacy_ident"],
                              name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 models.Index(fields=["legacy_rev"],

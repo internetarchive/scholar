@@ -37,7 +37,7 @@ def bail(msg: str):
 def copy_result_to_int(copy_output: str) -> int:
     out = -1
     try:
-        int(copy_output.trim()[5:])
+        int(copy_output.strip()[5:])
     except Exception as e:
         DBOS.logger.error(e)
         os._exit(1)
@@ -238,14 +238,14 @@ def dump_release_abstract():
       AND ri.redirect_id IS NULL
       ) TO '{RELEASES_ABSTRACT_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"abstracts: {out.strip()}")
     return copy_result_to_int(out)
 
 @DBOS.step()
 def dump_release_contrib():
     sql = f"""
-    \copy (
+    COPY (
       SELECT
         rc.release_rev AS legacy_release_rev,
         rc.raw_name,
@@ -262,14 +262,14 @@ def dump_release_contrib():
       AND ri.redirect_id IS NULL
       ) TO '{RELEASES_ABSTRACT_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"contribs: {out.strip()}")
     return copy_result_to_int(out)
 
 @DBOS.step()
 def dump_release_ref():
     sql = f"""
-    \copy (
+    COPY (
       SELECT
         rr.index_val AS position,
         rr.release_rev AS legacy_release_rev,
@@ -280,14 +280,14 @@ def dump_release_ref():
       AND ri.redirect_id IS NULL
       ) TO '{RELEASES_REF_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"refs: {out.strip()}")
     return copy_result_to_int(out)
 
 @DBOS.step()
 def dump_files():
     sql = f"""
-    \copy (
+    COPY (
       SELECT
         fi.rev_id AS legacy_rev,
         fi.id AS legacy_ident,
@@ -371,14 +371,14 @@ def dump_fileset_url():
       AND fi.redirect_id IS NULL
       ) TO '{FILESETS_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"fileset urls: {out.strip()}")
     return copy_result_to_int(out)
 
 @DBOS.step()
 def dump_fileset_file():
     sql = f"""
-    \copy (
+    COPY (
       SELECT
         fi.rev_id AS legacy_fileset_rev,
         ff.path_name,
@@ -439,14 +439,14 @@ def dump_webcapture_url():
       AND wi.redirect_id IS NULL
       ) TO '{WEBCAPTURES_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
     """
-    out, err = psql(sql, db_name="fatcat_prod")
+    out, err = psql(sql, db_name=OLD_DB)
     DBOS.logger.info(f"webcapture urls: {out.strip()}")
     return copy_result_to_int(out)
 
 @DBOS.step()
 def dump_webcapture_cdx():
     sql = f"""
-    \copy (
+    COPY (
       SELECT
         wc.webcapture_rev AS legacy_webcapture_rev,
         wc.surt,

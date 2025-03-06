@@ -212,7 +212,7 @@ def dump_release_extid() -> int:
         ei.extid_type AS id_type,
         ei.value AS id_value
       FROM release_ident ri
-      JOIN release_rev_extid ei ON ri.release_rev = ri.release_rev
+      JOIN release_rev_extid ei ON ri.rev_id = ei.release_rev
       WHERE ri.is_live = true
       AND ri.redirect_id IS NULL
     ) TO '{RELEASES_EXTID_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);

@@ -91,7 +91,7 @@ class Container(Entity):
     legacy_ident = models.UUIDField()
 
     class Meta(Entity.Meta):
-        indexes = [
+        indexes = Entity.Meta.indexes + [
                 models.Index(fields=["issnl"],
                              name="%(app_label)s_%(class)s_issnl_idx"),
                 models.Index(fields=["issne"],
@@ -148,7 +148,7 @@ class Creator(Entity):
     legacy_ident = models.UUIDField()
 
     class Meta(Entity.Meta):
-        indexes = [
+        indexes = Entity.Meta.indexes + [
                 models.Index(fields=["legacy_ident"],
                              name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 ]
@@ -311,7 +311,7 @@ class Release(Entity):
     legacy_core_id = models.CharField(blank=True, null=True)
 
     class Meta(Entity.Meta):
-        indexes = [
+        indexes = Entity.Meta.indexes + [
                 models.Index(fields=["legacy_ident"],
                              name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 models.Index(fields=["legacy_rev"],
@@ -474,7 +474,7 @@ class ReleaseFile(Entity, BaseFile):
     legacy_release_ident = models.UUIDField()
 
     class Meta(Entity.Meta, BaseFile.Meta):
-        indexes = [
+        indexes = Entity.Meta.indexes + BaseFile.Meta.indexes + [
                 models.Index(fields=["legacy_rev"],
                              name="%(app_label)s_%(class)s_legacy_rev_idx"),
                 models.Index(fields=["legacy_release_ident"],
@@ -514,7 +514,7 @@ class Fileset(Entity):
     legacy_rev = models.UUIDField()
 
     class Meta(Entity.Meta):
-        indexes = [
+        indexes = Entity.Meta.indexes + [
                 models.Index(fields=["legacy_rev"],
                              name="%(app_label)s_%(class)s_legacy_rev_idx"),
                 ]
@@ -529,7 +529,7 @@ class FilesetFile(Entity, BaseFile):
     path_name = models.TextField(blank=True, null=True)
 
     class Meta(Entity.Meta, BaseFile.Meta):
-        indexes = [
+        indexes = Entity.Meta.indexes + BaseFile.Meta.indexes + [
                 models.Index(fields=["legacy_release_ident"],
                              name="%(app_label)s_%(class)s_legacy_release_ident_idx"),
                 ]
@@ -573,7 +573,7 @@ class Webcapture(Entity):
     legacy_rev = models.UUIDField()
 
     class Meta(Entity.Meta):
-        indexes = [
+        indexes = Entity.Meta.indexes + [
                 models.Index(fields=["legacy_rev"],
                              name="%(app_label)s_%(class)s_legacy_rev_idx"),
                 ]

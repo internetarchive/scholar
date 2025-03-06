@@ -496,6 +496,18 @@ def dump_workflow():
 
     return [handle.get_result() for handle in handles]
 
+def drop_index(name: str):
+    """drop a single named index from the new fatcat db"""
+    out, err = psql(f"DROP INDEX {name}", db_name=NEW_DB)
+    if not out.strip().startswith("DROP INDEX"):
+        bail(f"unexpected drop index output: {out.strip()}")
+
+def create_index(table: str, name: str, column: str):
+    """add a single named index to a table in the new fatcat db"""
+    out, err = psql(f"CREATE INDEX {name} ON {table} ({column})", db_name=NEW_DB)
+    if not out.strip().startswith("CREATE INDEX"):
+        bail(f"unexpected create index output: {out.strip()}")
+
 @DBOS.step()
 def restore_containers():
     DBOS.logger.info("restoring containers")
@@ -529,15 +541,27 @@ def restore_creators():
 @DBOS.step()
 def restore_works():
     DBOS.logger.info("restoring works")
-    # TODO drop indices besides PK
-    # TODO run COPY
+
+    DBOS.logger.info("dropping work indices")
+    indices = [
+            ("fcapi_work_legacy_ident_idx", "legacy_ident"),
+            ("fcapi_work_source_idx", "source"),
+            ("fcapi_work_updated_idex", "updated"),
+    ]
+    for index, _ in indices:
+        drop_index(index)
+
     sql = f"""
-    {WORKS_OUT}
+    COPY fcapi_work (legacy_ident, source, extra)
+    FROM '{WORKS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
     """
     out, err = psql(sql, db_name=NEW_DB)
     DBOS.logger.info(f"works: {out.strip()}")
+
     DBOS.logger.info("restoring work indices")
-    # TODO restore indices
+    for index, column in indices:
+        create_index("fcapi_work", index, column)
+
     return copy_result_to_int(out)
 
 @app.get("/restore")
@@ -546,4 +570,5 @@ def restore_workflow():
     ensure_psql()
     restore_containers()
     restore_creators()
+    restore_works()
     # TODO

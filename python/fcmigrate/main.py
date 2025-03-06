@@ -204,6 +204,7 @@ def dump_releases() -> int:
 
 @DBOS.step()
 def dump_release_extid() -> int:
+    DBOS.logger.info("dumping release_extid")
     sql = f"""
     COPY (
       SELECT
@@ -222,6 +223,7 @@ def dump_release_extid() -> int:
 
 @DBOS.step()
 def dump_release_abstract():
+    DBOS.logger.info("dumping abstracts")
     sql = f"""
     COPY (
       SELECT
@@ -244,6 +246,7 @@ def dump_release_abstract():
 
 @DBOS.step()
 def dump_release_contrib():
+    DBOS.logger.info("dumping contribs")
     sql = f"""
     COPY (
       SELECT
@@ -268,6 +271,7 @@ def dump_release_contrib():
 
 @DBOS.step()
 def dump_release_ref():
+    DBOS.logger.info("dumping refs")
     sql = f"""
     COPY (
       SELECT
@@ -286,6 +290,7 @@ def dump_release_ref():
 
 @DBOS.step()
 def dump_files():
+    DBOS.logger.info("dumping files")
     sql = f"""
     COPY (
       SELECT
@@ -315,6 +320,7 @@ def dump_files():
 
 @DBOS.step()
 def dump_file_url():
+    DBOS.logger.info("dumping file urls")
     sql = f"""
     COPY (
       SELECT
@@ -334,6 +340,7 @@ def dump_file_url():
 
 @DBOS.step()
 def dump_filesets():
+    DBOS.logger.info("dumping filesets")
     sql = f"""
     COPY (
       SELECT
@@ -358,6 +365,7 @@ def dump_filesets():
 
 @DBOS.step()
 def dump_fileset_url():
+    DBOS.logger.info("dumping fileset urls")
     sql = f"""
     COPY (
       SELECT
@@ -377,6 +385,7 @@ def dump_fileset_url():
 
 @DBOS.step()
 def dump_fileset_file():
+    DBOS.logger.info("dumping fileset files")
     sql = f"""
     COPY (
       SELECT
@@ -403,6 +412,7 @@ def dump_fileset_file():
 
 @DBOS.step()
 def dump_webcaptures():
+    DBOS.logger.info("dumping webcaptures")
     sql = f"""
     COPY (
       SELECT
@@ -427,6 +437,7 @@ def dump_webcaptures():
 
 @DBOS.step()
 def dump_webcapture_url():
+    DBOS.logger.info("dumping webcapture urls")
     sql = f"""
     COPY (
       SELECT
@@ -445,6 +456,7 @@ def dump_webcapture_url():
 
 @DBOS.step()
 def dump_webcapture_cdx():
+    DBOS.logger.info("dumping webcapture cdx")
     sql = f"""
     COPY (
       SELECT

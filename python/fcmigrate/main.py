@@ -498,11 +498,52 @@ def dump_workflow():
 
 @DBOS.step()
 def restore_containers():
-    restore_containers()
+    DBOS.logger.info("restoring containers")
+    sql = f"""
+    COPY fcapi_container (
+      legacy_ident, name, extra, container_type, publisher,
+      issnl, issne, issnp, wikidata_qid, source)
+    FROM '{CONTAINERS_OUT}'
+    WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '',
+          FORCE_NULL (extra));
+    """
+    out, err = psql(sql, db_name=NEW_DB)
+    DBOS.logger.info(f"containers: {out.strip()}")
+    return copy_result_to_int(out)
+
+@DBOS.step()
+def restore_creators():
+    DBOS.logger.info("restoring creators")
+    sql = f"""
+    COPY fcapi_creator (
+      legacy_ident, display_name, given_name, surname, orcid,
+      source, extra)
+    FROM '{CREATORS_OUT}'
+    WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '',
+          FORCE_NULL (extra));
+    """
+    out, err = psql(sql, db_name=NEW_DB)
+    DBOS.logger.info(f"creators: {out.strip()}")
+    return copy_result_to_int(out)
+
+@DBOS.step()
+def restore_works():
+    DBOS.logger.info("restoring works")
+    # TODO drop indices besides PK
+    # TODO run COPY
+    sql = f"""
+    {WORKS_OUT}
+    """
+    out, err = psql(sql, db_name=NEW_DB)
+    DBOS.logger.info(f"works: {out.strip()}")
+    DBOS.logger.info("restoring work indices")
+    # TODO restore indices
+    return copy_result_to_int(out)
 
 @app.get("/restore")
 @DBOS.workflow()
 def restore_workflow():
     ensure_psql()
     restore_containers()
+    restore_creators()
     # TODO

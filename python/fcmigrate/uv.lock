@@ -279,10 +279,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dbos" },
+    { name = "psycopg", extra = ["binary"] },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dbos", specifier = ">=0.22.0" }]
+requires-dist = [
+    { name = "dbos", specifier = ">=0.22.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.5" },
+]
 
 [[package]]
 name = "googleapis-common-protos"

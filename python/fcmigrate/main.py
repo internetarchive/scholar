@@ -2,8 +2,13 @@ import os
 import subprocess
 from math import ceil
 from typing import Tuple
+
 from fastapi import FastAPI
 from dbos import DBOS, Queue
+import psycopg
+
+OLD_DATABASE_URL="postgresql:///fatcat_prod?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
+NEW_DATABASE_URL="postgresql:///fatcat2?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
 
 SOURCE = "legacy_import"
 OLD_DB = "fatcat_prod"
@@ -79,35 +84,53 @@ def ensure_psql():
         bail(f"unexpected psql stdout: {out}")
     DBOS.logger.info("ensured psql")
 
+OUTS = {
+        "containers": os.path.join(CWD, "containers.tsv"),
+        }
+
+DUMP_SQL = {
+        "containers": f"""
+                COPY (
+                  SELECT
+                    ci.id AS legacy_ident,
+                    cr.name,
+                    to_json(cr.extra_json) AS extra,
+                    cr.container_type,
+                    cr.publisher,
+                    cr.issnl,
+                    cr.issne,
+                    cr.issnp,
+                    cr.wikidata_qid,
+                    '{SOURCE}' AS source
+                  FROM container_ident ci
+                  JOIN container_rev cr ON ci.rev_id = cr.id
+                  WHERE
+                    ci.is_live = true
+                    AND
+                    ci.redirect_id is NULL
+                    AND
+                    cr.container_type != 'test'
+                ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        }
+
 @DBOS.step()
-def dump_containers() -> int:
-    DBOS.logger.info("dumping containers")
-    sql = f"""
-    COPY (
-      SELECT
-        ci.id AS legacy_ident,
-        cr.name,
-        to_json(cr.extra_json) AS extra,
-        cr.container_type,
-        cr.publisher,
-        cr.issnl,
-        cr.issne,
-        cr.issnp,
-        cr.wikidata_qid,
-        '{SOURCE}' AS source
-      FROM container_ident ci
-      JOIN container_rev cr ON ci.rev_id = cr.id
-      WHERE
-        ci.is_live = true
-        AND
-        ci.redirect_id is NULL
-        AND
-        cr.container_type != 'test'
-     ) TO '{CONTAINERS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"containers: {out.strip()}")
-    return copy_result_to_int(out)
+def dump(table: str) -> int:
+    DBOS.logger.info(f"dumping {table}")
+    count = 0
+    sql = DUMP_SQL[table]
+    try:
+        with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                 with open(OUTS[table], 'wb') as f:
+                    with cur.copy(sql) as copy:
+                        for row in copy:
+                            f.write(row)
+                            count += 1
+    except Exception as e:
+        bail(str(e))
+    DBOS.logger.info(f"dumped {count} {table}")
+    return count
 
 @DBOS.step()
 def dump_creators() -> int:
@@ -486,30 +509,31 @@ def dump_webcapture_cdx():
 @app.get("/dump")
 @DBOS.workflow()
 def dump_workflow():
-    ensure_psql()
-    queue = Queue("dump_queue", concurrency=10, worker_concurrency=2)
-    handles = []
-    dumpers = [
-        dump_containers,
-        dump_creators,
-        dump_works,
-        dump_releases,
-        dump_release_extid,
-        dump_release_abstract,
-        dump_release_contrib,
-        dump_release_ref,
-        dump_files,
-        dump_file_url,
-        dump_filesets,
-        dump_fileset_file,
-        dump_webcaptures,
-        dump_webcapture_url,
-        dump_webcapture_cdx,
-    ]
-    for dumper in dumpers:
-        handles.append(queue.enqueue(dumper))
+    dump("containers")
+    #ensure_psql()
+    #queue = Queue("dump_queue", concurrency=10, worker_concurrency=2)
+    #handles = []
+    #dumpers = [
+    #    dump_containers,
+    #    dump_creators,
+    #    dump_works,
+    #    dump_releases,
+    #    dump_release_extid,
+    #    dump_release_abstract,
+    #    dump_release_contrib,
+    #    dump_release_ref,
+    #    dump_files,
+    #    dump_file_url,
+    #    dump_filesets,
+    #    dump_fileset_file,
+    #    dump_webcaptures,
+    #    dump_webcapture_url,
+    #    dump_webcapture_cdx,
+    #]
+    #for dumper in dumpers:
+    #    handles.append(queue.enqueue(dumper))
 
-    return [handle.get_result() for handle in handles]
+    #return [handle.get_result() for handle in handles]
 
 def drop_index(name: str):
     """drop a single named index from the new fatcat db"""
@@ -647,8 +671,7 @@ def restore_releases() -> int:
 
     return copied
 
-
-@DBOS.step
+@DBOS.step()
 def restore_release_extid():
     DBOS.logger.info("restoring release extids")
     # TODO have to allow null foreign keys
@@ -683,7 +706,7 @@ def restore_release_extid():
 
     return copied
 
-@DBOS.step
+@DBOS.step()
 def restore_release_abstract() -> int:
     DBOS.logger.info("restoring release abstracts")
     # TODO have to allow null foreign keys
@@ -717,7 +740,7 @@ def restore_release_abstract() -> int:
 
     return copied
 
-@DBOS.step
+@DBOS.step()
 def restore_release_contrib():
     DBOS.logger.info("restoring release contribs")
     # TODO have to allow null foreign keys
@@ -755,7 +778,7 @@ def restore_release_contrib():
 
     return copied
 
-@DBOS.step
+@DBOS.step()
 def restore_release_ref():
     DBOS.logger.info("restoring refs")
 
@@ -809,37 +832,37 @@ def restore_release_ref():
 
     return copied
 
-@DBOS.step
+@DBOS.step()
 def restore_files():
     # TODO
     bail()
 
-@DBOS.step
+@DBOS.step()
 def restore_file_url():
     # TODO
     bail()
 
-@DBOS.step
+@DBOS.step()
 def restore_filesets():
     # TODO
     bail()
 
-@DBOS.step
+@DBOS.step()
 def restore_fileset_file():
     # TODO
     bail()
 
-@DBOS.step
+@DBOS.step()
 def restore_webcaptures():
     # TODO
     bail()
 
-@DBOS.step
+@DBOS.step()
 def restore_webcapture_url():
     # TODO
     bail()
 
-@DBOS.step
+@DBOS.step()
 def restore_webcapture_cdx():
     # TODO
     bail()

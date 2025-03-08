@@ -17,9 +17,6 @@ CHUNKED_UPDATE_SIZE = 50000000
 
 CWD = os.getcwd()
 
-CONTAINERS_OUT = os.path.join(CWD, "containers.tsv")
-CREATORS_OUT = os.path.join(CWD, "creators.tsv")
-WORKS_OUT = os.path.join(CWD, "works.tsv")
 RELEASES_OUT = os.path.join(CWD, "releases.tsv")
 RELEASES_EXTID_OUT = os.path.join(CWD, "releaseextids.tsv")
 RELEASES_ABSTRACT_OUT = os.path.join(CWD, "releaseabstracts.tsv")
@@ -74,15 +71,6 @@ def psql(sql: str, db_name="postgres") -> Tuple[str, str]:
         bail(f"unexpected psql stderr: {err}")
 
     return out, err
-
-@DBOS.step()
-def ensure_psql():
-    DBOS.logger.info("ensuring psql")
-    out, err = psql("SELECT 1")
-    if "(1 row)" not in out:
-        bail(f"unexpected psql stdout: {out}")
-    DBOS.logger.info("ensured psql")
-
 
 def outfile(table: str) -> str:
     return os.path.join(CWD, f"{table}.tsv")
@@ -151,7 +139,6 @@ DUMP_SQL = {
               SELECT
                 ri.id,
                 rr.id AS legacy_rev,
-
                 to_json(rr.extra_json) AS extra,
                 %s AS source,
                 rr.title,
@@ -393,10 +380,10 @@ def dump(table: str) -> int:
     try:
         with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
             with conn.cursor() as cur, open(outfile(table), 'wb') as f:
-                    with cur.copy(sql, (SOURCE,)) as copy:
-                        for row in copy:
-                            f.write(row)
-                            count += 1
+               with cur.copy(sql, (SOURCE,)) as copy:
+                   for row in copy:
+                       f.write(row)
+                       count += 1
     except Exception as e:
         bail(str(e))
     DBOS.logger.info(f"dumped {count} {table}")
@@ -424,39 +411,59 @@ def create_index(table: str, name: str, column: str):
     if not out.strip().startswith("CREATE INDEX"):
         bail(f"unexpected create index output: {out.strip()}")
 
-@DBOS.step()
-def restore_containers() -> int:
-    DBOS.logger.info("restoring containers")
-    sql = f"""
-    COPY fcapi_container (
-      legacy_ident, name, extra, container_type, publisher,
-      issnl, issne, issnp, wikidata_qid, source)
-    FROM '{CONTAINERS_OUT}'
-    WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '',
-          FORCE_NULL (extra));
-    """
-    out, err = psql(sql, db_name=NEW_DB)
-    DBOS.logger.info(f"containers: {out.strip()}")
-    return copy_result_to_int(out)
+RESTORE_SQL = {
+        "container": """
+            COPY fcapi_container (
+              id, legacy_rev, name, extra, container_type, publisher,
+              issnl, issne, issnp, wikidata_qid, source)
+            FROM STDIN
+            WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '',
+                  FORCE_NULL (extra));
+        """,
+        "creator": """
+            COPY fcapi_creator (
+              id, legacy_rev, display_name, given_name, surname, orcid,
+              source, extra)
+            FROM STDIN
+            WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '',
+                  FORCE_NULL (extra));
+        """,
+        "work": """
+            COPY fcapi_work (id, legacy_rev, source, extra)
+            FROM STDIN
+            WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        "release": """
+            COPY fcapi_release (
+              id, legacy_rev, extra, source, title, original_title, subtitle, release_type,
+              release_stage, release_date, release_year, volume, issue, pages, number, version,
+              publisher, language, license_slug, withdrawn_status, work_id, container_id,
+              legacy_doi, legacy_pmid, legacy_pmcid, legacy_wikidata_qid, legacy_core_id, refs)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        }
 
 @DBOS.step()
-def restore_creators() -> int:
-    DBOS.logger.info("restoring creators")
-    sql = f"""
-    COPY fcapi_creator (
-      legacy_ident, display_name, given_name, surname, orcid,
-      source, extra)
-    FROM '{CREATORS_OUT}'
-    WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '',
-          FORCE_NULL (extra));
-    """
-    out, err = psql(sql, db_name=NEW_DB)
-    DBOS.logger.info(f"creators: {out.strip()}")
-    return copy_result_to_int(out)
+def simple_restore(table: str) -> int:
+    table = "container"
+    DBOS.logger.info(f"restoring {table}")
+    count = 0
+    sql = RESTORE_SQL[table]
+    try:
+        with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
+            with conn.cursor() as cur, open(outfile(table), "r") as f:
+                with cur.copy(sql) as copy:
+                    for line in f:
+                        copy.write(line)
+                        count += 1
+    except Exception as e:
+        bail(str(e))
+    DBOS.logger.info(f"restored {count} {table}")
+    return count
 
 @DBOS.step()
-def restore_works() -> int:
-    DBOS.logger.info("restoring works")
+def restore_work() -> int:
+    table = "work"
 
     DBOS.logger.info("dropping work indices")
     indices = [
@@ -467,18 +474,13 @@ def restore_works() -> int:
     for index, _ in indices:
         drop_index(index)
 
-    sql = f"""
-    COPY fcapi_work (legacy_ident, source, extra)
-    FROM '{WORKS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
-    """
-    out, err = psql(sql, db_name=NEW_DB)
-    DBOS.logger.info(f"works: {out.strip()}")
+    count = simple_restore(table)
 
     DBOS.logger.info("restoring work indices")
     for index, column in indices:
         create_index("fcapi_work", index, column)
 
-    return copy_result_to_int(out)
+    return count
 
 def chunked_update(sql: str, total_rows: int):
     runs = ceil(total_rows/CHUNKED_UPDATE_SIZE)
@@ -487,66 +489,28 @@ def chunked_update(sql: str, total_rows: int):
         DBOS.logger.info(out.strip())
 
 @DBOS.step()
-def restore_releases() -> int:
-    DBOS.logger.info("restoring releases")
-    # TODO have to allow null work_id
+def restore_release() -> int:
+    table = "release"
 
     DBOS.logger.info("dropping release indices")
     indices = [
-            ("fcapi_release_legacy_container_ident_idx", "legacy_container_ident"),
-            ("fcapi_release_legacy_ident_idx", "legacy_ident"),
+            # TODO will i be ruined by pkey index?
+            ("fcapi_release_container_id_idx", "container_id"),
+            ("fcapi_release_work_id_idx", "work_id"),
             ("fcapi_release_legacy_rev_idx", "legacy_rev"),
-            ("fcapi_release_legacy_work_ident_idx", "legacy_work_ident"),
             ("fcapi_release_source_idx", "source"),
             ("fcapi_release_updated_idx", "updated"),
-            ("fcapi_release_work_id_idx", "work_id"),
-            ("fcapi_release_container_id_idx", "container_id"),
     ]
     for index, _ in indices:
         drop_index(index)
 
-    sql = f"""
-      COPY fcapi_release (
-        legacy_ident, legacy_rev, legacy_work_ident, legacy_container_ident, extra, source, title,
-        original_title, subtitle, release_type, release_stage, release_date, release_year, volume,
-        issue, pages, number, version, publisher, language, license_slug, withdrawn_status, legacy_doi,
-        legacy_pmid, legacy_pmcid, legacy_wikidata_qid, legacy_core_id, refs)
-      FROM '{RELEASES_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
-    """
-    out, err = psql(sql, db_name=NEW_DB)
-    DBOS.logger.info(f"releases: {out.strip()}")
-
-    copied = copy_result_to_int(out)
-
-    DBOS.logger.info("restoring release foreign keys")
-
-    sql = f"""
-    WITH chunk AS (
-      SELECT
-        r.ctid,
-        r.legacy_work_ident,
-        r.legacy_container_ident
-      FROM fcapi_release AS r
-      WHERE work_id IS NULL
-      FOR UPDATE LIMIT {CHUNKED_UPDATE_SIZE})
-    UPDATE fcapi_release r
-    SET
-      work_id = fw.id,
-      container_id = fco.id
-    FROM chunk
-    JOIN fcapi_work fw ON fw.legacy_ident = chunk.legacy_work_ident
-    FULL OUTER JOIN fcapi_container fco ON fco.legacy_ident = chunk.legacy_container_ident
-    WHERE r.ctid = chunk.ctid
-    """
-    chunked_update(sql, copied)
+    count = simple_restore(table)
 
     DBOS.logger.info("restoring release indices")
     for index, column in indices:
         create_index("fcapi_release", index, column)
 
-    # TODO restore have to not null work_id
-
-    return copied
+    return count
 
 @DBOS.step()
 def restore_release_extid():
@@ -747,19 +711,18 @@ def restore_webcapture_cdx():
 @app.get("/restore")
 @DBOS.workflow()
 def restore_workflow():
-    ensure_psql()
-    restore_containers()
-    restore_works()
-    restore_creators()
-    restore_releases()
-    restore_release_extid()
-    restore_release_abstract()
-    restore_release_contrib()
-    restore_release_ref()
-    restore_files()
-    restore_file_url()
-    restore_filesets()
-    restore_fileset_file()
-    restore_webcaptures()
-    restore_webcapture_url()
-    restore_webcapture_cdx()
+    simple_restore("container")
+    simple_restore("creator")
+    restore_work()
+    #restore_releases()
+    #restore_release_extid()
+    #restore_release_abstract()
+    #restore_release_contrib()
+    #restore_release_ref()
+    #restore_files()
+    #restore_file_url()
+    #restore_filesets()
+    #restore_fileset_file()
+    #restore_webcaptures()
+    #restore_webcapture_url()
+    #restore_webcapture_cdx()

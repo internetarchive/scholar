@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 from django.db.models.functions import Now
 
@@ -17,6 +18,8 @@ class Entity(models.Model):
     catalog (for example, to see what to index or re-index in scholar's
     elasticsearch).
     """
+    # what used to be ident_id in the legacy DB
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created = models.DateTimeField(db_default=Now())
     updated = models.DateTimeField(db_default=Now(), auto_now=True)
     source = models.CharField(
@@ -30,6 +33,8 @@ class Entity(models.Model):
     extra = models.JSONField(
             help_text="arbitrary storage for additional key/value data found in upstream sources",
             null=True, blank=True)
+    # TODO will I want an index on this?
+    legacy_rev = models.UUIDField(default=uuid.uuid4, editable=False)
 
     class Meta:
         abstract = True
@@ -38,6 +43,8 @@ class Entity(models.Model):
                              name="%(app_label)s_%(class)s_updated_idx"),
                 models.Index(fields=["source"],
                              name="%(app_label)s_%(class)s_source_idx"),
+                models.Index(fields=["legacy_rev"],
+                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
                 ]
 
 
@@ -87,9 +94,6 @@ class Container(Entity):
             help_text="ID from the wikidata project. See https://www.wikidata.org/wiki/Wikidata:Identifiers",
             null=True, blank=True)
 
-    # TODO temporary field for importing
-    legacy_ident = models.UUIDField()
-
     class Meta(Entity.Meta):
         indexes = Entity.Meta.indexes + [
                 models.Index(fields=["issnl"],
@@ -100,8 +104,6 @@ class Container(Entity):
                              name="%(app_label)s_%(class)s_issnp_idx"),
                 models.Index(fields=["wikidata_qid"],
                              name="%(app_label)s_%(class)s_wikidata_qid_idx"),
-                models.Index(fields=["legacy_ident"],
-                             name="%(app_label)s_%(class)s_legacy_ident_idx"),
                 ]
 
 
@@ -115,14 +117,9 @@ class Work(Entity):
 
     A work entity has no columns of its own; a work is really just an ID.
     """
-    # TODO temporary field for importing
-    legacy_ident = models.UUIDField()
 
     class Meta(Entity.Meta):
-        indexes = Entity.Meta.indexes + [
-                models.Index(fields=["legacy_ident"],
-                             name="%(app_label)s_%(class)s_legacy_ident_idx"),
-                ]
+        pass
 
 
 class Creator(Entity):
@@ -144,14 +141,9 @@ class Creator(Entity):
     orcid = models.CharField(
             help_text="external, unique identifier of a human author. See https://orcid.org/",
             unique=True, null=True, blank=True)
-    # TODO temporary field for importing
-    legacy_ident = models.UUIDField()
 
     class Meta(Entity.Meta):
-        indexes = Entity.Meta.indexes + [
-                models.Index(fields=["legacy_ident"],
-                             name="%(app_label)s_%(class)s_legacy_ident_idx"),
-                ]
+        pass
 
 
 class Release(Entity):
@@ -302,10 +294,6 @@ class Release(Entity):
             help_text="a JSON blob describing the citations of this release.",
             null=True, blank=True)
     # TODO temporary fields for importing
-    legacy_ident = models.UUIDField()
-    legacy_rev = models.UUIDField()
-    legacy_work_ident = models.UUIDField()
-    legacy_container_ident = models.UUIDField()
     legacy_doi = models.CharField(blank=True, null=True)
     legacy_pmid = models.CharField(blank=True, null=True)
     legacy_pmcid = models.CharField(blank=True, null=True)
@@ -318,14 +306,6 @@ class Release(Entity):
                              name="%(app_label)s_%(class)s_work_id_idx"),
                 models.Index(fields=["container_id"],
                              name="%(app_label)s_%(class)s_container_id_idx"),
-                models.Index(fields=["legacy_ident"],
-                             name="%(app_label)s_%(class)s_legacy_ident_idx"),
-                models.Index(fields=["legacy_rev"],
-                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
-                models.Index(fields=["legacy_work_ident"],
-                             name="%(app_label)s_%(class)s_legacy_work_ident_idx"),
-                models.Index(fields=["legacy_container_ident"],
-                             name="%(app_label)s_%(class)s_legacy_container_ident_idx"),
                 ]
 
 class ReleaseExtId(models.Model):
@@ -350,15 +330,12 @@ class ReleaseExtId(models.Model):
         ("mag", "mag"),
         ])
     id_value = models.CharField()
-    legacy_release_rev = models.UUIDField()
 
     class Meta:
         indexes = [
                 # we need to quickly query by external value
                 models.Index(fields=["id_type", "id_value"],
                              name="extid_lookup_idx"),
-                models.Index(fields=["legacy_release_rev"],
-                             name="%(app_label)s_%(class)s_legacy_release_rev_idx"),
                 ]
 
 
@@ -372,14 +349,11 @@ class ReleaseAbstract(models.Model):
             null=True, blank=True)
     sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
     content = models.TextField()
-    legacy_release_rev = models.UUIDField()
 
     class Meta:
         indexes = [
                 models.Index(fields=["sha1"],
                              name="%(app_label)s_%(class)s_sha1_idx"),
-                models.Index(fields=["legacy_release_rev"],
-                             name="%(app_label)s_%(class)s_legacy_release_rev_idx"),
                 ]
 
 
@@ -409,16 +383,6 @@ class ReleaseContrib(models.Model):
             help_text="Position in list of contributors")
     extra = models.JSONField(
             help_text="JSON blob for additional metadata")
-    legacy_release_rev = models.UUIDField()
-    legacy_creator_ident = models.UUIDField()
-
-    class Meta:
-        indexes = [
-                models.Index(fields=["legacy_release_rev"],
-                             name="%(app_label)s_%(class)s_legacy_release_rev_idx"),
-                models.Index(fields=["legacy_creator_ident"],
-                             name="%(app_label)s_%(class)s_legacy_creator_ident_idx"),
-                ]
 
 
 class ReleaseRef(models.Model):
@@ -434,16 +398,6 @@ class ReleaseRef(models.Model):
             on_delete=models.CASCADE,
             help_text="Release referenced by this citation",
             related_name="target")
-    legacy_release_rev = models.UUIDField()
-    legacy_target_release_ident = models.UUIDField()
-
-    class Meta:
-        indexes = [
-                models.Index(fields=["legacy_release_rev"],
-                             name="%(app_label)s_%(class)s_legacy_release_rev_idx"),
-                models.Index(fields=["legacy_target_release_ident"],
-                             name="%(app_label)s_%(class)s_legacy_target_release_ident_idx"),
-                ]
 
 
 class BaseFile(models.Model):
@@ -475,18 +429,9 @@ class ReleaseFile(Entity, BaseFile):
     A file associated with a release. Actual file content is stored in seaweedfs.
     """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    # TODO temporary fields for importing
-    legacy_rev = models.UUIDField()
-    legacy_release_ident = models.UUIDField()
 
     class Meta(Entity.Meta, BaseFile.Meta):
-        indexes = Entity.Meta.indexes + BaseFile.Meta.indexes + [
-                models.Index(fields=["legacy_rev"],
-                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
-                models.Index(fields=["legacy_release_ident"],
-                             name="%(app_label)s_%(class)s_legacy_release_ident_idx"),
-                ]
-
+        indexes = Entity.Meta.indexes + BaseFile.Meta.indexes
 
 class FileURL(models.Model):
     """
@@ -503,42 +448,31 @@ class FileURL(models.Model):
         ("dweb", "content on a distributed or decentralized web protocol like dat:// or ipfs://"),
         ], default="web")
     url = models.URLField(max_length=URL_MAX_LENGTH)
-    legacy_file_rev = models.UUIDField()
 
-    class Meta:
-        indexes = [
-                models.Index(fields=["legacy_file_rev"],
-                             name="%(app_label)s_%(class)s_legacy_file_rev_idx"),
-                ]
 
 class Fileset(Entity):
     """
     A set of files that should be associated with a release, possibly figures or datasets.
     """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    # TODO temporary fields for importing
-    legacy_rev = models.UUIDField()
 
     class Meta(Entity.Meta):
-        indexes = Entity.Meta.indexes + [
-                models.Index(fields=["legacy_rev"],
-                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
-                ]
+        pass
 
 
-class FilesetFile(Entity, BaseFile):
+class FilesetFile(BaseFile):
     """
     A file within a fileset.
     """
     fileset = models.ForeignKey(Fileset, on_delete=models.CASCADE)
-    legacy_release_ident = models.UUIDField()
     path_name = models.TextField(blank=True, null=True)
+    extra = models.JSONField(
+            help_text="arbitrary storage for additional key/value data found in upstream sources",
+            null=True, blank=True)
 
-    class Meta(Entity.Meta, BaseFile.Meta):
-        indexes = Entity.Meta.indexes + BaseFile.Meta.indexes + [
-                models.Index(fields=["legacy_release_ident"],
-                             name="%(app_label)s_%(class)s_legacy_release_ident_idx"),
-                ]
+    class Meta(BaseFile.Meta):
+        pass
+
 
 class FilesetURL(models.Model):
     """
@@ -557,13 +491,7 @@ class FilesetURL(models.Model):
         ("archive-base", "base URL whence file paths can be appended to fetch individual files"),
         ], default="web")
     url = models.URLField(max_length=URL_MAX_LENGTH)
-    legacy_fileset_rev = models.UUIDField()
 
-    class Meta:
-        indexes = [
-                models.Index(fields=["legacy_fileset_rev"],
-                             name="%(app_label)s_%(class)s_legacy_fileset_rev_idx"),
-                ]
 
 class Webcapture(Entity):
     """
@@ -571,18 +499,11 @@ class Webcapture(Entity):
     """
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
     original_url = models.URLField(
-            max_length=URL_MAX_LENGTH,
-            help_text="base URL of the resource.")
-    captured = models.DateTimeField(
-            help_text="date and time of capture")
-    # TODO temporary fields for importing
-    legacy_rev = models.UUIDField()
+            max_length=URL_MAX_LENGTH, help_text="base URL of the resource.")
+    captured = models.DateTimeField(help_text="date and time of capture")
 
     class Meta(Entity.Meta):
-        indexes = Entity.Meta.indexes + [
-                models.Index(fields=["legacy_rev"],
-                             name="%(app_label)s_%(class)s_legacy_rev_idx"),
-                ]
+        pass
 
 class WebcaptureCDX(models.Model):
     """
@@ -597,13 +518,7 @@ class WebcaptureCDX(models.Model):
     sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
     sha256 = models.CharField(max_length=SHA256_MAX_LENGTH)
     size_bytes = models.BigIntegerField()
-    legacy_webcapture_rev = models.UUIDField()
 
-    class Meta:
-        indexes = [
-                models.Index(fields=["legacy_webcapture_rev"],
-                             name="%(app_label)s_%(class)s_legacy_webcapture_rev_idx"),
-                ]
 
 class WebcaptureURL(models.Model):
     """
@@ -620,10 +535,3 @@ class WebcaptureURL(models.Model):
         ("webarchive", "webarchive"),
         ])
     url = models.URLField(max_length=URL_MAX_LENGTH)
-    legacy_webcapture_rev = models.UUIDField()
-
-    class Meta:
-        indexes = [
-                models.Index(fields=["legacy_webcapture_rev"],
-                             name="%(app_label)s_%(class)s_legacy_webcapture_rev_idx"),
-                ]

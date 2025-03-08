@@ -50,7 +50,6 @@ def copy_result_to_int(copy_output: str) -> int:
         os._exit(1)
     return out
 
-# TODO switch to psycopg
 def psql(sql: str, db_name="postgres") -> Tuple[str, str]:
     """
     Execute SQL by passing it to psql on STDIN
@@ -84,15 +83,16 @@ def ensure_psql():
         bail(f"unexpected psql stdout: {out}")
     DBOS.logger.info("ensured psql")
 
-OUTS = {
-        "containers": os.path.join(CWD, "containers.tsv"),
-        }
+
+def outfile(table: str) -> str:
+    return os.path.join(CWD, f"{table}.tsv")
 
 DUMP_SQL = {
-        "containers": f"""
-                COPY (
-                  SELECT
-                    ci.id AS legacy_ident,
+        "container": f"""
+            COPY (
+                SELECT
+                    ci.id,
+                    ci.rev_id as legacy_rev,
                     cr.name,
                     to_json(cr.extra_json) AS extra,
                     cr.container_type,
@@ -112,6 +112,277 @@ DUMP_SQL = {
                     cr.container_type != 'test'
                 ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
+        "creator": f"""
+             COPY (
+               SELECT
+                 ci.id,
+                 ci.rev_id as legacy_rev,
+                 cr.display_name,
+                 cr.given_name,
+                 cr.surname,
+                 cr.orcid,
+                 '{SOURCE}' AS source,
+                 to_json(cr.extra_json) AS extra
+               FROM creator_ident ci
+               JOIN creator_rev cr ON ci.rev_id = cr.id
+               WHERE
+                 ci.is_live = true
+                 AND
+                 ci.redirect_id IS NULL
+               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "work": f"""
+            COPY (
+              SELECT
+                wi.id,
+                wi.rev_id AS legacy_rev,
+                '{SOURCE}' AS source,
+                to_json(wr.extra_json) AS extra
+              FROM work_ident wi
+              JOIN work_rev wr ON wi.rev_id = wr.id
+              WHERE
+                wi.is_live = true
+              AND
+                wi.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "release": f"""
+            COPY (
+              SELECT
+                ri.id,
+                rr.id AS legacy_rev,
+
+                to_json(rr.extra_json) AS extra,
+                '{SOURCE}' AS source,
+                rr.title,
+                rr.original_title,
+                rr.subtitle,
+                rr.release_type,
+                rr.release_stage,
+                rr.release_date,
+                rr.release_year,
+                rr.volume,
+                rr.issue,
+                rr.pages,
+                rr.number,
+                rr.version,
+                rr.publisher,
+                rr.language,
+                rr.license_slug,
+                rr.withdrawn_status,
+
+                rr.work_ident_id AS work_id,
+                rr.container_ident_id AS container_id,
+                rr.doi as legacy_doi,
+                rr.pmid as legacy_pmid,
+                rr.pmcid as legacy_pmcid,
+                rr.wikidata_qid as legacy_wikidata_qid,
+                rr.core_id as legacy_core_id,
+
+                (SELECT to_json(refs_json)
+                 FROM refs_blob rb
+                 WHERE rb.sha1 = rr.refs_blob_sha1) AS refs
+              FROM
+                release_ident ri
+              JOIN release_rev rr ON ri.rev_id = rr.id
+              WHERE ri.is_live = true
+              AND ri.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "releaseextid": """
+            COPY (
+              SELECT
+                ri.id as release_id,
+                ei.extid_type AS id_type,
+                ei.value AS id_value
+              FROM release_ident ri
+              JOIN release_rev_extid ei ON ri.rev_id = ei.release_rev
+              WHERE ri.is_live = true
+              AND ri.redirect_id IS NULL
+            ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "releaseabstract": """
+            COPY (
+              SELECT
+                ri.id as release_id,
+                ra.abstract_sha1 AS sha1,
+                ra.mimetype,
+                ra.lang AS language,
+                (SELECT content
+                 FROM abstracts a
+                 WHERE ra.abstract_sha1 = a.sha1)
+              FROM release_ident ri
+              JOIN release_rev_abstract ra ON ri.rev_id = ra.release_rev
+              WHERE ri.is_live = true
+              AND ri.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "releasecontrib": """
+            COPY (
+              SELECT
+                ri.id as release_id,
+                rc.raw_name,
+                rc.given_name,
+                rc.surname,
+                rc.creator_ident_id AS creator_id,
+                rc.role,
+                rc.raw_affiliation,
+                rc.index_val AS position,
+                to_json(rc.extra_json) AS extra
+              FROM release_ident ri
+              JOIN release_contrib rc ON ri.rev_id = rc.release_rev
+              WHERE ri.is_live = true
+              AND ri.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "releaseref": """
+            COPY (
+              SELECT
+                rr.index_val AS position,
+                ri.id as release_id,
+                rr.target_release_ident_id AS target_release_id,
+              FROM release_ident ri
+              JOIN release_ref rr ON ri.rev_id = rr.release_rev
+              WHERE ri.is_live = true
+              AND ri.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "file": f"""
+            COPY (
+              SELECT
+                fi.rev_id AS legacy_rev,
+                fi.id,
+                '{SOURCE}' as source,
+                fr.size_bytes,
+                fr.sha1,
+                fr.sha256,
+                fr.mimetype,
+                fr.md5,
+                to_json(f.extra_json) AS extra,
+                (SELECT target_release_ident_id
+                 FROM file_rev_release frr
+                 WHERE frr.file_rev = fr.id
+                ) AS release_id
+              FROM
+                file_ident fi
+              JOIN file_rev fr ON fi.rev_id = fr.id
+              WHERE fi.is_live = true
+              AND fi.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "fileurl": """
+            COPY (
+              SELECT
+                fu.rel,
+                fu.url,
+                fi.id AS file_id
+              FROM
+                file_ident fi
+              JOIN file_rev_url fu ON fi.rev_id = fu.file_rev
+              WHERE fi.is_live = true
+              AND fi.redirect_id IS NULL
+              ) TO '{FILES_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "fileset": f"""
+            COPY (
+              SELECT
+                fi.rev_id AS legacy_rev,
+                fi.id,
+                to_json(f.extra_json) AS extra,
+                '{SOURCE}' AS source,
+                (SELECT
+                  target_release_ident_id
+                 FROM fileset_rev_release frr
+                 WHERE frr.fileset_rev = fi.rev_id
+                ) AS release_id
+              FROM
+                fileset_ident fi
+              JOIN fileset_rev fr ON fi.rev_id = fr.id
+              WHERE fi.is_live = true
+              AND fi.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "fileseturl": """
+            COPY (
+              SELECT
+                fi.id as fileset_id,
+                fu.rel,
+                fu.url
+              FROM
+                fileset_ident fi
+              JOIN fileset_rev_url fu ON fi.rev_id = fu.fileset_rev
+              WHERE fi.is_live = true
+              AND fi.redirect_id IS NULL
+              ) TO '{FILESETS_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "filesetfile": """
+            COPY (
+              SELECT
+                fi.id as fileset_id,
+                ff.path_name,
+                '{SOURCE}' AS source,
+                ff.size_bytes,
+                ff.md5,
+                ff.sha1,
+                ff.sha256,
+                ff.mimetype,
+                to_json(ff.extra_json) AS extra
+              FROM
+                fileset_ident fi
+              JOIN fileset_rev_file ff ON fi.rev_id = ff.fileset_rev
+              WHERE fi.is_live = true
+              AND fi.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "webcapture": f"""
+            COPY (
+              SELECT
+                wi.rev_id AS legacy_rev,
+                wi.id,
+                '{SOURCE}' AS source,
+                to_json(wr.extra_json) AS extra,
+                wr.original_url,
+                wr.timestamp AS captured,
+                (SELECT target_release_ident_id
+                 FROM webcapture_rev_release
+                 WHERE webcapture_rev = wr.id) AS release_id
+              FROM webcapture_ident wi
+              JOIN webcapture_rev wr ON wi.rev_id = wr.id
+              WHERE wi.is_live = true
+              AND wi.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "webcaptureurl": """
+            COPY (
+              SELECT
+                wi.id AS webcapture_id,
+                wu.rel,
+                wu.url
+              FROM webcapture_ident wi
+              JOIN webcapture_rev_url wu ON wu.webcapture_rev = wi.rev_id
+              WHERE wi.is_live = true
+              AND wi.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "webcapturecdx": """
+            COPY (
+              SELECT
+                wi.id AS webcapture_id,
+                wc.surt,
+                wc.url,
+                wc.timestamp AS captured,
+                wc.url,
+                wc.mimetype,
+                wc.status_code,
+                wc.sha1,
+                wc.sha256,
+                wc.size_bytes
+              FROM webcapture_ident wi
+              JOIN webcapture_rev_cdx wc ON wc.webcapture_rev = wi.rev_id
+              WHERE wi.is_live = true
+              AND wi.redirect_id IS NULL
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
         }
 
 @DBOS.step()
@@ -122,7 +393,7 @@ def dump(table: str) -> int:
     try:
         with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
             with conn.cursor() as cur:
-                 with open(OUTS[table], 'wb') as f:
+                 with open(outfile(table), 'wb') as f:
                     with cur.copy(sql) as copy:
                         for row in copy:
                             f.write(row)
@@ -132,408 +403,15 @@ def dump(table: str) -> int:
     DBOS.logger.info(f"dumped {count} {table}")
     return count
 
-@DBOS.step()
-def dump_creators() -> int:
-    DBOS.logger.info("dumping creators")
-    sql = f"""
-    COPY (
-      SELECT
-        ci.id AS legacy_ident,
-        cr.display_name,
-        cr.given_name,
-        cr.surname,
-        cr.orcid,
-        '{SOURCE}' AS source,
-        to_json(cr.extra_json) AS extra
-      FROM creator_ident ci
-      JOIN creator_rev cr ON ci.rev_id = cr.id
-      WHERE
-        ci.is_live = true
-        AND
-        ci.redirect_id IS NULL
-      ) TO '{CREATORS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);"""
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"creators: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_works() -> str:
-    DBOS.logger.info("dumping works")
-    sql = f"""
-    COPY (
-      SELECT
-        wi.id AS legacy_ident,
-        '{SOURCE}' AS source,
-        to_json(wr.extra_json) AS extra
-      FROM work_ident wi
-      JOIN work_rev wr ON wi.rev_id = wr.id
-      WHERE
-        wi.is_live = true
-      AND
-        wi.redirect_id IS NULL
-      ) TO '{WORKS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"works: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_releases() -> int:
-    DBOS.logger.info("dumping releases")
-    sql = f"""
-    COPY (
-      SELECT
-        ri.id AS legacy_ident,
-        rr.id AS legacy_rev,
-
-        to_json(rr.extra_json) AS extra,
-        '{SOURCE}' AS source,
-        rr.title,
-        rr.original_title,
-        rr.subtitle,
-        rr.release_type,
-        rr.release_stage,
-        rr.release_date,
-        rr.release_year,
-        rr.volume,
-        rr.issue,
-        rr.pages,
-        rr.number,
-        rr.version,
-        rr.publisher,
-        rr.language,
-        rr.license_slug,
-        rr.withdrawn_status,
-
-        rr.work_ident_id AS legacy_work_ident,
-        rr.container_ident_id AS legacy_container_ident,
-        rr.doi as legacy_doi,
-        rr.pmid as legacy_pmid,
-        rr.pmcid as legacy_pmcid,
-        rr.wikidata_qid as legacy_wikidata_qid,
-        rr.core_id as legacy_core_id,
-
-        (SELECT to_json(refs_json)
-         FROM refs_blob rb
-         WHERE rb.sha1 = rr.refs_blob_sha1) AS refs
-      FROM
-        release_ident ri
-      JOIN release_rev rr ON ri.rev_id = rr.id
-      WHERE ri.is_live = true
-      AND ri.redirect_id IS NULL
-      ) TO '{RELEASES_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"releases: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_release_extid() -> int:
-    DBOS.logger.info("dumping release_extid")
-    sql = f"""
-    COPY (
-      SELECT
-        ei.release_rev AS legacy_release_rev,
-        ei.extid_type AS id_type,
-        ei.value AS id_value
-      FROM release_ident ri
-      JOIN release_rev_extid ei ON ri.rev_id = ei.release_rev
-      WHERE ri.is_live = true
-      AND ri.redirect_id IS NULL
-    ) TO '{RELEASES_EXTID_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"extid: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_release_abstract():
-    DBOS.logger.info("dumping abstracts")
-    sql = f"""
-    COPY (
-      SELECT
-        ra.release_rev AS legacy_release_rev,
-        ra.abstract_sha1 AS sha1,
-        ra.mimetype,
-        ra.lang AS language,
-        (SELECT content
-         FROM abstracts a
-         WHERE ra.abstract_sha1 = a.sha1)
-      FROM release_ident ri
-      JOIN release_rev_abstract ra ON ri.rev_id = ra.release_rev
-      WHERE ri.is_live = true
-      AND ri.redirect_id IS NULL
-      ) TO '{RELEASES_ABSTRACT_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"abstracts: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_release_contrib():
-    DBOS.logger.info("dumping contribs")
-    sql = f"""
-    COPY (
-      SELECT
-        rc.release_rev AS legacy_release_rev,
-        rc.raw_name,
-        rc.given_name,
-        rc.surname,
-        rc.creator_ident_id AS legacy_creator_ident,
-        rc.role,
-        rc.raw_affiliation,
-        rc.index_val AS position,
-        to_json(rc.extra_json) AS extra
-      FROM release_ident ri
-      JOIN release_contrib rc ON ri.rev_id = rc.release_rev
-      WHERE ri.is_live = true
-      AND ri.redirect_id IS NULL
-      ) TO '{RELEASES_ABSTRACT_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"contribs: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_release_ref():
-    DBOS.logger.info("dumping refs")
-    sql = f"""
-    COPY (
-      SELECT
-        rr.index_val AS position,
-        rr.release_rev AS legacy_release_rev,
-        rr.target_release_ident_id AS legacy_target_release_ident
-      FROM release_ident ri
-      JOIN release_ref rr ON ri.rev_id = rr.release_rev
-      WHERE ri.is_live = true
-      AND ri.redirect_id IS NULL
-      ) TO '{RELEASES_REF_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"refs: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_files():
-    DBOS.logger.info("dumping files")
-    sql = f"""
-    COPY (
-      SELECT
-        fi.rev_id AS legacy_rev,
-        fi.id AS legacy_ident,
-        '{SOURCE}' as source,
-        fr.size_bytes,
-        fr.sha1,
-        fr.sha256,
-        fr.mimetype,
-        fr.md5,
-        to_json(f.extra_json) AS extra,
-        (SELECT target_release_ident_id
-         FROM file_rev_release frr
-         WHERE frr.file_rev = fr.id
-        ) AS legacy_release_ident
-      FROM
-        file_ident fi
-      JOIN file_rev fr ON fi.rev_id = fr.id
-      WHERE fi.is_live = true
-      AND fi.redirect_id IS NULL
-      ) TO '{RELEASES_REF_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"files: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_file_url():
-    DBOS.logger.info("dumping file urls")
-    sql = f"""
-    COPY (
-      SELECT
-        fu.rel,
-        fu.url,
-        fi.rev_id AS legacy_file_rev
-      FROM
-        file_ident fi
-      JOIN file_rev_url fu ON fi.rev_id = fu.file_rev
-      WHERE fi.is_live = true
-      AND fi.redirect_id IS NULL
-      ) TO '{FILES_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"file urls: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_filesets():
-    DBOS.logger.info("dumping filesets")
-    sql = f"""
-    COPY (
-      SELECT
-        fi.rev_id AS legacy_rev,
-        to_json(f.extra_json) AS extra,
-        '{SOURCE}' AS source,
-        (SELECT
-          target_release_ident_id
-         FROM fileset_rev_release frr
-         WHERE frr.fileset_rev = fi.rev_id
-        ) AS legacy_release_ident
-      FROM
-        fileset_ident fi
-      JOIN fileset_rev fr ON fi.rev_id = fr.id
-      WHERE fi.is_live = true
-      AND fi.redirect_id IS NULL
-      ) TO '{FILESETS_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"filesets: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_fileset_url():
-    DBOS.logger.info("dumping fileset urls")
-    sql = f"""
-    COPY (
-      SELECT
-        fi.rev_id AS legacy_fileset_rev,
-        fu.rel,
-        fu.url
-      FROM
-        fileset_ident fi
-      JOIN fileset_rev_url fu ON fi.rev_id = fu.fileset_rev
-      WHERE fi.is_live = true
-      AND fi.redirect_id IS NULL
-      ) TO '{FILESETS_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"fileset urls: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_fileset_file():
-    DBOS.logger.info("dumping fileset files")
-    sql = f"""
-    COPY (
-      SELECT
-        fi.rev_id AS legacy_fileset_rev,
-        ff.path_name,
-        '{SOURCE}' AS source,
-        ff.size_bytes,
-        ff.md5,
-        ff.sha1,
-        ff.sha256,
-        ff.mimetype,
-        to_json(ff.extra_json) AS extra,
-      FROM
-        fileset_ident fi
-      JOIN fileset_rev_file ff ON fi.rev_id = ff.fileset_rev
-      WHERE fi.is_live = true
-      AND fi.redirect_id IS NULL
-      ) TO '{FILESETS_FILE_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"fileset files: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_webcaptures():
-    DBOS.logger.info("dumping webcaptures")
-    sql = f"""
-    COPY (
-      SELECT
-        wi.rev_id AS legacy_rev,
-        wi.id AS legacy_ident,
-        '{SOURCE}' AS source,
-        to_json(wr.extra_json) AS extra,
-        wr.original_url,
-        wr.timestamp AS captured,
-        (SELECT target_release_ident_id
-         FROM webcapture_rev_release
-         WHERE webcapture_rev = wr.id) AS legacy_release_id
-      FROM webcapture_ident wi
-      JOIN webcapture_rev wr ON wi.rev_id = wr.id
-      WHERE wi.is_live = true
-      AND wi.redirect_id IS NULL
-      ) TO '{WEBCAPTURES_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"webcaptures: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_webcapture_url():
-    DBOS.logger.info("dumping webcapture urls")
-    sql = f"""
-    COPY (
-      SELECT
-        wu.webcapture_rev AS legacy_webcapture_rev,
-        wu.rel,
-        wu.url
-      FROM webcapture_ident wi
-      JOIN webcapture_rev_url wu ON wu.webcapture_rev = wi.rev_id
-      WHERE wi.is_live = true
-      AND wi.redirect_id IS NULL
-      ) TO '{WEBCAPTURES_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"webcapture urls: {out.strip()}")
-    return copy_result_to_int(out)
-
-@DBOS.step()
-def dump_webcapture_cdx():
-    DBOS.logger.info("dumping webcapture cdx")
-    sql = f"""
-    COPY (
-      SELECT
-        wc.webcapture_rev AS legacy_webcapture_rev,
-        wc.surt,
-        wc.url,
-        wc.timestamp AS captured,
-        wc.url,
-        wc.mimetype,
-        wc.status_code,
-        wc.sha1,
-        wc.sha256,
-        wc.size_bytes
-      FROM webcapture_ident wi
-      JOIN webcapture_rev_cdx wc ON wc.webcapture_rev = wi.rev_id
-      WHERE wi.is_live = true
-      AND wi.redirect_id IS NULL
-      ) TO '{WEBCAPTURES_CDX_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
-    """
-    out, err = psql(sql, db_name=OLD_DB)
-    DBOS.logger.info(f"webcapture cdx: {out.strip()}")
-    return copy_result_to_int(out)
-
 @app.get("/dump")
 @DBOS.workflow()
 def dump_workflow():
-    dump("containers")
-    #ensure_psql()
-    #queue = Queue("dump_queue", concurrency=10, worker_concurrency=2)
-    #handles = []
-    #dumpers = [
-    #    dump_containers,
-    #    dump_creators,
-    #    dump_works,
-    #    dump_releases,
-    #    dump_release_extid,
-    #    dump_release_abstract,
-    #    dump_release_contrib,
-    #    dump_release_ref,
-    #    dump_files,
-    #    dump_file_url,
-    #    dump_filesets,
-    #    dump_fileset_file,
-    #    dump_webcaptures,
-    #    dump_webcapture_url,
-    #    dump_webcapture_cdx,
-    #]
-    #for dumper in dumpers:
-    #    handles.append(queue.enqueue(dumper))
+    queue = Queue("dump_queue", concurrency=8)
+    handles = []
+    for k in DUMP_SQL:
+        handles.append(queue.enqueue(dump, k))
 
-    #return [handle.get_result() for handle in handles]
+    return [handle.get_result() for handle in handles]
 
 def drop_index(name: str):
     """drop a single named index from the new fatcat db"""

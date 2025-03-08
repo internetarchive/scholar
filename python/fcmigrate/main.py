@@ -88,7 +88,7 @@ def outfile(table: str) -> str:
     return os.path.join(CWD, f"{table}.tsv")
 
 DUMP_SQL = {
-        "container": f"""
+        "container": """
             COPY (
                 SELECT
                     ci.id,
@@ -101,7 +101,7 @@ DUMP_SQL = {
                     cr.issne,
                     cr.issnp,
                     cr.wikidata_qid,
-                    '{SOURCE}' AS source
+                    %s AS source
                   FROM container_ident ci
                   JOIN container_rev cr ON ci.rev_id = cr.id
                   WHERE
@@ -112,7 +112,7 @@ DUMP_SQL = {
                     cr.container_type != 'test'
                 ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "creator": f"""
+        "creator": """
              COPY (
                SELECT
                  ci.id,
@@ -121,7 +121,7 @@ DUMP_SQL = {
                  cr.given_name,
                  cr.surname,
                  cr.orcid,
-                 '{SOURCE}' AS source,
+                 %s AS source,
                  to_json(cr.extra_json) AS extra
                FROM creator_ident ci
                JOIN creator_rev cr ON ci.rev_id = cr.id
@@ -131,12 +131,12 @@ DUMP_SQL = {
                  ci.redirect_id IS NULL
                ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "work": f"""
+        "work": """
             COPY (
               SELECT
                 wi.id,
                 wi.rev_id AS legacy_rev,
-                '{SOURCE}' AS source,
+                %s AS source,
                 to_json(wr.extra_json) AS extra
               FROM work_ident wi
               JOIN work_rev wr ON wi.rev_id = wr.id
@@ -146,14 +146,14 @@ DUMP_SQL = {
                 wi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "release": f"""
+        "release": """
             COPY (
               SELECT
                 ri.id,
                 rr.id AS legacy_rev,
 
                 to_json(rr.extra_json) AS extra,
-                '{SOURCE}' AS source,
+                %s AS source,
                 rr.title,
                 rr.original_title,
                 rr.subtitle,
@@ -247,12 +247,12 @@ DUMP_SQL = {
               AND ri.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "file": f"""
+        "file": """
             COPY (
               SELECT
                 fi.rev_id AS legacy_rev,
                 fi.id,
-                '{SOURCE}' as source,
+                %s as source,
                 fr.size_bytes,
                 fr.sha1,
                 fr.sha256,
@@ -283,13 +283,13 @@ DUMP_SQL = {
               AND fi.redirect_id IS NULL
               ) TO '{FILES_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "fileset": f"""
+        "fileset": """
             COPY (
               SELECT
                 fi.rev_id AS legacy_rev,
                 fi.id,
                 to_json(f.extra_json) AS extra,
-                '{SOURCE}' AS source,
+                %s AS source,
                 (SELECT
                   target_release_ident_id
                  FROM fileset_rev_release frr
@@ -334,12 +334,12 @@ DUMP_SQL = {
               AND fi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "webcapture": f"""
+        "webcapture": """
             COPY (
               SELECT
                 wi.rev_id AS legacy_rev,
                 wi.id,
-                '{SOURCE}' AS source,
+                %s AS source,
                 to_json(wr.extra_json) AS extra,
                 wr.original_url,
                 wr.timestamp AS captured,
@@ -392,9 +392,8 @@ def dump(table: str) -> int:
     sql = DUMP_SQL[table]
     try:
         with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                 with open(outfile(table), 'wb') as f:
-                    with cur.copy(sql) as copy:
+            with conn.cursor() as cur, open(outfile(table), 'wb') as f:
+                    with cur.copy(sql, (SOURCE,)) as copy:
                         for row in copy:
                             f.write(row)
                             count += 1

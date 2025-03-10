@@ -179,7 +179,7 @@ DUMP_SQL = {
               AND ri.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "file": """
+        "releasefile": """
             COPY (
               SELECT
                 fi.rev_id AS legacy_rev,
@@ -303,7 +303,6 @@ DUMP_SQL = {
                 wc.surt,
                 wc.url,
                 wc.timestamp AS captured,
-                wc.url,
                 wc.mimetype,
                 wc.status_code,
                 wc.sha1,
@@ -404,6 +403,38 @@ RESTORE_SQL = {
             COPY fcapi_releaseref (position, release_id, target_release_id)
             FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
         """,
+        "releasefile": """
+            COPY fcapi_releasefile (legacy_rev, id, source, size_bytes, sha1, sha256,
+            mimetype, md5, extra, release_id)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        "fileurl": """
+            COPY fcapi_fileurl (rel, url, file_id)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
+        """,
+        "fileset": """
+            COPY fcapi_fileset (legacy_rev, id, extra, source, release_id)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        "filesetfile": """
+            COPY fcapi_filesetfile (fileset_id, path_name, source, size_bytes, md5, sha1,
+                sha256, mimetype, extra)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        "webcapture": """
+            COPY fcapi_webcapture (legacy_rev, id, source, extra, original_url, captured,
+                release_id)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        "webcaptureurl": """
+            COPY fcapi_webcaptureurl (webcapture_id, rel, url)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
+        """,
+        "webcapturecdx": """
+            COPY fcapi_webcapturecdx (webcapture_id, surt, url, captured, mimetype, status_code,
+                sha1, sha256, size_bytes)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
+        """,
         }
 
 @DBOS.step()
@@ -467,39 +498,27 @@ def restore_release() -> int:
     return count
 
 @DBOS.step()
-def restore_files():
-    # TODO
-    bail()
+def restore_releasefile():
+    table = "files"
+    indices = [
+            # TODO will i be ruined by pkey,fkey indices?
+            ("fcapi_releasefile_legacy_rev_idx", f"fcapi_{table}", "legacy_rev"),
+            ("fcapi_releasefile_md5_idx", f"fcapi_{table}", "md5"),
+            ("fcapi_releasefile_sha1_idx", f"fcapi_{table}", "sha1"),
+            ("fcapi_releasefile_sha256_idx", f"fcapi_{table}", "sha256"),
+            ("fcapi_releasefile_source_idx", f"fcapi_{table}", "source"),
+            ("fcapi_releasefile_updated_idx", f"fcapi_{table}", "updated"),
+    ]
 
-@DBOS.step()
-def restore_file_url():
-    # TODO
-    bail()
+    DBOS.logger.info(f"dropping {table} indices")
+    drop_indices([idx[0] for idx in indices])
 
-@DBOS.step()
-def restore_filesets():
-    # TODO
-    bail()
+    count = simple_restore(table)
 
-@DBOS.step()
-def restore_fileset_file():
-    # TODO
-    bail()
+    DBOS.logger.info(f"restoring {table} indices")
+    create_indices(indices)
 
-@DBOS.step()
-def restore_webcaptures():
-    # TODO
-    bail()
-
-@DBOS.step()
-def restore_webcapture_url():
-    # TODO
-    bail()
-
-@DBOS.step()
-def restore_webcapture_cdx():
-    # TODO
-    bail()
+    return count
 
 @app.get("/restore")
 @DBOS.workflow()
@@ -512,10 +531,10 @@ def restore_workflow():
     simple_restore("releaseabstract")
     simple_restore("releasecontrib")
     simple_restore("releaseref")
-    #restore_files()
-    #restore_file_url()
-    #restore_filesets()
-    #restore_fileset_file()
-    #restore_webcaptures()
-    #restore_webcapture_url()
-    #restore_webcapture_cdx()
+    restore_releasefile()
+    simple_restore("fileurl")
+    simple_restore("fileset")
+    simple_restore("filesetfile")
+    simple_restore("webcapture")
+    simple_restore("webcaptureurl")
+    simple_restore("webcapturecdx")

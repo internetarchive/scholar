@@ -1,35 +1,14 @@
 import os
-import subprocess
-from math import ceil
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
 from fastapi import FastAPI
 from dbos import DBOS, Queue
 import psycopg
 
+CWD = os.getcwd()
+SOURCE = "legacy_import"
 OLD_DATABASE_URL="postgresql:///fatcat_prod?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
 NEW_DATABASE_URL="postgresql:///fatcat2?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
-
-SOURCE = "legacy_import"
-OLD_DB = "fatcat_prod"
-NEW_DB = "fatcat2"
-CHUNKED_UPDATE_SIZE = 50000000
-
-CWD = os.getcwd()
-
-RELEASES_OUT = os.path.join(CWD, "releases.tsv")
-RELEASES_EXTID_OUT = os.path.join(CWD, "releaseextids.tsv")
-RELEASES_ABSTRACT_OUT = os.path.join(CWD, "releaseabstracts.tsv")
-RELEASES_CONTRIB_OUT = os.path.join(CWD, "releasecontribs.tsv")
-RELEASES_REF_OUT = os.path.join(CWD, "releaserefs.tsv")
-FILES_OUT = os.path.join(CWD, "files.tsv")
-FILES_URL_OUT = os.path.join(CWD, "fileurls.tsv")
-FILESETS_OUT = os.path.join(CWD, "fileurls.tsv")
-FILESETS_URL_OUT = os.path.join(CWD, "fileseturls.tsv")
-FILESETS_FILE_OUT = os.path.join(CWD, "filesetfiles.tsv")
-WEBCAPTURES_OUT = os.path.join(CWD, "webcaptures.tsv")
-WEBCAPTURES_URL_OUT = os.path.join(CWD, "webcaptureurls.tsv")
-WEBCAPTURES_CDX_OUT = os.path.join(CWD, "webcapturecdx.tsv")
 
 app = FastAPI()
 DBOS(fastapi=app)
@@ -37,40 +16,6 @@ DBOS(fastapi=app)
 def bail(msg: str):
     DBOS.logger.error(msg)
     os._exit(1)
-
-def copy_result_to_int(copy_output: str) -> int:
-    out = -1
-    try:
-        int(copy_output.strip()[5:])
-    except Exception as e:
-        DBOS.logger.error(e)
-        os._exit(1)
-    return out
-
-def psql(sql: str, db_name="postgres") -> Tuple[str, str]:
-    """
-    Execute SQL by passing it to psql on STDIN
-    Returns (stdout, stderr) from the psql command
-    """
-    psql_cmd = ["/usr/bin/psql", "-d", db_name]
-
-    env = os.environ.copy()
-    process = subprocess.Popen(
-        psql_cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-        text=True  # Use text mode to handle strings directly
-    )
-
-    # Send the SQL query through stdin and get the output
-    out, err = process.communicate(input=sql)
-
-    if err != "":
-        bail(f"unexpected psql stderr: {err}")
-
-    return out, err
 
 def outfile(table: str) -> str:
     return os.path.join(CWD, f"{table}.tsv")
@@ -268,7 +213,7 @@ DUMP_SQL = {
               JOIN file_rev_url fu ON fi.rev_id = fu.file_rev
               WHERE fi.is_live = true
               AND fi.redirect_id IS NULL
-              ) TO '{FILES_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
         "fileset": """
             COPY (
@@ -300,7 +245,7 @@ DUMP_SQL = {
               JOIN fileset_rev_url fu ON fi.rev_id = fu.fileset_rev
               WHERE fi.is_live = true
               AND fi.redirect_id IS NULL
-              ) TO '{FILESETS_URL_OUT}' WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+              ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
         "filesetfile": """
             COPY (
@@ -399,7 +344,6 @@ def dump_workflow():
 
     return [handle.get_result() for handle in handles]
 
-# TODO use this
 def drop_indices(names: List[str]):
     """drop a list of named indices from the new fatcat db"""
     try:
@@ -423,22 +367,17 @@ RESTORE_SQL = {
             COPY fcapi_container (
               id, legacy_rev, name, extra, container_type, publisher,
               issnl, issne, issnp, wikidata_qid, source)
-            FROM STDIN
-            WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '',
-                  FORCE_NULL (extra));
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
         """,
         "creator": """
             COPY fcapi_creator (
               id, legacy_rev, display_name, given_name, surname, orcid,
               source, extra)
-            FROM STDIN
-            WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '',
-                  FORCE_NULL (extra));
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
         """,
         "work": """
             COPY fcapi_work (id, legacy_rev, source, extra)
-            FROM STDIN
-            WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
         """,
         "release": """
             COPY fcapi_release (
@@ -447,6 +386,23 @@ RESTORE_SQL = {
               publisher, language, license_slug, withdrawn_status, work_id, container_id,
               legacy_doi, legacy_pmid, legacy_pmcid, legacy_wikidata_qid, legacy_core_id, refs)
             FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        "releaseextid": """
+            COPY fcapi_releaseextid (release_id, id_type, id_value)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
+        """,
+        "releaseabstract": """
+            COPY fcapi_releaseabstract (release_id, sha1, mimetype, language, content)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
+        """,
+        "releasecontrib": """
+            COPY fcapi_releasecontrib (release_id, raw_name, given_name, surname,
+              creator_id, role, raw_affiliation, position, extra)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        "releaseref": """
+            COPY fcapi_releaseref (position, release_id, target_release_id)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
         """,
         }
 
@@ -488,12 +444,6 @@ def restore_work() -> int:
 
     return count
 
-def chunked_update(sql: str, total_rows: int):
-    runs = ceil(total_rows/CHUNKED_UPDATE_SIZE)
-    for _ in range(runs):
-        out, err = psql(sql, db_name=NEW_DB)
-        DBOS.logger.info(out.strip())
-
 @DBOS.step()
 def restore_release() -> int:
     table = "release"
@@ -515,167 +465,6 @@ def restore_release() -> int:
     create_indices(indices)
 
     return count
-
-@DBOS.step()
-def restore_release_extid():
-    DBOS.logger.info("restoring release extids")
-    # TODO have to allow null foreign keys
-    sql = f"""
-      COPY fcapi_releaseextid (legacy_release_rev, id_type, id_value)
-      FROM '{RELEASES_EXTID_OUT}'
-      WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
-    """
-    out, err = psql(sql, db_name=NEW_DB)
-    DBOS.logger.info(f"release extid: {out.strip()}")
-    copied = copy_result_to_int(out)
-
-    DBOS.logger.info("restoring release extid foreign keys")
-    sql = f"""
-    WITH chunk AS (
-      SELECT
-        r.ctid,
-        r.legacy_release_rev,
-      FROM fcapi_releaseextid AS ei
-      WHERE release_id IS NULL
-      FOR UPDATE LIMIT {CHUNKED_UPDATE_SIZE})
-    UPDATE fcapi_releaseextid ei
-    SET
-      release_id = r.id
-    FROM chunk
-    JOIN fcapi_release r ON r.legacy_rev = chunk.legacy_release_rev
-    WHERE ei.ctid = chunk.ctid
-    """
-    chunked_update(sql, copied)
-
-    # TODO restore not null foreign keys
-
-    return copied
-
-@DBOS.step()
-def restore_release_abstract() -> int:
-    DBOS.logger.info("restoring release abstracts")
-    # TODO have to allow null foreign keys
-    sql = f"""
-      COPY fcapi_releaseabstract (legacy_release_rev, sha1, mimetype, language, content)
-      FROM '{RELEASES_ABSTRACT_OUT}'
-      WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
-    """
-    out, err = psql(sql, db_name=NEW_DB)
-    DBOS.logger.info(f"release abstract: {out.strip()}")
-    copied = copy_result_to_int(out)
-
-    DBOS.logger.info("restoring release abstract foreign keys")
-    sql = f"""
-    WITH chunk AS (
-      SELECT
-        ra.ctid,
-        ra.legacy_release_rev,
-      FROM fcapi_releaseabstract AS ra
-      WHERE release_id IS NULL
-      FOR UPDATE LIMIT {CHUNKED_UPDATE_SIZE})
-    UPDATE fcapi_releaseabstract ra
-    SET
-      release_id = r.id
-    FROM chunk
-    JOIN fcapi_release r ON r.legacy_rev = chunk.legacy_release_rev
-    WHERE ra.ctid = chunk.ctid
-    """
-    chunked_update(sql, copied)
-    # TODO have to allow null foreign keys
-
-    return copied
-
-@DBOS.step()
-def restore_release_contrib():
-    DBOS.logger.info("restoring release contribs")
-    # TODO have to allow null foreign keys
-    sql = f"""
-      COPY fcapi_releasecontrib (legacy_release_rev, raw_name, given_name, surname,
-        legacy_creator_ident, role, raw_affiliation, position, extra)
-      FROM '{RELEASES_CONTRIB_OUT}'
-      WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
-    """
-    out, err = psql(sql, db_name=NEW_DB)
-    DBOS.logger.info(f"release contrib: {out.strip()}")
-    copied = copy_result_to_int(out)
-
-    DBOS.logger.info("restoring release contrib foreign keys")
-    sql = f"""
-    WITH chunk AS (
-      SELECT
-        rc.ctid,
-        rc.legacy_release_rev,
-        rc.legacy_creator_ident,
-      FROM fcapi_releasecontrib AS rc
-      WHERE release_id IS NULL
-      FOR UPDATE LIMIT {CHUNKED_UPDATE_SIZE})
-    UPDATE fcapi_releasecontrib ra
-    SET
-      release_id = r.id
-      creator_id = c.id
-    FROM chunk
-    JOIN fcapi_release r ON r.legacy_rev = chunk.legacy_release_rev
-    FULL OUTER JOIN fcapi_creator c ON c.legacy_ident = chunk.legacy_creator_ident
-    WHERE rc.ctid = chunk.ctid
-    """
-    chunked_update(sql, copied)
-    # TODO restore not null foreign keys
-
-    return copied
-
-@DBOS.step()
-def restore_release_ref():
-    DBOS.logger.info("restoring refs")
-
-    # TODO have to allow null foreign keys
-    sql = f"""
-      COPY fcapi_releaseref (position, legacy_release_rev, legacy_target_release_ident)
-      FROM '{RELEASES_REF_OUT}'
-      WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
-    """
-    out, err = psql(sql, db_name=NEW_DB)
-    DBOS.logger.info(f"release ref: {out.strip()}")
-    copied = copy_result_to_int(out)
-
-    DBOS.logger.info("restoring release ref release_id foreign key")
-    sql = f"""
-    WITH chunk AS (
-      SELECT
-        rc.ctid,
-        rc.legacy_release_rev,
-      FROM fcapi_releaseref AS rr
-      WHERE release_id IS NULL
-      FOR UPDATE LIMIT {CHUNKED_UPDATE_SIZE})
-    UPDATE fcapi_releaseref rr
-    SET
-      release_id = r.id
-    FROM chunk
-    JOIN fcapi_release r ON r.legacy_rev = chunk.legacy_release_rev
-    WHERE rr.ctid = chunk.ctid
-    """
-    chunked_update(sql, copied)
-
-    DBOS.logger.info("restoring release ref target_release_id foreign key")
-    sql = f"""
-    WITH chunk AS (
-      SELECT
-        rc.ctid,
-        rc.legacy_target_release_rev,
-      FROM fcapi_releaseref AS rr
-      WHERE release_id IS NULL
-      FOR UPDATE LIMIT {CHUNKED_UPDATE_SIZE})
-    UPDATE fcapi_releaseref rr
-    SET
-      target_release_id = r.id
-    FROM chunk
-    JOIN fcapi_release r ON r.legacy_rev = chunk.legacy_target_release_rev
-    WHERE rr.ctid = chunk.ctid
-    """
-    chunked_update(sql, copied)
-
-    # TODO have to restore not null foreign keys
-
-    return copied
 
 @DBOS.step()
 def restore_files():
@@ -718,11 +507,11 @@ def restore_workflow():
     simple_restore("container")
     simple_restore("creator")
     restore_work()
-    #restore_releases()
-    #restore_release_extid()
-    #restore_release_abstract()
-    #restore_release_contrib()
-    #restore_release_ref()
+    restore_release()
+    simple_restore("releaseextid")
+    simple_restore("releaseabstract")
+    simple_restore("releasecontrib")
+    simple_restore("releaseref")
     #restore_files()
     #restore_file_url()
     #restore_filesets()

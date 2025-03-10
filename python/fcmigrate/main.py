@@ -1,7 +1,7 @@
 import os
 import subprocess
 from math import ceil
-from typing import Tuple
+from typing import Any, List, Tuple
 
 from fastapi import FastAPI
 from dbos import DBOS, Queue
@@ -399,17 +399,24 @@ def dump_workflow():
 
     return [handle.get_result() for handle in handles]
 
-def drop_index(name: str):
-    """drop a single named index from the new fatcat db"""
-    out, err = psql(f"DROP INDEX {name}", db_name=NEW_DB)
-    if not out.strip().startswith("DROP INDEX"):
-        bail(f"unexpected drop index output: {out.strip()}")
+# TODO use this
+def drop_indices(names: List[str]):
+    """drop a list of named indices from the new fatcat db"""
+    try:
+        with psycopg.connect(conninfo=NEW_DATABASE_URL) as conn, conn.cursor() as cur:
+           for name in names:
+               cur.execute("DROP INDEX %s", (name,))
+    except Exception as e:
+        bail(str(e))
 
-def create_index(table: str, name: str, column: str):
-    """add a single named index to a table in the new fatcat db"""
-    out, err = psql(f"CREATE INDEX {name} ON {table} ({column})", db_name=NEW_DB)
-    if not out.strip().startswith("CREATE INDEX"):
-        bail(f"unexpected create index output: {out.strip()}")
+def create_indices(indices: List[Tuple[str, str, str]]):
+    """given tuples of (index_name, table, colum), create indices in the new db"""
+    try:
+        with psycopg.connect(conninfo=NEW_DATABASE_URL) as conn, conn.cursor() as cur:
+           for index in indices:
+               cur.execute("CREATE INDEX %s ON %s (%s)", index)
+    except Exception as e:
+        bail(str(e))
 
 RESTORE_SQL = {
         "container": """
@@ -465,20 +472,19 @@ def simple_restore(table: str) -> int:
 def restore_work() -> int:
     table = "work"
 
-    DBOS.logger.info("dropping work indices")
+    DBOS.logger.info(f"dropping {table} indices")
     indices = [
-            ("fcapi_work_legacy_ident_idx", "legacy_ident"),
-            ("fcapi_work_source_idx", "source"),
-            ("fcapi_work_updated_idex", "updated"),
+            # TODO will i be ruined by pkey index?
+            ("fcapi_work_legacy_ident_idx", f"fcapi_{table}", "legacy_ident"),
+            ("fcapi_work_source_idx", f"fcapi_{table}", "source"),
+            ("fcapi_work_updated_idex", f"fcapi_{table}", "updated"),
     ]
-    for index, _ in indices:
-        drop_index(index)
+    drop_indices([idx[0] for idx in indices])
 
     count = simple_restore(table)
 
-    DBOS.logger.info("restoring work indices")
-    for index, column in indices:
-        create_index("fcapi_work", index, column)
+    DBOS.logger.info(f"restoring {table} indices")
+    create_indices(indices)
 
     return count
 
@@ -492,23 +498,21 @@ def chunked_update(sql: str, total_rows: int):
 def restore_release() -> int:
     table = "release"
 
-    DBOS.logger.info("dropping release indices")
+    DBOS.logger.info(f"dropping {table} indices")
     indices = [
             # TODO will i be ruined by pkey index?
-            ("fcapi_release_container_id_idx", "container_id"),
-            ("fcapi_release_work_id_idx", "work_id"),
-            ("fcapi_release_legacy_rev_idx", "legacy_rev"),
-            ("fcapi_release_source_idx", "source"),
-            ("fcapi_release_updated_idx", "updated"),
+            ("fcapi_release_container_id_idx", f"fcapi_{table}", "container_id"),
+            ("fcapi_release_work_id_idx", f"fcapi_{table}", "work_id"),
+            ("fcapi_release_legacy_rev_idx", f"fcapi_{table}", "legacy_rev"),
+            ("fcapi_release_source_idx", f"fcapi_{table}", "source"),
+            ("fcapi_release_updated_idx", f"fcapi_{table}", "updated"),
     ]
-    for index, _ in indices:
-        drop_index(index)
+    drop_indices([idx[0] for idx in indices])
 
     count = simple_restore(table)
 
-    DBOS.logger.info("restoring release indices")
-    for index, column in indices:
-        create_index("fcapi_release", index, column)
+    DBOS.logger.info(f"restoring {table} indices")
+    create_indices(indices)
 
     return count
 

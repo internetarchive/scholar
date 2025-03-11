@@ -423,21 +423,36 @@ class BaseFile(models.Model):
                              name="%(app_label)s_%(class)s_md5_idx"),
                 ]
 
-
-class ReleaseFile(Entity, BaseFile):
+class File(Entity, BaseFile):
     """
     A file associated with a release. Actual file content is stored in seaweedfs.
     """
-    release = models.ForeignKey(Release, on_delete=models.CASCADE)
+    releases = models.ManyToManyField(Release, through="ReleaseFile")
 
     class Meta(Entity.Meta, BaseFile.Meta):
         indexes = Entity.Meta.indexes + BaseFile.Meta.indexes
+
+
+class ReleaseFile(models.Model):
+    file = models.ForeignKey(File, on_delete=models.CASCADE)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = [["file", "release"]]
+        indexes = [
+                models.Index(fields=["file"],
+                             name="%(app_label)s_%(class)s_file_idx"),
+                models.Index(fields=["release"],
+                             name="%(app_label)s_%(class)s_release_idx"),
+
+                ]
+
 
 class FileURL(models.Model):
     """
     A URL at which a release's file can be found.
     """
-    file = models.ForeignKey(ReleaseFile, on_delete=models.CASCADE)
+    file = models.ForeignKey(File, on_delete=models.CASCADE)
     rel = models.CharField(choices=[
         ("web", "general public web site"),
         ("webarchive", "a resource in a long-term web archive"),

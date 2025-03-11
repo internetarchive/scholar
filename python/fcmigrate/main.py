@@ -1,8 +1,9 @@
+import logging
 import os
 from typing import List, Tuple
 
-from fastapi import FastAPI
-from dbos import DBOS, Queue
+#from fastapi import FastAPI
+#from dbos import DBOS, Queue
 import psycopg
 
 CWD = os.getcwd()
@@ -10,18 +11,26 @@ SOURCE = "legacy_import"
 OLD_DATABASE_URL="postgresql:///fatcat_prod?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
 NEW_DATABASE_URL="postgresql:///fatcat2?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
 
-app = FastAPI()
-DBOS(fastapi=app)
+#app = FastAPI()
+#DBOS(fastapi=app)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s [%(levelname)s] - %(message)s',
+                              datefmt='%m-%d %H:%M:%S')
+
+stdout_handler = logging.StreamHandler()
+stdout_handler.setFormatter(formatter)
+logger.addHandler(stdout_handler)
 
 def bail(msg: str):
-    DBOS.logger.error(msg)
+    logger.error(msg)
     os._exit(1)
 
 def outfile(table: str) -> str:
     return os.path.join(CWD, f"{table}.tsv")
 
 DUMP_SQL = {
-        "container": """
+        "container": f"""
             COPY (
                 SELECT
                     ci.id,
@@ -34,7 +43,7 @@ DUMP_SQL = {
                     cr.issne,
                     cr.issnp,
                     cr.wikidata_qid,
-                    %s AS source
+                    '{SOURCE}' AS source
                   FROM container_ident ci
                   JOIN container_rev cr ON ci.rev_id = cr.id
                   WHERE
@@ -45,7 +54,7 @@ DUMP_SQL = {
                     cr.container_type != 'test'
                 ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "creator": """
+        "creator": f"""
              COPY (
                SELECT
                  ci.id,
@@ -54,7 +63,7 @@ DUMP_SQL = {
                  cr.given_name,
                  cr.surname,
                  cr.orcid,
-                 %s AS source,
+                 '{SOURCE}' AS source,
                  to_json(cr.extra_json) AS extra
                FROM creator_ident ci
                JOIN creator_rev cr ON ci.rev_id = cr.id
@@ -64,12 +73,12 @@ DUMP_SQL = {
                  ci.redirect_id IS NULL
                ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "work": """
+        "work": f"""
             COPY (
               SELECT
                 wi.id,
                 wi.rev_id AS legacy_rev,
-                %s AS source,
+                '{SOURCE}' AS source,
                 to_json(wr.extra_json) AS extra
               FROM work_ident wi
               JOIN work_rev wr ON wi.rev_id = wr.id
@@ -79,13 +88,13 @@ DUMP_SQL = {
                 wi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "release": """
+        "release": f"""
             COPY (
               SELECT
                 ri.id,
                 rr.id AS legacy_rev,
                 to_json(rr.extra_json) AS extra,
-                %s AS source,
+                '{SOURCE}' AS source,
                 rr.title,
                 rr.original_title,
                 rr.subtitle,
@@ -172,35 +181,42 @@ DUMP_SQL = {
               SELECT
                 rr.index_val AS position,
                 ri.id as release_id,
-                rr.target_release_ident_id AS target_release_id,
+                rr.target_release_ident_id AS target_release_id
               FROM release_ident ri
               JOIN release_ref rr ON ri.rev_id = rr.release_rev
               WHERE ri.is_live = true
               AND ri.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "releasefile": """
+        "file": f"""
             COPY (
               SELECT
                 fi.rev_id AS legacy_rev,
                 fi.id,
-                %s as source,
+                '{SOURCE}' as source,
                 fr.size_bytes,
                 fr.sha1,
                 fr.sha256,
                 fr.mimetype,
                 fr.md5,
-                to_json(f.extra_json) AS extra,
-                (SELECT target_release_ident_id
-                 FROM file_rev_release frr
-                 WHERE frr.file_rev = fr.id
-                ) AS release_id
+                to_json(fr.extra_json) AS extra
               FROM
                 file_ident fi
               JOIN file_rev fr ON fi.rev_id = fr.id
               WHERE fi.is_live = true
               AND fi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """,
+        "releasefile": """
+            COPY (
+              SELECT
+                frr.target_release_ident_id AS release_id,
+                fi.id AS file_id
+              FROM file_ident fi
+              JOIN file_rev_release frr ON fi.rev_id = frr.file_rev
+              WHERE fi.is_live = true
+              AND fi.redirect_id IS NULL
+            ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
         "fileurl": """
             COPY (
@@ -215,13 +231,13 @@ DUMP_SQL = {
               AND fi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "fileset": """
+        "fileset": f"""
             COPY (
               SELECT
                 fi.rev_id AS legacy_rev,
                 fi.id,
-                to_json(f.extra_json) AS extra,
-                %s AS source,
+                to_json(fr.extra_json) AS extra,
+                '{SOURCE}' AS source,
                 (SELECT
                   target_release_ident_id
                  FROM fileset_rev_release frr
@@ -247,7 +263,7 @@ DUMP_SQL = {
               AND fi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "filesetfile": """
+        "filesetfile": f"""
             COPY (
               SELECT
                 fi.id as fileset_id,
@@ -266,12 +282,12 @@ DUMP_SQL = {
               AND fi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "webcapture": """
+        "webcapture": f"""
             COPY (
               SELECT
                 wi.rev_id AS legacy_rev,
                 wi.id,
-                %s AS source,
+                '{SOURCE}' AS source,
                 to_json(wr.extra_json) AS extra,
                 wr.original_url,
                 wr.timestamp AS captured,
@@ -316,50 +332,48 @@ DUMP_SQL = {
         """,
         }
 
-@DBOS.step()
+#@DBOS.step()
 def dump(table: str) -> int:
-    DBOS.logger.info(f"dumping {table}")
+    logger.info(f"dumping {table}")
     count = 0
     sql = DUMP_SQL[table]
-    try:
-        with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
-            with conn.cursor() as cur, open(outfile(table), 'wb') as f:
-               with cur.copy(sql, (SOURCE,)) as copy:
-                   for row in copy:
-                       f.write(row)
-                       count += 1
-    except Exception as e:
-        bail(str(e))
-    DBOS.logger.info(f"dumped {count} {table}")
+    with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
+        with conn.cursor() as cur, open(outfile(table), 'wb') as f:
+           with cur.copy(sql) as copy:
+               for row in copy:
+                   f.write(row)
+                   count += 1
+                   if count % 100000 == 0:
+                       logger.info(f"dumped {count} from {table}")
+    logger.info(f"dumped {count} {table}")
     return count
 
-@app.get("/dump")
-@DBOS.workflow()
+#@app.get("/dump")
+#@DBOS.workflow()
 def dump_workflow():
-    queue = Queue("dump_queue", concurrency=8)
-    handles = []
+    #queue = Queue("dump_queue", concurrency=8)
+    #handles = []
+    go = False
     for k in DUMP_SQL:
-        handles.append(queue.enqueue(dump, k))
+        if k == "webcapture":
+            go = True
+        if go:
+            dump(k)
+        #handles.append(queue.enqueue(dump, k))
 
-    return [handle.get_result() for handle in handles]
+    #return [handle.get_result() for handle in handles]
 
 def drop_indices(names: List[str]):
     """drop a list of named indices from the new fatcat db"""
-    try:
-        with psycopg.connect(conninfo=NEW_DATABASE_URL) as conn, conn.cursor() as cur:
-           for name in names:
-               cur.execute("DROP INDEX %s", (name,))
-    except Exception as e:
-        bail(str(e))
+    with psycopg.connect(conninfo=NEW_DATABASE_URL) as conn, conn.cursor() as cur:
+       for name in names:
+           cur.execute("DROP INDEX %s", (name,))
 
 def create_indices(indices: List[Tuple[str, str, str]]):
     """given tuples of (index_name, table, colum), create indices in the new db"""
-    try:
-        with psycopg.connect(conninfo=NEW_DATABASE_URL) as conn, conn.cursor() as cur:
-           for index in indices:
-               cur.execute("CREATE INDEX %s ON %s (%s)", index)
-    except Exception as e:
-        bail(str(e))
+    with psycopg.connect(conninfo=NEW_DATABASE_URL) as conn, conn.cursor() as cur:
+       for index in indices:
+           cur.execute("CREATE INDEX %s ON %s (%s)", index)
 
 RESTORE_SQL = {
         "container": """
@@ -403,10 +417,14 @@ RESTORE_SQL = {
             COPY fcapi_releaseref (position, release_id, target_release_id)
             FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
         """,
-        "releasefile": """
-            COPY fcapi_releasefile (legacy_rev, id, source, size_bytes, sha1, sha256,
-            mimetype, md5, extra, release_id)
+        "file": """
+            COPY fcapi_file (legacy_rev, id, source, size_bytes, sha1, sha256,
+            mimetype, md5, extra)
             FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
+        """,
+        "releasefile": """
+            COPY fcapi_releasefile (release_id, file_id)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
         """,
         "fileurl": """
             COPY fcapi_fileurl (rel, url, file_id)
@@ -437,29 +455,26 @@ RESTORE_SQL = {
         """,
         }
 
-@DBOS.step()
+#@DBOS.step()
 def simple_restore(table: str) -> int:
     table = "container"
-    DBOS.logger.info(f"restoring {table}")
+    logger.info(f"restoring {table}")
     count = 0
     sql = RESTORE_SQL[table]
-    try:
-        with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
-            with conn.cursor() as cur, open(outfile(table), "r") as f:
-                with cur.copy(sql) as copy:
-                    for line in f:
-                        copy.write(line)
-                        count += 1
-    except Exception as e:
-        bail(str(e))
-    DBOS.logger.info(f"restored {count} {table}")
+    with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
+        with conn.cursor() as cur, open(outfile(table), "r") as f:
+            with cur.copy(sql) as copy:
+                for line in f:
+                    copy.write(line)
+                    count += 1
+    logger.info(f"restored {count} {table}")
     return count
 
-@DBOS.step()
+#@DBOS.step()
 def restore_work() -> int:
     table = "work"
 
-    DBOS.logger.info(f"dropping {table} indices")
+    logger.info(f"dropping {table} indices")
     indices = [
             # TODO will i be ruined by pkey index?
             ("fcapi_work_legacy_ident_idx", f"fcapi_{table}", "legacy_ident"),
@@ -470,16 +485,16 @@ def restore_work() -> int:
 
     count = simple_restore(table)
 
-    DBOS.logger.info(f"restoring {table} indices")
+    logger.info(f"restoring {table} indices")
     create_indices(indices)
 
     return count
 
-@DBOS.step()
+#@DBOS.step()
 def restore_release() -> int:
     table = "release"
 
-    DBOS.logger.info(f"dropping {table} indices")
+    logger.info(f"dropping {table} indices")
     indices = [
             # TODO will i be ruined by pkey index?
             ("fcapi_release_container_id_idx", f"fcapi_{table}", "container_id"),
@@ -492,36 +507,38 @@ def restore_release() -> int:
 
     count = simple_restore(table)
 
-    DBOS.logger.info(f"restoring {table} indices")
+    logger.info(f"restoring {table} indices")
     create_indices(indices)
 
     return count
 
-@DBOS.step()
-def restore_releasefile():
+##@DBOS.step()
+def restore_file():
     table = "files"
     indices = [
             # TODO will i be ruined by pkey,fkey indices?
-            ("fcapi_releasefile_legacy_rev_idx", f"fcapi_{table}", "legacy_rev"),
-            ("fcapi_releasefile_md5_idx", f"fcapi_{table}", "md5"),
-            ("fcapi_releasefile_sha1_idx", f"fcapi_{table}", "sha1"),
-            ("fcapi_releasefile_sha256_idx", f"fcapi_{table}", "sha256"),
-            ("fcapi_releasefile_source_idx", f"fcapi_{table}", "source"),
-            ("fcapi_releasefile_updated_idx", f"fcapi_{table}", "updated"),
+            ("fcapi_file_legacy_rev_idx", f"fcapi_{table}", "legacy_rev"),
+            ("fcapi_file_md5_idx", f"fcapi_{table}", "md5"),
+            ("fcapi_file_sha1_idx", f"fcapi_{table}", "sha1"),
+            ("fcapi_file_sha256_idx", f"fcapi_{table}", "sha256"),
+            ("fcapi_file_source_idx", f"fcapi_{table}", "source"),
+            ("fcapi_file_updated_idx", f"fcapi_{table}", "updated"),
     ]
 
-    DBOS.logger.info(f"dropping {table} indices")
+    logger.info(f"dropping {table} indices")
     drop_indices([idx[0] for idx in indices])
 
     count = simple_restore(table)
 
-    DBOS.logger.info(f"restoring {table} indices")
+    logger.info(f"restoring {table} indices")
     create_indices(indices)
 
     return count
 
-@app.get("/restore")
-@DBOS.workflow()
+# TODO extid from legacy release columns
+
+#@app.get("/restore")
+#@DBOS.workflow()
 def restore_workflow():
     simple_restore("container")
     simple_restore("creator")
@@ -531,10 +548,13 @@ def restore_workflow():
     simple_restore("releaseabstract")
     simple_restore("releasecontrib")
     simple_restore("releaseref")
-    restore_releasefile()
+    restore_file()
     simple_restore("fileurl")
     simple_restore("fileset")
     simple_restore("filesetfile")
     simple_restore("webcapture")
     simple_restore("webcaptureurl")
     simple_restore("webcapturecdx")
+
+if __name__ == '__main__':
+    dump_workflow()

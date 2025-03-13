@@ -160,6 +160,7 @@ class Release(Entity):
             Container,
             help_text="the thing in which this release was published. for example, for a paper, its container is likely an academic journal",
             on_delete=models.CASCADE,
+            null=True, blank=True,
             db_index=False) # index added in Meta below so we can name it explicitly
 
     title = models.CharField(help_text="a title for the release")
@@ -313,7 +314,7 @@ class ReleaseExtId(models.Model):
     This model maps releases to a set of external identifiers expressed as key
     value pairs. Most releases in our system will have at least a doi.
     """
-    release = models.ForeignKey(Release, on_delete=models.CASCADE)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
     id_type = models.CharField(choices=[
         ("doi", "doi"),
         ("pmid", "pmid"),
@@ -334,6 +335,8 @@ class ReleaseExtId(models.Model):
     class Meta:
         indexes = [
                 # we need to quickly query by external value
+                models.Index(fields=["release"],
+                             name="%(app_label)s_%(class)s_release_idx"),
                 models.Index(fields=["id_type", "id_value"],
                              name="extid_lookup_idx"),
                 ]

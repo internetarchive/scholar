@@ -1,18 +1,35 @@
 import logging
 import os
+from collections import namedtuple
+from functools import wraps
+from time import time
 from typing import List, Tuple
 
-#from fastapi import FastAPI
-#from dbos import DBOS, Queue
+import diskcache as dc
 import psycopg
+from psycopg.rows import dict_row
 
 CWD = os.getcwd()
 SOURCE = "legacy_import"
-OLD_DATABASE_URL="postgresql:///fatcat_prod?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
-NEW_DATABASE_URL="postgresql:///fatcat2?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
+OLD_DB_URL="postgresql:///fatcat_prod?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
+NEW_DB_URL="postgresql:///fatcat2?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
 
-#app = FastAPI()
-#DBOS(fastapi=app)
+PKTABLES = ["release", "work", "file", "creator"]
+FKTABLES = [
+        "release",
+        "releaseextid",
+        "releaseabstract",
+        "releasecontrib",
+        "releaseref",
+        "releasefile",
+        "fileset",
+        "webcapture",
+        "fileurl",
+        ]
+
+FK = namedtuple("FK", ["table", "name", "column", "target_table", "target_column"])
+LEGACY_COLS = ["doi", "pmid", "pmcid", "wikidata_qid", "core_id"]
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s [%(levelname)s] - %(message)s',
@@ -22,12 +39,16 @@ stdout_handler = logging.StreamHandler()
 stdout_handler.setFormatter(formatter)
 logger.addHandler(stdout_handler)
 
-def bail(msg: str):
-    logger.error(msg)
-    os._exit(1)
-
-def outfile(table: str) -> str:
-    return os.path.join(CWD, f"{table}.tsv")
+def timing(f):
+    """ https://stackoverflow.com/a/27737385 """
+    @wraps(f)
+    def wrap(*args, **kw):
+        ts = time()
+        result = f(*args, **kw)
+        te = time()
+        logger.info("func:%r took: %2.4f sec" % (f.__name__, te-ts))
+        return result
+    return wrap
 
 DUMP_SQL = {
         "container": f"""
@@ -332,12 +353,15 @@ DUMP_SQL = {
         """,
         }
 
-#@DBOS.step()
-def dump(table: str) -> int:
+def outfile(table: str) -> str:
+    return os.path.join(CWD, f"{table}.tsv")
+
+@timing
+def dump_table(table: str) -> int:
     logger.info(f"dumping {table}")
     count = 0
     sql = DUMP_SQL[table]
-    with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
+    with psycopg.connect(conninfo=OLD_DB_URL) as conn:
         with conn.cursor() as cur, open(outfile(table), 'wb') as f:
            with cur.copy(sql) as copy:
                for row in copy:
@@ -348,32 +372,58 @@ def dump(table: str) -> int:
     logger.info(f"dumped {count} {table}")
     return count
 
-#@app.get("/dump")
-#@DBOS.workflow()
-def dump_workflow():
-    #queue = Queue("dump_queue", concurrency=8)
-    #handles = []
-    go = False
-    for k in DUMP_SQL:
-        if k == "webcapture":
-            go = True
-        if go:
-            dump(k)
-        #handles.append(queue.enqueue(dump, k))
+@timing
+def dump_legacy_release_extid() -> int:
+    count = 0
+    for col in LEGACY_COLS:
+        legacy_extid_sql = f"""
+            COPY (
+              SELECT
+                ri.id as release_id,
+                '{col}' as id_type,
+                rr.{col} as id_value
+              FROM release_ident ri
+              JOIN release_rev rr ON ri.rev_id = rr.id
+              WHERE
+                ri.is_live = true
+                AND
+                ri.redirect_id is NULL
+                AND
+                rr.{col} <> ''
+            ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
+        """
+        logger.info("dumping legacy extids")
+        with psycopg.connect(conninfo=OLD_DB_URL) as conn:
+            with conn.cursor() as cur, open(f"legacy_{col}_extid.tsv", 'wb') as f:
+               with cur.copy(legacy_extid_sql) as copy:
+                   for row in copy:
+                       f.write(row)
+                       count += 1
+                       if count % 100000 == 0:
+                           logger.info(f"dumped {count} from legacy extids")
+        logger.info(f"dumped {count} legacy extids")
+    logger.info(f"dumped {count} legacy extids")
+    return count
 
-    #return [handle.get_result() for handle in handles]
+def drop_indexes(table, names: List[str]):
+    """drop a list of named indexes from the new fatcat db"""
+    logger.info(f"{table}: dropping indexes")
 
-def drop_indices(names: List[str]):
-    """drop a list of named indices from the new fatcat db"""
-    with psycopg.connect(conninfo=NEW_DATABASE_URL) as conn, conn.cursor() as cur:
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor() as cur:
        for name in names:
-           cur.execute("DROP INDEX %s", (name,))
+           cur.execute(f"DROP INDEX {name}")
 
-def create_indices(indices: List[Tuple[str, str, str]]):
-    """given tuples of (index_name, table, colum), create indices in the new db"""
-    with psycopg.connect(conninfo=NEW_DATABASE_URL) as conn, conn.cursor() as cur:
-       for index in indices:
-           cur.execute("CREATE INDEX %s ON %s (%s)", index)
+    logger.info(f"{table}: dropped indexes")
+
+def create_indexes(table, indexes: List[Tuple[str, str]]):
+    """given tuples of (index_name, table, colum), create indexes in the new db"""
+    logger.info(f"{table}: restoring indexes")
+
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor() as cur:
+       for index in indexes:
+           cur.execute(f"CREATE INDEX {index[0]} ON fcapi_{table} ({index[1]});")
+
+    logger.info(f"{table}: restored indexes")
 
 RESTORE_SQL = {
         "container": """
@@ -455,96 +505,230 @@ RESTORE_SQL = {
         """,
         }
 
-#@DBOS.step()
 def simple_restore(table: str) -> int:
-    table = "container"
-    logger.info(f"restoring {table}")
+    logger.info(f"{table}: starting restore")
     count = 0
     sql = RESTORE_SQL[table]
-    with psycopg.connect(conninfo=OLD_DATABASE_URL) as conn:
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn:
         with conn.cursor() as cur, open(outfile(table), "r") as f:
             with cur.copy(sql) as copy:
                 for line in f:
                     copy.write(line)
                     count += 1
-    logger.info(f"restored {count} {table}")
+                    if count % 100000 == 0:
+                        logger.info(f"{table}: restored {count} rows")
+
+    logger.info(f"{table}: finished restoring")
+
     return count
 
-#@DBOS.step()
+def restore_creator() -> int:
+    table = "creator"
+
+    indexes = [
+            ("fcapi_creator_legacy_rev_idx", "legacy_rev"),
+            ("fcapi_creator_source_idx", "source"),
+            ("fcapi_creator_updated_idx", "updated"),
+            ]
+
+    drop_indexes(table, [idx[0] for idx in indexes])
+    count = simple_restore(table)
+    create_indexes(table, indexes)
+
+    return count
+
 def restore_work() -> int:
     table = "work"
 
-    logger.info(f"dropping {table} indices")
-    indices = [
-            # TODO will i be ruined by pkey index?
-            ("fcapi_work_legacy_ident_idx", f"fcapi_{table}", "legacy_ident"),
-            ("fcapi_work_source_idx", f"fcapi_{table}", "source"),
-            ("fcapi_work_updated_idex", f"fcapi_{table}", "updated"),
+    indexes = [
+            ("fcapi_work_legacy_rev_idx", "legacy_rev"),
+            ("fcapi_work_source_idx", "source"),
+            ("fcapi_work_updated_idx", "updated"),
     ]
-    drop_indices([idx[0] for idx in indices])
 
+    drop_indexes(table, [idx[0] for idx in indexes])
     count = simple_restore(table)
-
-    logger.info(f"restoring {table} indices")
-    create_indices(indices)
+    create_indexes(table, indexes)
 
     return count
 
-#@DBOS.step()
 def restore_release() -> int:
     table = "release"
 
-    logger.info(f"dropping {table} indices")
-    indices = [
-            # TODO will i be ruined by pkey index?
-            ("fcapi_release_container_id_idx", f"fcapi_{table}", "container_id"),
-            ("fcapi_release_work_id_idx", f"fcapi_{table}", "work_id"),
-            ("fcapi_release_legacy_rev_idx", f"fcapi_{table}", "legacy_rev"),
-            ("fcapi_release_source_idx", f"fcapi_{table}", "source"),
-            ("fcapi_release_updated_idx", f"fcapi_{table}", "updated"),
+    indexes = [
+            ("fcapi_release_container_id_idx", "container_id"),
+            ("fcapi_release_work_id_idx", "work_id"),
+            ("fcapi_release_legacy_rev_idx", "legacy_rev"),
+            ("fcapi_release_source_idx", "source"),
+            ("fcapi_release_updated_idx", "updated"),
     ]
-    drop_indices([idx[0] for idx in indices])
 
+    drop_indexes(table, [idx[0] for idx in indexes])
     count = simple_restore(table)
-
-    logger.info(f"restoring {table} indices")
-    create_indices(indices)
+    create_indexes(table, indexes)
 
     return count
 
-##@DBOS.step()
+def restore_releaseextid() -> int:
+    table = "releaseextid"
+    indexes = [
+            ("fcapi_releaseextid_release_idx", "release_id"),
+    ]
+    drop_indexes(table, [idx[0] for idx in indexes])
+
+    # NB have to manually drop bc I didn't account for compound indexes in {create,drop}_indexes
+    logger.info("dropping extid_lookup_idx")
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor() as cur:
+        cur.execute("DROP INDEX extid_lookup_idx")
+    logger.info("dropped extid_lookup_idx")
+
+    count = simple_restore(table)
+
+    logger.info("restoring legacy extids")
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor() as cur:
+        for col in LEGACY_COLS:
+            with open(f"legacy_{col}_extid.tsv", "r") as f:
+                sql = """
+                    COPY fcapi_releaseextid (release_id, id_type, id_value)
+                    FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
+                """
+                with cur.copy(sql) as copy:
+                    for line in f:
+                        copy.write(line)
+                        count += 1
+                        if count % 100000 == 0:
+                            logger.info(f"{table}/{col}: restored {count} rows")
+
+    logger.info("restored legacy extids")
+    create_indexes(table, indexes)
+
+    # NB have to manually create bc I didn't account for compound indexes in {create,drop}_indexes
+    logger.info("creating extid_lookup_idx")
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor() as cur:
+        cur.execute(f"CREATE INDEX extid_lookup_idx ON fcapi_{table} (id_type, id_value);")
+    logger.info("created extid_lookup_idx")
+    return count
+
 def restore_file():
-    table = "files"
-    indices = [
-            # TODO will i be ruined by pkey,fkey indices?
-            ("fcapi_file_legacy_rev_idx", f"fcapi_{table}", "legacy_rev"),
-            ("fcapi_file_md5_idx", f"fcapi_{table}", "md5"),
-            ("fcapi_file_sha1_idx", f"fcapi_{table}", "sha1"),
-            ("fcapi_file_sha256_idx", f"fcapi_{table}", "sha256"),
-            ("fcapi_file_source_idx", f"fcapi_{table}", "source"),
-            ("fcapi_file_updated_idx", f"fcapi_{table}", "updated"),
+    table = "file"
+    indexes = [
+            # TODO will i be ruined by pkey,fkey indexes?
+            ("fcapi_file_legacy_rev_idx", "legacy_rev"),
+            ("fcapi_file_md5_idx", "md5"),
+            ("fcapi_file_sha1_idx", "sha1"),
+            ("fcapi_file_sha256_idx", "sha256"),
+            ("fcapi_file_source_idx", "source"),
+            ("fcapi_file_updated_idx", "updated"),
     ]
 
-    logger.info(f"dropping {table} indices")
-    drop_indices([idx[0] for idx in indices])
-
+    drop_indexes(table, [idx[0] for idx in indexes])
     count = simple_restore(table)
-
-    logger.info(f"restoring {table} indices")
-    create_indices(indices)
+    create_indexes(table, indexes)
 
     return count
 
-# TODO extid from legacy release columns
+def constraint_name_to_col(name: str) -> str:
+    return "_".join(name.split("_")[-2:])
 
-#@app.get("/restore")
-#@DBOS.workflow()
-def restore_workflow():
-    simple_restore("container")
-    simple_restore("creator")
-    restore_work()
-    restore_release()
-    simple_restore("releaseextid")
+def constraint_name_to_table(name: str) -> str:
+    return name.split("_")[-2]
+
+def drop_fk_constraints() -> List[FK]:
+    logger.info("dropping fk constraints")
+    dropped: List[FK] = []
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor(row_factory=dict_row) as cur:
+        for table in FKTABLES:
+            fk_name_sql = f"""
+                SELECT conname AS name FROM pg_constraint
+                WHERE conrelid = 'fcapi_{table}'::regclass AND pg_constraint.contype = 'f';
+            """
+            cur.execute(fk_name_sql)
+            constraints = cur.fetchall()
+            for constraint in constraints:
+                conname = constraint["name"]
+                drop_sql = f"ALTER TABLE fcapi_{table} DROP CONSTRAINT {conname};"
+                logger.info(f"{table}: dropping {conname}")
+                cur.execute(drop_sql)
+                dropped.append(FK(table, constraint["name"], 
+                                  constraint_name_to_col(conname),
+                                  constraint_name_to_table(conname), "id"))
+                logger.info(f"{table}: dropped {conname}")
+    logger.info("dropped fk constraints")
+    return dropped
+
+def create_fk_constraints(constraints: List[FK]):
+    logger.info("creating fk constraints")
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor(row_factory=dict_row) as cur:
+        for cons in constraints:
+            create_fk_sql = f"""
+                ALTER TABLE fcapi_{cons.table} ADD CONSTRAINT {cons.name}
+                FOREIGN KEY ({cons.column})
+                REFERENCES fcapi_{cons.target_table} ({cons.target_column})
+                DEFERRABLE INITIALLY DEFERRED
+            """
+            cur.execute(create_fk_sql)
+            logger.info(f"{cons.table}: created {cons.name}")
+    logger.info("created fk constraints")
+        
+def drop_pk_constraints() -> List[str]:
+    logger.info("dropping pk constraints")
+    dropped: List[str] = []
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor(row_factory=dict_row) as cur:
+        for table in PKTABLES:
+            drop_pk_sql = f"ALTER TABLE fcapi_{table} DROP CONSTRAINT fcapi_{table}_pkey;"
+            logger.info(f"{table}: dropping fcapi_{table}_pkey")
+            cur.execute(drop_pk_sql)
+            logger.info(f"{table}: dropped fcapi_{table}_pkey")
+            dropped.append(table)
+    logger.info("dropped pk constraints")
+    return dropped
+
+def create_pk_constraints(tables: List[str]):
+    logger.info("creating pk constraints")
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor(row_factory=dict_row) as cur:
+        for table in tables:
+            create_pk_sql = f"""
+                ALTER TABLE fcapi_{table} ADD CONSTRAINT fcapi_{table}_pkey PRIMARY KEY (id);
+            """
+            logger.info(f"{table}: creating fcapi_{table}_pkey")
+            cur.execute(create_pk_sql)
+            logger.info(f"{table}: created fcapi_{table}_pkey")
+    logger.info("created pk constraints")
+
+@timing
+def dump_all(start_from: str = "container"):
+    logger.info("starting dump")
+    go = False
+    for k in DUMP_SQL:
+        if k == start_from:
+            go = True
+        if go:
+            dump_table(k)
+    dump_legacy_release_extid()
+    logger.info("finished dump")
+
+@timing
+def restore_all():
+    logger.info("starting restore")
+    cache = dc.Cache("fcmigrate")
+
+    if b"dropped_fk" in cache:
+        dropped_fk = cache[b"dropped_fk"]
+    else:
+        dropped_fk = drop_fk_constraints()
+        cache[b'dropped_fk'] = dropped_fk
+
+    if b"dropped_pk" in cache:
+        dropped_pk = cache[b"dropped_pk"]
+    else:
+        dropped_pk = drop_pk_constraints()
+        cache[b'dropped_pk'] = dropped_pk
+
+    #simple_restore("container")
+    #restore_creator()
+    #restore_work()
+    #restore_release()
+    restore_releaseextid()
     simple_restore("releaseabstract")
     simple_restore("releasecontrib")
     simple_restore("releaseref")
@@ -556,5 +740,19 @@ def restore_workflow():
     simple_restore("webcaptureurl")
     simple_restore("webcapturecdx")
 
+    create_pk_constraints(dropped_pk)
+    create_fk_constraints(dropped_fk)
+
+    del cache[b'dropped_fk']
+    del cache[b'dropped_pk']
+
+    logger.info("finished restore")
+
+@timing
+def main():
+    # TODO accept from_table argument from args
+    #dump_all()
+    restore_all()
+
 if __name__ == '__main__':
-    dump_workflow()
+    main()

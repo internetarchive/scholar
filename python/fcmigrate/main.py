@@ -642,7 +642,6 @@ def restore_releaseextid() -> int:
 def restore_file():
     table = "file"
     indexes = [
-            # TODO will i be ruined by pkey,fkey indexes?
             ("fcapi_file_legacy_rev_idx", "legacy_rev"),
             ("fcapi_file_md5_idx", "md5"),
             ("fcapi_file_sha1_idx", "sha1"),
@@ -766,16 +765,18 @@ def restore_all():
         dropped_pk = drop_pk_constraints()
         cache[b'dropped_pk'] = dropped_pk
 
-    #simple_restore("container")
-    #restore_creator()
-    #restore_work()
-    #restore_release()
+    simple_restore("container")
+    restore_creator()
+    restore_work()
+    restore_release()
     restore_releaseextid()
-    simple_restore("releaseabstract")
-    simple_restore("releasecontrib")
-    simple_restore("releaseref")
+
+    restore_releaseabstract()
+    restore_releasecontrib()
+    restore_releaseref()
+
     restore_file()
-    simple_restore("fileurl")
+    restore_fileurl()
     simple_restore("fileset")
     simple_restore("filesetfile")
     simple_restore("webcapture")
@@ -792,8 +793,9 @@ def restore_all():
 
 @timing
 def main():
-    # TODO accept from_table argument from args
-    #dump_all()
+    # TODO accept dump_from_table argument from args
+    dump_all()
+    # TODO accept restore_from_table argument from args
     restore_all()
 
 if __name__ == '__main__':

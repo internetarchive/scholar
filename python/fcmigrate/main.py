@@ -68,11 +68,7 @@ DUMP_SQL = {
                   FROM container_ident ci
                   JOIN container_rev cr ON ci.rev_id = cr.id
                   WHERE
-                    ci.is_live = true
-                    AND
-                    ci.redirect_id is NULL
-                    AND
-                    cr.container_type != 'test'
+                    coalesce(trim(cr.container_type), '') != 'test'
                 ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
         "creator": f"""
@@ -147,8 +143,10 @@ DUMP_SQL = {
               FROM
                 release_ident ri
               JOIN release_rev rr ON ri.rev_id = rr.id
+              JOIN work_ident wi ON rr.work_ident_id = wi.id
               WHERE ri.is_live = true
               AND ri.redirect_id IS NULL
+              AND wi.is_live = true
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
         "releaseextid": """
@@ -284,12 +282,11 @@ DUMP_SQL = {
               AND fi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
-        "filesetfile": f"""
+        "filesetfile": """
             COPY (
               SELECT
                 fi.id as fileset_id,
                 ff.path_name,
-                '{SOURCE}' AS source,
                 ff.size_bytes,
                 ff.md5,
                 ff.sha1,
@@ -485,7 +482,7 @@ RESTORE_SQL = {
             FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
         """,
         "filesetfile": """
-            COPY fcapi_filesetfile (fileset_id, path_name, source, size_bytes, md5, sha1,
+            COPY fcapi_filesetfile (fileset_id, path_name, size_bytes, md5, sha1,
                 sha256, mimetype, extra)
             FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
         """,

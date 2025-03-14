@@ -566,6 +566,39 @@ def restore_release() -> int:
 
     return count
 
+def restore_releaseabstract() -> int:
+    table = "releaseabstract"
+    indexes = [
+            ("fcapi_releaseabstract_release_idx", "release_id"),
+            ("fcapi_releaseabstract_sha1_idx", "sha1"),
+    ]
+    drop_indexes(table, [idx[0] for idx in indexes])
+    count = simple_restore(table)
+    create_indexes(table, indexes)
+    return count
+
+def restore_releasecontrib() -> int:
+    table = "releasecontrib"
+    indexes = [
+            ("fcapi_releasecontrib_release_idx", "release_id"),
+            ("fcapi_releasecontrib_creator_idx", "creator_id"),
+    ]
+    drop_indexes(table, [idx[0] for idx in indexes])
+    count = simple_restore(table)
+    create_indexes(table, indexes)
+    return count
+
+def restore_releaseref() -> int:
+    table = "releaseref"
+    indexes = [
+            ("fcapi_releaseref_release_idx", "release_id"),
+            ("fcapi_releaseref_target_release_idx", "target_release_id"),
+    ]
+    drop_indexes(table, [idx[0] for idx in indexes])
+    count = simple_restore(table)
+    create_indexes(table, indexes)
+    return count
+
 def restore_releaseextid() -> int:
     table = "releaseextid"
     indexes = [
@@ -616,6 +649,18 @@ def restore_file():
             ("fcapi_file_sha256_idx", "sha256"),
             ("fcapi_file_source_idx", "source"),
             ("fcapi_file_updated_idx", "updated"),
+    ]
+
+    drop_indexes(table, [idx[0] for idx in indexes])
+    count = simple_restore(table)
+    create_indexes(table, indexes)
+
+    return count
+
+def restore_fileurl():
+    table = "fileurl"
+    indexes = [
+            ("fcapi_fileurl_file_idx", "file_id"),
     ]
 
     drop_indexes(table, [idx[0] for idx in indexes])

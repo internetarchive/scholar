@@ -335,16 +335,14 @@ class ReleaseExtId(models.Model):
     class Meta:
         indexes = [
                 # we need to quickly query by external value
-                models.Index(fields=["release"],
-                             name="%(app_label)s_%(class)s_release_idx"),
-                models.Index(fields=["id_type", "id_value"],
-                             name="extid_lookup_idx"),
+                models.Index(fields=["release"], name="%(app_label)s_%(class)s_release_idx"),
+                models.Index(fields=["id_type", "id_value"], name="extid_lookup_idx"),
                 ]
 
 
 class ReleaseAbstract(models.Model):
     """The text of a release's abstract"""
-    release = models.ForeignKey(Release, on_delete=models.CASCADE)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
     mimetype = models.CharField(default="text/plain")
     language = models.CharField(
             help_text="Primary language of abstract. Two-letter RFC1766/ISO639-1 language code.",
@@ -355,17 +353,23 @@ class ReleaseAbstract(models.Model):
 
     class Meta:
         indexes = [
-                models.Index(fields=["sha1"],
-                             name="%(app_label)s_%(class)s_sha1_idx"),
+                models.Index(fields=["release"], name="%(app_label)s_%(class)s_release_idx"),
+                models.Index(fields=["sha1"], name="%(app_label)s_%(class)s_sha1_idx"),
                 ]
 
 
 class ReleaseContrib(models.Model):
-    """A record of a given author's contribution to a release."""
-    release = models.ForeignKey(Release, on_delete=models.CASCADE)
-    creator = models.ForeignKey(Creator, on_delete=models.CASCADE)
+    """A record of a given author's contribution to a release. In theory there
+    should at least be a raw_name. However, sometimes a contributor is
+    something odd like an organization. this is captured in the extra column.
+    hence, we allow nulling of the whole row, which is not ideal. Position is
+    nullable in the old schema and, indeed, we have many null positions that
+    are carried over (sadly)."""
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
+    creator = models.ForeignKey(Creator, on_delete=models.CASCADE,
+                                null=True, blank=True, db_index=False)
     raw_name = models.CharField(
-            help_text="Name of the author as listed in the reference. If this reference is matched to an author in our database, this value might differ from the linked author's display name.")
+            help_text="Name of the author as listed in the reference. If this reference is matched to an author in our database, this value might differ from the linked author's display name.", null=True, blank=True)
     given_name = models.CharField(
             help_text="'first' name of a human depending on context",
             null=True, blank=True)
@@ -383,9 +387,16 @@ class ReleaseContrib(models.Model):
             help_text="Name of instituion or organization to which contributor belonged",
             null=True, blank=True)
     position = models.SmallIntegerField(
-            help_text="Position in list of contributors")
+            help_text="Position in list of contributors", null=True, blank=True)
     extra = models.JSONField(
-            help_text="JSON blob for additional metadata")
+            help_text="arbitrary storage for additional key/value data found in upstream sources",
+            null=True, blank=True)
+
+    class Meta:
+        indexes = [
+                models.Index(fields=["release"], name="%(app_label)s_%(class)s_release_idx"),
+                models.Index(fields=["creator"], name="%(app_label)s_%(class)s_creator_idx"),
+                ]
 
 
 class ReleaseRef(models.Model):
@@ -393,27 +404,38 @@ class ReleaseRef(models.Model):
     release = models.ForeignKey(
             Release,
             help_text="release in which this citation occurred",
-            on_delete=models.CASCADE)
+            on_delete=models.CASCADE, db_index=False)
     position = models.SmallIntegerField(
             help_text="Position in list of references")
     target_release = models.ForeignKey(
             Release,
             on_delete=models.CASCADE,
             help_text="Release referenced by this citation",
-            related_name="target")
+            related_name="target", db_index=False)
+
+    class Meta:
+        indexes = [
+                models.Index(fields=["release"], name="%(app_label)s_%(class)s_release_idx"),
+                models.Index(fields=["target_release"],
+                             name="%(app_label)s_%(class)s_target_release_idx"),
+                ]
 
 
 class BaseFile(models.Model):
     """
     We track a few different kinds of files so this abstract base class
-    collects their common columns.
+    collects their common columns. Note that there is no reason why sha1,
+    sha256, md5, nor size_bytes should be nullable--we just have millions of
+    seemingly bad rows in the legacy db that need to be cleaned up. those rows
+    stayed nullable until we do that cleanup.
     """
-    size_bytes = models.BigIntegerField(
+    # TODO these should not be nullable
+    size_bytes = models.BigIntegerField(null=True, blank=True,
             help_text="size in bytes of this file")
-    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
-    sha256 = models.CharField(max_length=SHA256_MAX_LENGTH)
-    md5 = models.CharField(max_length=MD5_MAX_LENGTH)
-    mimetype = models.CharField()
+    sha1 = models.CharField(max_length=SHA1_MAX_LENGTH, null=True, blank=True)
+    sha256 = models.CharField(max_length=SHA256_MAX_LENGTH, null=True, blank=True)
+    md5 = models.CharField(max_length=MD5_MAX_LENGTH, null=True, blank=True)
+    mimetype = models.CharField(null=True, blank=True)
 
     class Meta:
         abstract = True
@@ -437,17 +459,14 @@ class File(Entity, BaseFile):
 
 
 class ReleaseFile(models.Model):
-    file = models.ForeignKey(File, on_delete=models.CASCADE)
+    file = models.ForeignKey(File, on_delete=models.CASCADE, db_index=False)
     release = models.ForeignKey(Release, on_delete=models.CASCADE)
 
     class Meta:
         unique_together = [["file", "release"]]
         indexes = [
-                models.Index(fields=["file"],
-                             name="%(app_label)s_%(class)s_file_idx"),
-                models.Index(fields=["release"],
-                             name="%(app_label)s_%(class)s_release_idx"),
-
+                models.Index(fields=["file"], name="%(app_label)s_%(class)s_file_idx"),
+                models.Index(fields=["release"], name="%(app_label)s_%(class)s_release_idx"),
                 ]
 
 
@@ -455,7 +474,7 @@ class FileURL(models.Model):
     """
     A URL at which a release's file can be found.
     """
-    file = models.ForeignKey(File, on_delete=models.CASCADE)
+    file = models.ForeignKey(File, on_delete=models.CASCADE, db_index=False)
     rel = models.CharField(choices=[
         ("web", "general public web site"),
         ("webarchive", "a resource in a long-term web archive"),
@@ -467,15 +486,20 @@ class FileURL(models.Model):
         ], default="web")
     url = models.URLField(max_length=URL_MAX_LENGTH)
 
+    class Meta:
+        indexes = [
+                models.Index(fields=["file"], name="%(app_label)s_%(class)s_file_idx"),
+                ]
+
 
 class Fileset(Entity):
     """
     A set of files that should be associated with a release, possibly figures or datasets.
     """
-    release = models.ForeignKey(Release, on_delete=models.CASCADE)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, null=True, blank=True)
 
     class Meta(Entity.Meta):
-        pass
+        indexes = Entity.Meta.indexes
 
 
 class FilesetFile(BaseFile):
@@ -489,7 +513,7 @@ class FilesetFile(BaseFile):
             null=True, blank=True)
 
     class Meta(BaseFile.Meta):
-        pass
+        indexes = BaseFile.Meta.indexes
 
 
 class FilesetURL(models.Model):
@@ -532,10 +556,13 @@ class WebcaptureCDX(models.Model):
     captured = models.DateTimeField(help_text="capture time")
     url = models.URLField(max_length=URL_MAX_LENGTH)
     mimetype = models.CharField()
-    status_code = models.SmallIntegerField(help_text="HTTP status code")
+    # TODO investigate code-less rows from legacy import
+    status_code = models.SmallIntegerField(help_text="HTTP status code",
+                                           null=True, blank=True)
     sha1 = models.CharField(max_length=SHA1_MAX_LENGTH)
     sha256 = models.CharField(max_length=SHA256_MAX_LENGTH)
-    size_bytes = models.BigIntegerField()
+    # TODO investigate size-less rows from legacy import
+    size_bytes = models.BigIntegerField(null=True, blank=True)
 
 
 class WebcaptureURL(models.Model):

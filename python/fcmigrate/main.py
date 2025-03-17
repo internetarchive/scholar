@@ -100,8 +100,6 @@ DUMP_SQL = {
               FROM work_ident wi
               JOIN work_rev wr ON wi.rev_id = wr.id
               WHERE
-                wi.is_live = true
-              AND
                 wi.redirect_id IS NULL
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
@@ -143,10 +141,8 @@ DUMP_SQL = {
               FROM
                 release_ident ri
               JOIN release_rev rr ON ri.rev_id = rr.id
-              JOIN work_ident wi ON rr.work_ident_id = wi.id
               WHERE ri.is_live = true
               AND ri.redirect_id IS NULL
-              AND wi.is_live = true
               ) TO STDOUT WITH (FORMAT CSV, DELIMITER E'\t', HEADER);
         """,
         "releaseextid": """

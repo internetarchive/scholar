@@ -48,8 +48,9 @@ def main():
     total = int(out.stdout.decode("utf-8").strip().split(' ')[0])
 
     count = 0
+    skip_count = 0
     with psycopg.connect(conninfo=DB_URL) as conn, conn.cursor() as cur:
-        with open(CITESEER_SHA_PATH) as f:
+        with open(CITESEER_SHA_PATH) as f, open("./sha1_urls.tsv", mode='w') as outf:
             for line in f:
                 sha1 = line.strip()
                 sql = """
@@ -59,12 +60,17 @@ def main():
                 AND fru.url LIKE '%%//web.archive.org%%'
                 """
                 cur.execute(sql, (sha1,))
-                urls = cur.fetchall()
-                urls = sorted(urls, key=lambda u: u[0].split("/")[4], reverse=True)
-                print(f"{sha1}\t{citeseer_url(sha1)}\t{urls[0][0]}")
+                urls = sorted(cur.fetchall(), key=lambda u: u[0].split("/")[4], reverse=True)
+                # TODO take out for prod
+                if len(urls) == 0:
+                    skip_count += 1
+                    continue
+                # NB it's possible there is no wayback url, will find out once
+                # i run against prod and can adapt.
+                print(f"{sha1}\t{citeseer_url(sha1)}\t{urls[0][0]}", file=outf)
                 count += 1
-                if count % 10000:
-                    print(f"{count}/{total}\r", end="")
+                if count % 10000 == 0:
+                    print(f"progress: {count}/{total} skip: {skip_count}\r", end="")
 
 if __name__ == "__main__":
     main()

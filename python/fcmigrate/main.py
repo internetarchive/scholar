@@ -1,3 +1,17 @@
+"""
+This script connects to a postgresql database containing fatcat's original
+schema, dumps several hundred gigabytes worth of .tsv files, and then COPYs
+those .tsv files into a postgresql database configured with the new fatcat
+schema as defined in the new scholar repository (the fcapi application in the
+djscholar site).
+
+This script is intended to only be used a few times and is far from perfect or
+well crafted and, naturally, lacks automated tests. it currently hardcodes
+database urls for postgresql running on my laptop.
+
+It has a few dependencies (psycopg and diskcache) and should be run with uv
+from the root of the project.
+"""
 import logging
 import os
 from collections import namedtuple

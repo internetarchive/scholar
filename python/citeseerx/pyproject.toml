@@ -1,0 +1,13 @@
+[project]
+name = "citeseerx"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "psycopg[binary]>=3.2.6",
+]
+
+[[tool.uv.index]]
+url = "http://nexus.us.archive.org/repository/pypi-group/simple"
+default = true

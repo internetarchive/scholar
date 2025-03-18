@@ -10,15 +10,17 @@ this is complicated by some facts:
 
 """
 import logging
+import os
 import subprocess
 from functools import wraps
 from time import time
 
 import psycopg
 
-# TODO fix for prod
-DB_URL="postgresql:///fatcat_prod?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets"
-CITESEER_SHA_PATH = "/home/vilmibm/src/work/scratch/common_citeseer.txt"
+DB_URL = os.environ.get("DB_URL",
+                        "postgresql:///fatcat_prod?host=/home/vilmibm/src/fatcat-scholar/devdb/pgdata/sockets")
+CITESEER_SHA_PATH = os.environ.get("CITESEER_SHA_PATH",
+                                   "/home/vilmibm/src/work/scratch/common_citeseer.txt")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

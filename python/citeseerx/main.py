@@ -9,11 +9,14 @@ this is complicated by some facts:
     - file_rev_url.url is not gauranteed to be unique (ie, several of the same urls may end up as rows)
 
 """
+from itertools import batched
 import logging
 import os
 import subprocess
+from typing import Dict, List, Optional
 from functools import wraps
 from time import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import psycopg
 
@@ -45,34 +48,59 @@ def timing(f):
 def citeseer_url(sha1: str) -> str:
     return f"https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi={sha1}"
 
+SQL = """
+    SELECT fru.url FROM file_rev_url fru
+    JOIN file_rev fr ON fru.file_rev = fr.id
+    WHERE fr.sha1 = %s
+    AND fru.url LIKE '%%//web.archive.org%%'
+"""
+
+def process(name: str, sha1s: List[str]) -> Dict[str, Optional[str]]:
+    out = { }
+    total = len(sha1s)
+    count = 0
+    with psycopg.connect(conninfo=DB_URL) as conn, conn.cursor() as cur:
+        for sha1 in sha1s:
+            sha1 = sha1.strip()
+            us = cur.execute(SQL, (sha1,)).fetchall()
+            urls = sorted(us, key=lambda u: u[0].split("/")[4], reverse=True)
+            if len(urls) == 0:
+                out[sha1] = None
+            else:
+                out[sha1] = urls[0][0]
+            count += 1
+            if count % 10000 == 0:
+                print(f"{name}: {count}/{total}")
+    return out
+
 def main():
     out = subprocess.run(["wc", "-l", CITESEER_SHA_PATH], capture_output=True, check=True)
     total = int(out.stdout.decode("utf-8").strip().split(' ')[0])
 
     count = 0
     skip_count = 0
-    with psycopg.connect(conninfo=DB_URL) as conn, conn.cursor() as cur:
-        with open(CITESEER_SHA_PATH) as f, open("./sha1_urls.tsv", mode='w') as outf:
-            for line in f:
-                sha1 = line.strip()
-                sql = """
-                SELECT fru.url FROM file_rev_url fru
-                JOIN file_rev fr ON fru.file_rev = fr.id
-                WHERE fr.sha1 = %s
-                AND fru.url LIKE '%%//web.archive.org%%'
-                """
-                cur.execute(sql, (sha1,))
-                urls = sorted(cur.fetchall(), key=lambda u: u[0].split("/")[4], reverse=True)
-                # TODO take out for prod
-                if len(urls) == 0:
-                    skip_count += 1
-                    continue
-                # NB it's possible there is no wayback url, will find out once
-                # i run against prod and can adapt.
-                print(f"{sha1}\t{citeseer_url(sha1)}\t{urls[0][0]}", file=outf)
+    with open(CITESEER_SHA_PATH) as f:
+        with ProcessPoolExecutor(max_workers=10) as executor:
+            futures = []
+            bcount = 0
+            for batch in batched(f, 450000):
+                futures.append(executor.submit(process, f"batch {bcount}", batch))
+                bcount += 1
+            final = {}
+            for future in as_completed(futures):
+                final = final | future.result()
+
+    with open("./sha1_urls.tsv", mode='w') as outf, open("./sha1_skip.txt", mode="w") as skipf:
+        count = 0
+        for sha1, url in final.items():
+            if url is None:
+                print(sha1, file=skipf)
+                skip_count += 1
+            else:
+                print(f"{sha1}\t{citeseer_url(sha1)}\t{url}", file=outf)
                 count += 1
-                if count % 10000 == 0:
-                    print(f"progress: {count}/{total} skip: {skip_count}\r", end="")
+            print(f"\rprogress: {count}/{total} skip: {skip_count}", end="")
+        
 
 if __name__ == "__main__":
     main()

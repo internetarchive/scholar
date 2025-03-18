@@ -16,7 +16,7 @@ import subprocess
 from typing import Dict, List, Optional
 from functools import wraps
 from time import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import psycopg
 
@@ -80,7 +80,7 @@ def main():
     count = 0
     skip_count = 0
     with open(CITESEER_SHA_PATH) as f:
-        with ProcessPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             futures = []
             bcount = 0
             for batch in batched(f, 450000):

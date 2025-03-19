@@ -18,6 +18,7 @@ from functools import wraps
 from time import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+#import psycopg_pool
 import psycopg
 
 DB_URL = os.environ.get("DB_URL",
@@ -55,22 +56,26 @@ SQL = """
     AND fru.url LIKE '%%//web.archive.org%%'
 """
 
+#pool = psycopg_pool.ConnectionPool(conninfo=DB_URL)
+#pool.wait()
+
 def process(name: str, sha1s: List[str]) -> Dict[str, Optional[str]]:
     out = { }
     total = len(sha1s)
     count = 0
-    with psycopg.connect(conninfo=DB_URL) as conn, conn.cursor() as cur:
+    with psycopg.connect(conninfo=DB_URL) as conn:
         for sha1 in sha1s:
-            sha1 = sha1.strip()
-            us = cur.execute(SQL, (sha1,)).fetchall()
-            urls = sorted(us, key=lambda u: u[0].split("/")[4], reverse=True)
-            if len(urls) == 0:
-                out[sha1] = None
-            else:
-                out[sha1] = urls[0][0]
-            count += 1
-            if count % 10000 == 0:
-                print(f"{name}: {count}/{total}")
+            with conn.cursor() as cur:
+                sha1 = sha1.strip()
+                us = cur.execute(SQL, (sha1,)).fetchall()
+                urls = sorted(us, key=lambda u: u[0].split("/")[4], reverse=True)
+                if len(urls) == 0:
+                    out[sha1] = None
+                else:
+                    out[sha1] = urls[0][0]
+                count += 1
+                if count % 10000 == 0:
+                    print(f"{name}: {count}/{total}")
     return out
 
 def main():

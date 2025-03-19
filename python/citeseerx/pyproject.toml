@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "psycopg[binary]>=3.2.6",
+    "psycopg[binary,pool]>=3.2.6",
     "pyinstaller>=6.12.0",
 ]
 

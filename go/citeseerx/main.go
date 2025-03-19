@@ -24,8 +24,8 @@ import (
 
 const (
 	tsvPath  = "/home/vilmibm/src/work/scratch/cs_sha1_urls.tsv"
-	outPath  = "./citeseerx_wbm.tsv"
-	skipPath = "./skipped_sha1.txt"
+	outPath  = "./data/citeseerx_wbm.tsv"
+	skipPath = "./data/skipped_sha1.txt"
 )
 
 func csurl(sha1 string) string {

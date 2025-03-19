@@ -361,7 +361,7 @@ DUMP_SQL = {
         }
 
 def outfile(table: str) -> str:
-    return os.path.join(CWD, f"{table}.tsv")
+    return os.path.join(CWD, f"data/{table}.tsv")
 
 @timing
 def dump_table(table: str) -> int:

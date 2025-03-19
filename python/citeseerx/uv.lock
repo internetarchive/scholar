@@ -1,0 +1,195 @@
+version = 1
+requires-python = ">=3.12"
+
+[[package]]
+name = "altgraph"
+version = "0.17.4"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/altgraph/0.17.4/altgraph-0.17.4.tar.gz", hash = "sha256:1b5afbb98f6c4dcadb2e2ae6ab9fa994bbb8c1d75f4fa96d340f9437ae454406" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/altgraph/0.17.4/altgraph-0.17.4-py2.py3-none-any.whl", hash = "sha256:642743b4750de17e655e6711601b077bc6598dbfa3ba5fa2b2a35ce12b508dff" },
+]
+
+[[package]]
+name = "citeseerx"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "psycopg", extra = ["binary", "pool"] },
+    { name = "pyinstaller" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2.6" },
+    { name = "pyinstaller", specifier = ">=6.12.0" },
+]
+
+[[package]]
+name = "macholib"
+version = "1.16.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "altgraph" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/macholib/1.16.3/macholib-1.16.3.tar.gz", hash = "sha256:07ae9e15e8e4cd9a788013d81f5908b3609aa76f9b1421bae9c4d7606ec86a30" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/macholib/1.16.3/macholib-1.16.3-py2.py3-none-any.whl", hash = "sha256:0e315d7583d38b8c77e815b1ecbdbf504a8258d8b3e17b61165c6feb60d18f2c" },
+]
+
+[[package]]
+name = "packaging"
+version = "24.2"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/packaging/24.2/packaging-24.2.tar.gz", hash = "sha256:c228a6dc5e932d346bc5739379109d49e8853dd8223571c7c5b55260edc0b97f" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/packaging/24.2/packaging-24.2-py3-none-any.whl", hash = "sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759" },
+]
+
+[[package]]
+name = "pefile"
+version = "2023.2.7"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pefile/2023.2.7/pefile-2023.2.7.tar.gz", hash = "sha256:82e6114004b3d6911c77c3953e3838654b04511b8b66e8583db70c65998017dc" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pefile/2023.2.7/pefile-2023.2.7-py3-none-any.whl", hash = "sha256:da185cd2af68c08a6cd4481f7325ed600a88f6a813bad9dea07ab3ef73d8d8d6" },
+]
+
+[[package]]
+name = "psycopg"
+version = "3.2.6"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg/3.2.6/psycopg-3.2.6.tar.gz", hash = "sha256:16fa094efa2698f260f2af74f3710f781e4a6f226efe9d1fd0c37f384639ed8a" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg/3.2.6/psycopg-3.2.6-py3-none-any.whl", hash = "sha256:f3ff5488525890abb0566c429146add66b329e20d6d4835662b920cbbf90ac58" },
+]
+
+[package.optional-dependencies]
+binary = [
+    { name = "psycopg-binary", marker = "implementation_name != 'pypy'" },
+]
+pool = [
+    { name = "psycopg-pool" },
+]
+
+[[package]]
+name = "psycopg-binary"
+version = "3.2.6"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:f27a46ff0497e882e8c0286e8833c785b4d1a80f23e1bf606f4c90e5f9f3ce75" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:b30ee4821ded7de48b8048b14952512588e7c5477b0a5965221e1798afba61a1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e57edf3b1f5427f39660225b01f8e7b97f5cfab132092f014bf1638bc85d81d2" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:6c5172ce3e4ae7a4fd450070210f801e2ce6bc0f11d1208d29268deb0cda34de" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:bcfab3804c43571a6615e559cdc4c4115785d258a4dd71a721be033f5f5f378d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8fa1c920cce16f1205f37b20c685c58b9656b170b8b4c93629100d342d0d118e" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:2e118d818101c1608c6b5ba52a6c977614d8f05aa89467501172ba4d10588e11" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:763319a8bfeca77d31512da71f5a33459b9568a7621c481c3828c62f9c38f351" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-musllinux_1_2_ppc64le.whl", hash = "sha256:2fbc05819560389dbece046966bc88e0f2ea77673497e274c4293b8b4c1d0703" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:5a57f99bb953b4bd6f32d0a9844664e7f6ca5ead9ba40e96635be3cd30794813" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp312-cp312-win_amd64.whl", hash = "sha256:5de6809e19a465dcb9c269675bded46a135f2d600cd99f0735afbb21ddad2af4" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:54af3fbf871baa2eb19df96fd7dc0cbd88e628a692063c3d1ab5cdd00aa04322" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:ad5da1e4636776c21eaeacdec42f25fa4612631a12f25cd9ab34ddf2c346ffb9" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f7956b9ea56f79cd86eddcfbfc65ae2af1e4fe7932fa400755005d903c709370" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1e2efb763188008cf2914820dcb9fb23c10fe2be0d2c97ef0fac7cec28e281d8" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:4b3aab3451679f1e7932270e950259ed48c3b79390022d3f660491c0e65e4838" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:849a370ac4e125f55f2ad37f928e588291a67ccf91fa33d0b1e042bb3ee1f986" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:566d4ace928419d91f1eb3227fc9ef7b41cf0ad22e93dd2c3368d693cf144408" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:f1981f13b10de2f11cfa2f99a8738b35b3f0a0f3075861446894a8d3042430c0" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-musllinux_1_2_ppc64le.whl", hash = "sha256:36f598300b55b3c983ae8df06473ad27333d2fd9f3e2cfdb913b3a5aaa3a8bcf" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:0f4699fa5fe1fffb0d6b2d14b31fd8c29b7ea7375f89d5989f002aaf21728b21" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.6/psycopg_binary-3.2.6-cp313-cp313-win_amd64.whl", hash = "sha256:afe697b8b0071f497c5d4c0f41df9e038391534f5614f7fb3a8c1ca32d66e860" },
+]
+
+[[package]]
+name = "psycopg-pool"
+version = "3.2.6"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-pool/3.2.6/psycopg_pool-3.2.6.tar.gz", hash = "sha256:0f92a7817719517212fbfe2fd58b8c35c1850cdd2a80d36b581ba2085d9148e5" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-pool/3.2.6/psycopg_pool-3.2.6-py3-none-any.whl", hash = "sha256:5887318a9f6af906d041a0b1dc1c60f8f0dda8340c2572b74e10907b51ed5da7" },
+]
+
+[[package]]
+name = "pyinstaller"
+version = "6.12.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "altgraph" },
+    { name = "macholib", marker = "sys_platform == 'darwin'" },
+    { name = "packaging" },
+    { name = "pefile", marker = "sys_platform == 'win32'" },
+    { name = "pyinstaller-hooks-contrib" },
+    { name = "pywin32-ctypes", marker = "sys_platform == 'win32'" },
+    { name = "setuptools" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0.tar.gz", hash = "sha256:1834797be48ce1b26015af68bdeb3c61a6c7500136f04e0fc65e468115dec777" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-macosx_10_13_universal2.whl", hash = "sha256:68f1e4cecf88a6272063977fa2a2c69ad37cf568e5901769d7206d0314c74f47" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:fea76fc9b55ffa730fcf90beb897cce4399938460b0b6f40507fbebfc752c753" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-manylinux2014_i686.whl", hash = "sha256:dac8a27988dbc33cdc34f2046803258bc3f6829de24de52745a5daa22bdba0f1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-manylinux2014_ppc64le.whl", hash = "sha256:83c7f3bde9871b4a6aa71c66a96e8ba5c21668ce711ed97f510b9382d10aac6c" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-manylinux2014_s390x.whl", hash = "sha256:a69818815c6e0711c727edc30680cb1f81c691b59de35db81a2d9e0ae26a9ef1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-manylinux2014_x86_64.whl", hash = "sha256:a2abf5fde31a8b38b6df7939bcef8ac1d0c51e97e25317ce3555cd675259750f" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-musllinux_1_1_aarch64.whl", hash = "sha256:8e92e9873a616547bbabbb5a3a9843d5f2ab40c3d8b26810acdf0fe257bee4cf" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-musllinux_1_1_x86_64.whl", hash = "sha256:aefe502d55c9cf6aeaed7feba80b5f8491ce43f8f2b5fe2d9aadca3ee5a05bc4" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-win32.whl", hash = "sha256:138856a5a503bb69c066377e0a22671b0db063e9cc14d5cf5c798a53561200d3" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-win_amd64.whl", hash = "sha256:0e62d3906309248409f215b386f33afec845214e69cc0f296b93222b26a88f43" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller/6.12.0/pyinstaller-6.12.0-py3-none-win_arm64.whl", hash = "sha256:0c271896a3a168f4f91827145702543db9c5427f4c7372a6df8c75925a3ac18a" },
+]
+
+[[package]]
+name = "pyinstaller-hooks-contrib"
+version = "2025.1"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "setuptools" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller-hooks-contrib/2025.1/pyinstaller_hooks_contrib-2025.1.tar.gz", hash = "sha256:130818f9e9a0a7f2261f1fd66054966a3a50c99d000981c5d1db11d3ad0c6ab2" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyinstaller-hooks-contrib/2025.1/pyinstaller_hooks_contrib-2025.1-py3-none-any.whl", hash = "sha256:d3c799470cbc0bda60dcc8e6b4ab976777532b77621337f2037f558905e3a8e9" },
+]
+
+[[package]]
+name = "pywin32-ctypes"
+version = "0.2.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pywin32-ctypes/0.2.3/pywin32-ctypes-0.2.3.tar.gz", hash = "sha256:d162dc04946d704503b2edc4d55f3dba5c1d539ead017afa00142c38b9885755" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pywin32-ctypes/0.2.3/pywin32_ctypes-0.2.3-py3-none-any.whl", hash = "sha256:8a1513379d709975552d202d942d9837758905c8d01eb82b8bcc30918929e7b8" },
+]
+
+[[package]]
+name = "setuptools"
+version = "76.1.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/setuptools/76.1.0/setuptools-76.1.0.tar.gz", hash = "sha256:4959b9ad482ada2ba2320c8f1a8d8481d4d8d668908a7a1b84d987375cd7f5bd" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/setuptools/76.1.0/setuptools-76.1.0-py3-none-any.whl", hash = "sha256:34750dcb17d046929f545dec9b8349fe42bf4ba13ddffee78428aec422dbfb73" },
+]
+
+[[package]]
+name = "typing-extensions"
+version = "4.12.2"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/typing-extensions/4.12.2/typing_extensions-4.12.2.tar.gz", hash = "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/typing-extensions/4.12.2/typing_extensions-4.12.2-py3-none-any.whl", hash = "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d" },
+]
+
+[[package]]
+name = "tzdata"
+version = "2025.1"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/tzdata/2025.1/tzdata-2025.1.tar.gz", hash = "sha256:24894909e88cdb28bd1636c6887801df64cb485bd593f2fd83ef29075a81d694" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/tzdata/2025.1/tzdata-2025.1-py2.py3-none-any.whl", hash = "sha256:7e127113816800496f027041c570f50bcd464a020098a3b6b199517772303639" },
+]

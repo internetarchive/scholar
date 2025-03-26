@@ -1,6 +1,10 @@
+import secrets
 import uuid
+from datetime import datetime, timedelta
+
 from django.db import models
 from django.db.models.functions import Now
+
 
 URL_MAX_LENGTH = 100000 # we have some weird URLs.
 SHA1_MAX_LENGTH = 40
@@ -580,3 +584,20 @@ class WebcaptureURL(models.Model):
         ("webarchive", "webarchive"),
         ])
     url = models.URLField(max_length=URL_MAX_LENGTH)
+
+
+
+def get_default_token_expiry() -> datetime:
+    return datetime.now() + timedelta(years=1)
+
+def generate_token() -> str:
+    # TODO use https://docs.python.org/3/library/secrets.html
+    pass
+
+class AuthToken(models.Model):
+    """
+    A simple token for use with the API. Grants write access.
+    """
+    name = models.CharField(max_length=100)
+    expiry = models.DateTimeField(null=True, blank=True, default=get_default_token_expiry)
+    token = models.CharField(max_length=100)

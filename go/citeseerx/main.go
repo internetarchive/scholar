@@ -8,7 +8,7 @@ the actual file consumed here was produced by this sql on fatcat's prod db:
 fatcat_prod=# create table temp_citeseer_sha1s (sha1 text);
 fatcat_prod=# \copy temp_citeseer_sha1s (sha1) from '/home/nsmith/common_citeseer.txt';
 fatcat_prod=# create index sigh on temp_citeseer_sha1s (sha1);
-fatcat_prod=# COPY (select c.sha1, fru.url from file_rev_url fru join file_rev fr on fr.id = fru.file_rev join temp_citeseer_sha1s c on c.sha1 = fr.sha1 where fru.url like '%//web.archive.org%') TO '/home/nsmith/cs_sha1_urls.tsv' WITH (FORMAT CSV, DELIMITER E'\t');
+fatcat_prod=# COPY (select c.sha1, fru.url from file_rev_url fru join file_rev fr on fr.id = fru.file_rev join temp_citeseer_sha1s c on c.sha1 = fr.sha1 where fru.url like '%archive.org%') TO '/home/nsmith/cs_sha1_urls.tsv' WITH (FORMAT CSV, DELIMITER E'\t');
 
 the purpose of this script is to handle the selection of a single wayback machine URL for a given sha1 since we record multiple urls for many files.
 
@@ -71,12 +71,13 @@ func _main() error {
 			urls = []string{}
 		}
 
-		if url != "" {
+		if url != "" && !strings.Contains(url, "/web/None/") {
 			urls = append(urls, url)
 		}
 
 		seen[sha1] = urls
 	}
+
 	err = s.Err()
 	if err != nil {
 		return err

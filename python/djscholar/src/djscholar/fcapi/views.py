@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import List, Optional
 
-from ninja import NinjaAPI
+from ninja import NinjaAPI, ModelSchema
 from ninja.security import HttpBearer
 
 import djscholar.fcapi.models as models
@@ -10,16 +10,20 @@ v2api = NinjaAPI()
 
 @lru_cache
 def get_auth_tokens() -> List[str]:
+    """wrapper around fetching token list. the caching of this function means
+    that adding new API keys requires a server restart. As of writing, we don't
+    have a usecase for adding many keys as no external parties will be using
+    the write features of the API."""
     return [t.token for t in models.AuthToken.objects.all()]
 
 class AuthBearer(HttpBearer):
     def authenticate(self, request, token):
-        if token == "" or len(token) < 43:
+        if token == "" or len(token) < models.AuthToken.token_length:
             return None
-        valid_tokens = get_auth_tokens()
-        return token in valid_tokens
+        return token in get_auth_tokens()
 
 # TODO ModelSchema for return types
+# TODO filter hidden things
 
 def lookup_entity(entiy_type: str, id_type: str, id_value: str) -> Optional[models.Entity]:
     # TODO
@@ -34,10 +38,21 @@ def delete_entity(entity_type: str, ident: str) -> Optional[models.Entity]:
 
 # Container routes
 
+COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra"]
+
+class ContainerSchema(ModelSchema):
+    # TODO consider adding a release_count field
+    class Meta:
+        model = models.Container
+        fields = COMMON_ENTITY_FIELDS + ["name", "container_type", "publisher", "issnl",
+                                         "issne", "issnp", "wikidata_qid",]
+
 @v2api.get("/container/lookup")
-def container_lookup(request, id_type: str, id_value: str) -> Optional[models.Container]:
-    # TODO
-    return None
+def container_lookup(request, id_type: str, id_value: str) -> Optional[ContainerSchema]:
+    cs = models.Container.objects.filter(**{id_type: id_value})
+    if len(cs) == 0:
+        return None
+    return ContainerSchema.from_orm(cs[0])
 
 @v2api.get("/container/{ident}")
 def container_get(request, ident: str) -> Optional[models.Container]:

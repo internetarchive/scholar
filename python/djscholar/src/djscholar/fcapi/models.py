@@ -586,18 +586,15 @@ class WebcaptureURL(models.Model):
     url = models.URLField(max_length=URL_MAX_LENGTH)
 
 
-
 def get_default_token_expiry() -> datetime:
-    return datetime.now() + timedelta(years=1)
+    return datetime.now() + timedelta(days=365)
 
-def generate_token() -> str:
-    # TODO use https://docs.python.org/3/library/secrets.html
-    pass
 
+# TODO hashing
 class AuthToken(models.Model):
     """
     A simple token for use with the API. Grants write access.
     """
     name = models.CharField(max_length=100)
     expiry = models.DateTimeField(null=True, blank=True, default=get_default_token_expiry)
-    token = models.CharField(max_length=100)
+    token = models.CharField(max_length=100, default=secrets.token_urlsafe)

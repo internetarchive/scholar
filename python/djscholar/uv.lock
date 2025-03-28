@@ -87,6 +87,7 @@ source = { editable = "." }
 dependencies = [
     { name = "django" },
     { name = "django-ninja" },
+    { name = "ninja-api-key" },
     { name = "psycopg", extra = ["binary"] },
 ]
 
@@ -101,6 +102,7 @@ dev = [
 requires-dist = [
     { name = "django", specifier = "==5.1.5" },
     { name = "django-ninja", specifier = "==1.3.0" },
+    { name = "ninja-api-key", specifier = "==1.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.4" },
 ]
 
@@ -137,6 +139,19 @@ source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple"
 sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/mypy-extensions/1.0.0/mypy_extensions-1.0.0.tar.gz", hash = "sha256:75dbf8955dc00442a438fc4d0666508a9a97b6bd41aa2f0ffe9d2f2725af0782" }
 wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/mypy-extensions/1.0.0/mypy_extensions-1.0.0-py3-none-any.whl", hash = "sha256:4392f6c0eb8a5668a69e23d168ffa70f0be9ccfd32b5cc2d26a34ae5b844552d" },
+]
+
+[[package]]
+name = "ninja-api-key"
+version = "1.0.2"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "django-ninja" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ninja-api-key/1.0.2/ninja_api_key-1.0.2.tar.gz", hash = "sha256:cc1a64f6b79cee5e84bf6bbd2d2a8a03e938044db77ca8855ab1d6f75682441d" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ninja-api-key/1.0.2/ninja_api_key-1.0.2-py3-none-any.whl", hash = "sha256:817076874cdc5f10afb941ecd45bceef4981feb23ad0a1fcdd070bc4f391a27e" },
 ]
 
 [[package]]

@@ -1,17 +1,13 @@
-from functools import lru_cache
 from typing import List, Optional
 
 from ninja import NinjaAPI, ModelSchema
-from ninja.security import HttpBearer
+from ninja_apikey.security import APIKeyAuth
 
 import djscholar.fcapi.models as models
 
 v2api = NinjaAPI()
-
-class AuthBearer(HttpBearer):
-    def authenticate(self, request, token):
-        # TODO
-        return False
+# NB: uses X-API-Key header. use admin to create keys.
+apiAuth = APIKeyAuth()
 
 # TODO ModelSchema for return types
 # TODO filter hidden things
@@ -55,13 +51,13 @@ def container_releases(request, ident: str) -> List[models.Release]:
     # TODO
     return []
 
-@v2api.delete("/container", auth=AuthBearer())
+@v2api.delete("/container", auth=apiAuth)
 def container_delete(ident: str) -> Optional[models.Container]:
     # TODO
     return None
 
 # TODO decide on patch updates vs overwrites (starting with patch updates)
-@v2api.post("/container", auth=AuthBearer())
+@v2api.post("/container", auth=apiAuth)
 def container_update(ident: str) -> Optional[models.Container]:
     # TODO
     return None

@@ -8,19 +8,10 @@ import djscholar.fcapi.models as models
 
 v2api = NinjaAPI()
 
-@lru_cache
-def get_auth_tokens() -> List[str]:
-    """wrapper around fetching token list. the caching of this function means
-    that adding new API keys requires a server restart. As of writing, we don't
-    have a usecase for adding many keys as no external parties will be using
-    the write features of the API."""
-    return [t.token for t in models.AuthToken.objects.all()]
-
 class AuthBearer(HttpBearer):
     def authenticate(self, request, token):
-        if token == "" or len(token) < models.AuthToken.token_length:
-            return None
-        return token in get_auth_tokens()
+        # TODO
+        return False
 
 # TODO ModelSchema for return types
 # TODO filter hidden things

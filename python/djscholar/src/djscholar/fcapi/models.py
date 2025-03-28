@@ -1,4 +1,3 @@
-import secrets
 import uuid
 from datetime import datetime, timedelta
 
@@ -584,17 +583,3 @@ class WebcaptureURL(models.Model):
         ("webarchive", "webarchive"),
         ])
     url = models.URLField(max_length=URL_MAX_LENGTH)
-
-
-def get_default_token_expiry() -> datetime:
-    return datetime.now() + timedelta(days=365)
-
-
-# TODO hashing
-class AuthToken(models.Model):
-    """
-    A simple token for use with the API. Grants write access.
-    """
-    name = models.CharField(max_length=100)
-    expiry = models.DateTimeField(null=True, blank=True, default=get_default_token_expiry)
-    token = models.CharField(max_length=100, default=secrets.token_urlsafe)

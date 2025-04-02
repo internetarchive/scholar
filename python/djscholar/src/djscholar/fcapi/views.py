@@ -12,9 +12,9 @@ v2api = NinjaAPI()
 # NB: uses X-API-Key header. use admin to create keys.
 apiAuth = APIKeyAuth()
 
-# TODO ModelSchema for return types
 # TODO filter hidden things
-# TODO consider generalizing route implementations if it doesn't make signatures too hideous / doesn't break doc generation
+# TODO consider generalizing route implementations if it doesn't make
+# signatures too hideous / doesn't break doc generation
 # TODO pagination
 
 COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra"]
@@ -71,6 +71,7 @@ def container_delete(request, ident: str) -> ContainerSchema:
 @v2api.post("/container", auth=apiAuth)
 def container_create(request, container_in: ContainerSchema) -> HttpResponse:
     """Create a new container."""
+    # TODO error if container already exists
     Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=201)
 
@@ -96,11 +97,35 @@ def container_batch_create(request, containers_in: List[ContainerSchema]) -> Htt
 
 # Release routes
 
+# TODO
+
 # Work routes
 
-# 
+# TODO
 
-# reads
+# Creator routes
+
+# TODO
+
+# File routes
+
+# TODO
+
+# Fileset routes
+
+# TODO
+
+# Webcapture routes
+
+# TODO
+
+# Changelog routes
+
+# TODO
+
+#### routes outline:
+
+### reads
 
 # lookup entity
 # get entity
@@ -115,14 +140,9 @@ def container_batch_create(request, containers_in: List[ContainerSchema]) -> Htt
 # changelog
 # changelog/{index}
 
-# writes
-
-# set of API keys with:
-# - expiry
-# - value
-# - name
+### writes
 
 # create entity
 # batch create entity
-# update entity
+# update entity (replace)
 # delete entity

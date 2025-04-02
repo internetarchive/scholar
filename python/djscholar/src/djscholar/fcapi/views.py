@@ -39,6 +39,9 @@ ReleaseSchema = create_schema(Release,
 
 @v2api.get("/container/lookup")
 def container_lookup(request, id_type: str, id_value: str) -> ContainerSchema:
+    """Look up a container using an external ID. Valid ID types: issnl, issne,
+    issnp, wikidata_qid. If multiple containers match the ID, an arbitrary one
+    is returned."""
     cs = Container.objects.filter(**{id_type: id_value})
     if len(cs) == 0:
         raise Http404(f"no container found with {id_type} of {id_value}")
@@ -46,16 +49,20 @@ def container_lookup(request, id_type: str, id_value: str) -> ContainerSchema:
 
 @v2api.get("/container/{ident}")
 def container_get(request, ident: str) -> ContainerSchema:
+    """Get a single container by its ID."""
     # TODO handle legacy idents
     return ContainerSchema.from_orm(get_object_or_404(Container, id=ident))
 
 @v2api.get("/container/{ident}/releases")
 def container_releases(request, ident: str) -> List[ReleaseSchema]:
+    """Get all releases for a given container ID."""
     # TODO handle legacy idents
+    # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in Release.objects.filter(container__id=ident)]
 
 @v2api.delete("/container/{ident}", auth=apiAuth)
 def container_delete(request, ident: str) -> ContainerSchema:
+    """Delete the container with a given ID."""
     # TODO handle legacy idents
     c = get_object_or_404(Container, id=ident)
     c.delete()
@@ -63,17 +70,15 @@ def container_delete(request, ident: str) -> ContainerSchema:
 
 @v2api.post("/container", auth=apiAuth)
 def container_create(request, container_in: ContainerSchema) -> HttpResponse:
-    c = Container()
-    for attr, value in container_in.dict().items():
-        setattr(c, attr, value)
-    c.save()
-
+    """Create a new container."""
+    Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=201)
 
 @v2api.put("/container", auth=apiAuth)
 def container_update(request, container_in: ContainerSchema) -> HttpResponse:
     """
-    Replace a container entity wholesale. Must specify entire content of entity; not a patch operation.
+    Replace a container entity wholesale. Must specify entire content of
+    entity; not a patch operation. 404s if container does not yet exist.
     """
     in_dict = container_in.dict()
     c = get_object_or_404(Container, id=in_dict["id"])
@@ -84,14 +89,9 @@ def container_update(request, container_in: ContainerSchema) -> HttpResponse:
 
 @v2api.post("/containers", auth=apiAuth)
 def container_batch_create(request, containers_in: List[ContainerSchema]) -> HttpResponse:
-    cs: List[Container] = []
-    for cin in containers_in:
-        c = Container()
-        for attr, value in cin.dict():
-            setattr(c, attr, value)
-        cs.append(c)
-    Container.objects.bulk_create(cs)
-
+    """Bulk create a list of containers. Functionally equivalent to calling
+    POST /container repeatedly."""
+    Container.objects.bulk_create([Container(**cin.dict()) for cin in containers_in])
     return v2api.create_response(request, "containers created", status=201)
 
 # Release routes

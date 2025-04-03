@@ -31,6 +31,9 @@ default = true
 [tool.mypy]
 plugins = ["mypy_django_plugin.main"]
 
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "djscholar.site.settings"
+
 #[tool.pylsp-mypy]
 ## Sadly, this would not acknowledge mypy_django_plugin
 #enabled = true
@@ -45,7 +48,9 @@ django_settings_module = "djscholar.site.settings"
 
 [dependency-groups]
 dev = [
-    "django-stubs[compatible-mypy]>=5.1.2",
-    "mypy>=1.14.1",
-    "ruff>=0.9.3",
+    "django-stubs[compatible-mypy]==5.1.2",
+    "factory-boy==3.3.3",
+    "mypy==1.14.1",
+    "pytest-django==4.11.0",
+    "ruff==0.11.2",
 ]

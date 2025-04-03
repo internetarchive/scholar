@@ -20,6 +20,15 @@ wheels = [
 ]
 
 [[package]]
+name = "colorama"
+version = "0.4.6"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/colorama/0.4.6/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/colorama/0.4.6/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6" },
+]
+
+[[package]]
 name = "django"
 version = "5.1.5"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -35,15 +44,15 @@ wheels = [
 
 [[package]]
 name = "django-ninja"
-version = "1.3.0"
+version = "1.4.0"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
 dependencies = [
     { name = "django" },
     { name = "pydantic" },
 ]
-sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/django-ninja/1.3.0/django_ninja-1.3.0.tar.gz", hash = "sha256:5b320e2dc0f41a6032bfa7e1ebc33559ae1e911a426f0c6be6674a50b20819be" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/django-ninja/1.4.0/django_ninja-1.4.0.tar.gz", hash = "sha256:590bb1c8fc32f07bac1d5b5d404419205c41b4945b86d4237b0676174c1b6df7" }
 wheels = [
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/django-ninja/1.3.0/django_ninja-1.3.0-py3-none-any.whl", hash = "sha256:f58096b6c767d1403dfd6c49743f82d780d7b9688d9302ecab316ac1fa6131bb" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/django-ninja/1.4.0/django_ninja-1.4.0-py3-none-any.whl", hash = "sha256:b64bb7f269d0c0a890b429802dffbe3689298eb1ed7dc324224f3b325e8f8871" },
 ]
 
 [[package]]
@@ -94,23 +103,60 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "django-stubs", extra = ["compatible-mypy"] },
+    { name = "factory-boy" },
     { name = "mypy" },
+    { name = "pytest-django" },
     { name = "ruff" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = "==5.1.5" },
-    { name = "django-ninja", specifier = "==1.3.0" },
+    { name = "django-ninja", specifier = "==1.4.0" },
     { name = "ninja-api-key", specifier = "==1.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.4" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "django-stubs", extras = ["compatible-mypy"], specifier = ">=5.1.2" },
-    { name = "mypy", specifier = ">=1.14.1" },
-    { name = "ruff", specifier = ">=0.9.3" },
+    { name = "django-stubs", extras = ["compatible-mypy"], specifier = "==5.1.2" },
+    { name = "factory-boy", specifier = "==3.3.3" },
+    { name = "mypy", specifier = "==1.14.1" },
+    { name = "pytest-django", specifier = "==4.11.0" },
+    { name = "ruff", specifier = "==0.11.2" },
+]
+
+[[package]]
+name = "factory-boy"
+version = "3.3.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "faker" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/factory-boy/3.3.3/factory_boy-3.3.3.tar.gz", hash = "sha256:866862d226128dfac7f2b4160287e899daf54f2612778327dd03d0e2cb1e3d03" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/factory-boy/3.3.3/factory_boy-3.3.3-py2.py3-none-any.whl", hash = "sha256:1c39e3289f7e667c4285433f305f8d506efc2fe9c73aaea4151ebd5cdea394fc" },
+]
+
+[[package]]
+name = "faker"
+version = "37.1.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "tzdata" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/faker/37.1.0/faker-37.1.0.tar.gz", hash = "sha256:ad9dc66a3b84888b837ca729e85299a96b58fdaef0323ed0baace93c9614af06" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/faker/37.1.0/faker-37.1.0-py3-none-any.whl", hash = "sha256:dc2f730be71cb770e9c715b13374d80dbcee879675121ab51f9683d262ae9a1c" },
+]
+
+[[package]]
+name = "iniconfig"
+version = "2.1.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/iniconfig/2.1.0/iniconfig-2.1.0.tar.gz", hash = "sha256:3abbd2e30b36733fee78f9c7f7308f2d0050e88f0087fd25c2645f63c773e1c7" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/iniconfig/2.1.0/iniconfig-2.1.0-py3-none-any.whl", hash = "sha256:9deba5723312380e77435581c6bf4935c94cbfab9b1ed33ef8d238ea168eb760" },
 ]
 
 [[package]]
@@ -152,6 +198,24 @@ dependencies = [
 sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ninja-api-key/1.0.2/ninja_api_key-1.0.2.tar.gz", hash = "sha256:cc1a64f6b79cee5e84bf6bbd2d2a8a03e938044db77ca8855ab1d6f75682441d" }
 wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ninja-api-key/1.0.2/ninja_api_key-1.0.2-py3-none-any.whl", hash = "sha256:817076874cdc5f10afb941ecd45bceef4981feb23ad0a1fcdd070bc4f391a27e" },
+]
+
+[[package]]
+name = "packaging"
+version = "24.2"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/packaging/24.2/packaging-24.2.tar.gz", hash = "sha256:c228a6dc5e932d346bc5739379109d49e8853dd8223571c7c5b55260edc0b97f" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/packaging/24.2/packaging-24.2-py3-none-any.whl", hash = "sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759" },
+]
+
+[[package]]
+name = "pluggy"
+version = "1.5.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pluggy/1.5.0/pluggy-1.5.0.tar.gz", hash = "sha256:2cffa88e94fdc978c4c574f15f9e59b7f4201d439195c3715ca9e2486f1d0cf1" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pluggy/1.5.0/pluggy-1.5.0-py3-none-any.whl", hash = "sha256:44e1ad92c8ca002de6377e165f3e0f1be63266ab4d554740532335b9d75ea669" },
 ]
 
 [[package]]
@@ -229,28 +293,55 @@ wheels = [
 ]
 
 [[package]]
-name = "ruff"
-version = "0.9.3"
+name = "pytest"
+version = "8.3.5"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
-sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3.tar.gz", hash = "sha256:8293f89985a090ebc3ed1064df31f3b4b56320cdfcec8b60d3295bddb955c22a" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pytest/8.3.5/pytest-8.3.5.tar.gz", hash = "sha256:f4efe70cc14e511565ac476b57c279e12a855b11f48f212af1080ef2263d3845" }
 wheels = [
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-linux_armv6l.whl", hash = "sha256:7f39b879064c7d9670197d91124a75d118d00b0990586549949aae80cdc16624" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:a187171e7c09efa4b4cc30ee5d0d55a8d6c5311b3e1b74ac5cb96cc89bafc43c" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:c59ab92f8e92d6725b7ded9d4a31be3ef42688a115c6d3da9457a5bda140e2b4" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2dc153c25e715be41bb228bc651c1e9b1a88d5c6e5ed0194fa0dfea02b026439" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:646909a1e25e0dc28fbc529eab8eb7bb583079628e8cbe738192853dbbe43af5" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5a5a46e09355695fbdbb30ed9889d6cf1c61b77b700a9fafc21b41f097bfbba4" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:c4bb09d2bbb394e3730d0918c00276e79b2de70ec2a5231cd4ebb51a57df9ba1" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:96a87ec31dc1044d8c2da2ebbed1c456d9b561e7d087734336518181b26b3aa5" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:9bb7554aca6f842645022fe2d301c264e6925baa708b392867b7a62645304df4" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cabc332b7075a914ecea912cd1f3d4370489c8018f2c945a30bcc934e3bc06a6" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:33866c3cc2a575cbd546f2cd02bdd466fed65118e4365ee538a3deffd6fcb730" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:006e5de2621304c8810bcd2ee101587712fa93b4f955ed0985907a36c427e0c2" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-musllinux_1_2_i686.whl", hash = "sha256:ba6eea4459dbd6b1be4e6bfc766079fb9b8dd2e5a35aff6baee4d9b1514ea519" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:90230a6b8055ad47d3325e9ee8f8a9ae7e273078a66401ac66df68943ced029b" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-win32.whl", hash = "sha256:eabe5eb2c19a42f4808c03b82bd313fc84d4e395133fb3fc1b1516170a31213c" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-win_amd64.whl", hash = "sha256:040ceb7f20791dfa0e78b4230ee9dce23da3b64dd5848e40e3bf3ab76468dcf4" },
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.9.3/ruff-0.9.3-py3-none-win_arm64.whl", hash = "sha256:800d773f6d4d33b0a3c60e2c6ae8f4c202ea2de056365acfa519aa48acf28e0b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pytest/8.3.5/pytest-8.3.5-py3-none-any.whl", hash = "sha256:c69214aa47deac29fad6c2a4f590b9c4a9fdb16a403176fe154b79c0b4d4d820" },
+]
+
+[[package]]
+name = "pytest-django"
+version = "4.11.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pytest-django/4.11.0/pytest_django-4.11.0.tar.gz", hash = "sha256:35b339b9a231a99de226789c3e45d4d19d6c09ca9f3c236b3b5024afbf1f68b5" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pytest-django/4.11.0/pytest_django-4.11.0-py3-none-any.whl", hash = "sha256:ab969cc86585a1763fd4a2fa1bc0f3015abbbcb823667af48320f1a1d2053291" },
+]
+
+[[package]]
+name = "ruff"
+version = "0.11.2"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2.tar.gz", hash = "sha256:ec47591497d5a1050175bdf4e1a4e6272cddff7da88a2ad595e1e326041d8d94" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-linux_armv6l.whl", hash = "sha256:c69e20ea49e973f3afec2c06376eb56045709f0212615c1adb0eda35e8a4e477" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:2c5424cc1c4eb1d8ecabe6d4f1b70470b4f24a0c0171356290b1953ad8f0e272" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:ecf20854cc73f42171eedb66f006a43d0a21bfb98a2523a809931cda569552d9" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0c543bf65d5d27240321604cee0633a70c6c25c9a2f2492efa9f6d4b8e4199bb" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:20967168cc21195db5830b9224be0e964cc9c8ecf3b5a9e3ce19876e8d3a96e3" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:955a9ce63483999d9f0b8f0b4a3ad669e53484232853054cc8b9d51ab4c5de74" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:86b3a27c38b8fce73bcd262b0de32e9a6801b76d52cdb3ae4c914515f0cef608" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:a3b66a03b248c9fcd9d64d445bafdf1589326bee6fc5c8e92d7562e58883e30f" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:0397c2672db015be5aa3d4dac54c69aa012429097ff219392c018e21f5085147" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:869bcf3f9abf6457fbe39b5a37333aa4eecc52a3b99c98827ccc371a8e5b6f1b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:2a2b50ca35457ba785cd8c93ebbe529467594087b527a08d487cf0ee7b3087e9" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:7c69c74bf53ddcfbc22e6eb2f31211df7f65054bfc1f72288fc71e5f82db3eab" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-musllinux_1_2_i686.whl", hash = "sha256:6e8fb75e14560f7cf53b15bbc55baf5ecbe373dd5f3aab96ff7aa7777edd7630" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:842a472d7b4d6f5924e9297aa38149e5dcb1e628773b70e6387ae2c97a63c58f" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-win32.whl", hash = "sha256:aca01ccd0eb5eb7156b324cfaa088586f06a86d9e5314b0eb330cb48415097cc" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-win_amd64.whl", hash = "sha256:3170150172a8f994136c0c66f494edf199a0bbea7a409f649e4bc8f4d7084080" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-win_arm64.whl", hash = "sha256:52933095158ff328f4c77af3d74f0379e34fd52f175144cefc1b192e7ccd32b4" },
 ]
 
 [[package]]

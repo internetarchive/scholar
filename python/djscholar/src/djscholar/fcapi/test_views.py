@@ -15,7 +15,7 @@ from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
 from djscholar.fcapi.models import Container, Release, Work
-from djscholar.fcapi.views import v2api, ContainerSchema, BulkContainerSchema
+from djscholar.fcapi.views import v2api, ContainerSchema
 
 client = TestClient(v2api)
 
@@ -184,8 +184,20 @@ class TestContainerRoutes(TestCase):
             self.assertEqual(len(cs), 1)
 
     def test_update(self):
-        # TODO
-        pass
+        data = ContainerSchema.from_orm(ContainerFactory.build()).model_dump_json()
+        response = client.put("/container", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
+
+        new_name = "updated name"
+        self.c.name = new_name
+        data = ContainerSchema.from_orm(self.c).model_dump_json()
+        response = client.put("/container", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        cs = Container.objects.filter(id=self.c.id)
+        self.assertEqual(len(cs), 1)
+        self.assertEqual(self.c.name, new_name)
+
 
     def test_delete(self):
         unsaved = ContainerFactory.build()

@@ -33,7 +33,6 @@ def random_issn() -> str:
     Returns:
         str: A randomly generated ISSN in the format "XXXX-XXXX"
     """
-    # Generate 7 random digits
     digits = [random.randint(0, 9) for _ in range(7)]
 
     # Calculate the check digit
@@ -75,10 +74,7 @@ def random_wikidata_qid() -> str:
     # Real Wikidata has items in the millions, but the format supports higher numbers
     qid_number = random.randint(1, 100000000)
 
-    # Format the QID with the Q prefix
-    qid = f"Q{qid_number}"
-
-    return qid
+    return f"Q{qid_number}"
 
 def lazy(generate: Callable) -> factory.LazyAttribute:
     return factory.LazyAttribute(lambda _: generate())

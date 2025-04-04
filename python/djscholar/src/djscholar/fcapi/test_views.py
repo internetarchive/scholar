@@ -1,5 +1,8 @@
+from datetime import datetime
 from typing import Callable
+import json
 import random
+import zoneinfo
 
 import factory
 from django.contrib.auth.hashers import (
@@ -11,11 +14,10 @@ from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
-from djscholar.fcapi.models import Container
-from djscholar.fcapi.views import v2api
+from djscholar.fcapi.models import Container, Release, Work
+from djscholar.fcapi.views import v2api, ContainerSchema, BulkContainerSchema
 
 client = TestClient(v2api)
-
 
 def random_issn() -> str:
     """
@@ -82,21 +84,36 @@ def lazy(generate: Callable) -> factory.LazyAttribute:
     return factory.LazyAttribute(lambda _: generate())
 
 class ContainerFactory(DjangoModelFactory):
-    class Meta:
-        model = Container
-
     issnl = lazy(random_issn)
     issne = lazy(random_issn)
     issnp = lazy(random_issn)
     wikidata_qid = lazy(random_wikidata_qid)
+    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+
+    class Meta:
+        model = Container
+
+
+class ReleaseFactory(DjangoModelFactory):
+    class Meta:
+        model = Release
+
+
+class WorkFactory(DjangoModelFactory):
+    class Meta:
+        model = Work
+
 
 class UserFactory(DjangoModelFactory):
     class Meta:
         model = User
 
+
 class APIKeyFactory(DjangoModelFactory):
     class Meta:
         model = APIKey
+
 
 class TestContainerRoutes(TestCase):
     def setUp(self):
@@ -129,16 +146,46 @@ class TestContainerRoutes(TestCase):
             self.assertEqual(response.data['id'], str(self.c.id))
 
     def test_get_releases(self):
-        # TODO
-        pass
+        c = ContainerFactory.create()
+        response = client.get(f"/container/{c.id}/releases")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 0)
+
+        rs = []
+        for _ in range(4):
+            r = ReleaseFactory.build()
+            r.container = self.c
+            r.work = WorkFactory.create()
+            r.save()
+            rs.append(r)
+
+        response = client.get(f"/container/{self.c.id}/releases")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), len(rs))
+        self.assertSetEqual(set([d['id'] for d in response.data]), set([str(r.id) for r in rs]))
 
     def test_create(self):
-        # TODO
-        pass
+        c = ContainerFactory.build()
+        data = ContainerSchema.from_orm(c).model_dump_json()
+        response = client.post("/container", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        cs = Container.objects.filter(id=c.id)
+        self.assertEqual(len(cs), 1)
+
+        response = client.post("/container", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 400)
 
     def test_batch_create(self):
-        # TODO
-        pass
+        cs = [ContainerSchema.from_orm(ContainerFactory.build()) for _ in range(100)]
+        data = "["+",".join([c.model_dump_json() for c in cs])+"]"
+
+        response = client.post("/containers", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        for c in cs:
+            cs = Container.objects.filter(id=c.id)
+            self.assertEqual(len(cs), 1)
 
     def test_update(self):
         # TODO

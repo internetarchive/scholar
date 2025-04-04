@@ -71,7 +71,11 @@ def container_delete(request, ident: str) -> ContainerSchema:
 @v2api.post("/container", auth=apiAuth)
 def container_create(request, container_in: ContainerSchema) -> HttpResponse:
     """Create a new container."""
-    # TODO error if container already exists
+    cs = Container.objects.filter(id=container_in.id)
+    if len(cs) != 0:
+        return v2api.create_response(request,
+                                     f"container with id {container_in.id} already exists",
+                                     status=400)
     Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=201)
 

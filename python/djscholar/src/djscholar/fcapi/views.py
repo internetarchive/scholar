@@ -44,6 +44,8 @@ ReleaseSchema = create_schema(Release,
                                          "pages", "number", "version", "publisher", "language",
                                          "license_slug", "withdrawn_status", "refs",])
 
+WorkSchema = create_schema(Work, fields=COMMON_ENTITY_FIELDS)
+
 
 # Container routes
 
@@ -57,28 +59,21 @@ def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema
     return ContainerSchema.from_orm(cs[0])
 
 @v2api.get("/container/{ident}")
-def container_get(request, ident: str) -> ContainerSchema:
+def get_container(request, ident: str) -> ContainerSchema:
     """Get a single container by its ID."""
     # TODO handle legacy idents
     return ContainerSchema.from_orm(get_object_or_404(Container, id=ident))
 
 @v2api.get("/container/{ident}/releases")
-def container_releases(request, ident: str) -> List[ReleaseSchema]:
+def get_container_releases(request, ident: str) -> List[ReleaseSchema]:
     """Get all releases for a given container ID."""
     # TODO handle legacy idents
     # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in Release.objects.filter(container__id=ident)]
 
-@v2api.delete("/container/{ident}", auth=apiAuth)
-def container_delete(request, ident: str) -> ContainerSchema:
-    """Delete the container with a given ID."""
-    # TODO handle legacy idents
-    c = get_object_or_404(Container, id=ident)
-    c.delete()
-    return ContainerSchema.from_orm(c)
 
 @v2api.post("/container", auth=apiAuth)
-def container_create(request, container_in: ContainerSchema) -> HttpResponse:
+def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     """Create a new container."""
     cs = Container.objects.filter(id=container_in.id)
     if len(cs) != 0:
@@ -88,8 +83,15 @@ def container_create(request, container_in: ContainerSchema) -> HttpResponse:
     Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=201)
 
+@v2api.post("/containers", auth=apiAuth)
+def bulk_create_containers(request, containers_in: List[ContainerSchema]) -> HttpResponse:
+    """Bulk create a list of containers. Functionally equivalent to calling
+    POST /container repeatedly."""
+    Container.objects.bulk_create([Container(**cin.dict()) for cin in containers_in])
+    return v2api.create_response(request, "containers created", status=201)
+
 @v2api.put("/container", auth=apiAuth)
-def container_update(request, container_in: ContainerSchema) -> HttpResponse:
+def update_container(request, container_in: ContainerSchema) -> HttpResponse:
     """
     Replace a container entity wholesale. Must specify entire content of
     entity; not a patch operation. 404s if container does not yet exist.
@@ -99,18 +101,91 @@ def container_update(request, container_in: ContainerSchema) -> HttpResponse:
     for attr, value in in_dict.items():
         setattr(c, attr, value)
     c.save()
-    return v2api.create_response(request, "container created", status=200)
+    return v2api.create_response(request, "container replaced with new data", status=200)
 
-@v2api.post("/containers", auth=apiAuth)
-def container_batch_create(request, containers_in: List[ContainerSchema]) -> HttpResponse:
-    """Bulk create a list of containers. Functionally equivalent to calling
-    POST /container repeatedly."""
-    Container.objects.bulk_create([Container(**cin.dict()) for cin in containers_in])
-    return v2api.create_response(request, "containers created", status=201)
+@v2api.delete("/container/{ident}", auth=apiAuth)
+def delete_container(request, ident: str) -> ContainerSchema:
+    """Delete the container with a given ID."""
+    # TODO handle legacy idents
+    c = get_object_or_404(Container, id=ident)
+    c.delete()
+    return ContainerSchema.from_orm(c)
 
 # Release routes
 
-# TODO
+@v2api.get("/release/lookup")
+def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
+    """Look up a release using an external ID. If multiple releases match the
+    ID, an arbitrary one is returned."""
+    rs = Release.objects.filter(**{lookup.id_type: lookup.id_value})
+    if len(rs) == 0:
+        raise Http404(f"no release found with {lookup.id_type} of {lookup.id_value}")
+    return ReleaseSchema.from_orm(rs[0])
+
+@v2api.get("/release/{ident}")
+def get_release(request, ident: str) -> ReleaseSchema:
+    """Get a single release by its ID."""
+    # TODO handle legacy idents
+    return ReleaseSchema.from_orm(get_object_or_404(Release, id=ident))
+
+@v2api.post("/release", auth=apiAuth)
+def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
+    """Create a new release."""
+    rs = Release.objects.filter(id=release_in.id)
+    if len(rs) != 0:
+        return v2api.create_response(request,
+                                     f"release with id {release_in.id} already exists",
+                                     status=400)
+    Release(**release_in.dict()).save()
+    return v2api.create_response(request, "release created", status=201)
+
+@v2api.get("/release/{ident}/container")
+def get_release_container(request, ident: str) -> ContainerSchema:
+    """Get a release's container (ie, journal)"""
+    # TODO handle legacy idents
+    release = get_object_or_404(Release, id=ident)
+    if release.container is None:
+        raise Http404(f"release {release.id} has no associated container")
+    return ContainerSchema.from_orm(Container.objects.get(id=release.container.id))
+
+@v2api.get("/release/{ident}/work")
+def get_release_work(request, ident: str) -> WorkSchema:
+    """Get a the work that represents the platonic version of this release."""
+    # TODO handle legacy idents
+    release = get_object_or_404(Release, id=ident)
+    if release.work is None:
+        # TODO this is a data integrity error and might warrant more than a 404.
+        raise Http404(f"release {release.id} has no associated work")
+    return WorkSchema.from_orm(Work.objects.get(id=release.work.id))
+
+@v2api.delete("/release/{ident}", auth=apiAuth)
+def delete_release(request, ident: str) -> ReleaseSchema:
+    """Delete the release with a given ID."""
+    # TODO handle legacy idents
+    r = get_object_or_404(Release, id=ident)
+    r.delete()
+    return ReleaseSchema.from_orm(r)
+
+@v2api.put("/release", auth=apiAuth)
+def update_release(request, release_in: ContainerSchema) -> HttpResponse:
+    """
+    Replace a release entity wholesale. Must specify entire content of
+    entity; not a patch operation. 404s if release does not yet exist.
+    """
+    in_dict = release_in.dict()
+    r = get_object_or_404(Release, id=in_dict["id"])
+    for attr, value in in_dict.items():
+        setattr(r, attr, value)
+    r.save()
+    return v2api.create_response(request, "release replaced with new content", status=200)
+
+@v2api.post("/releases", auth=apiAuth)
+def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpResponse:
+    """Bulk create a list of releases. Functionally equivalent to calling
+    POST /release repeatedly."""
+    Release.objects.bulk_create([Release(**rin.dict()) for rin in releases_in])
+    return v2api.create_response(request, "releases created", status=201)
+
 
 # Work routes
 
@@ -156,6 +231,6 @@ def container_batch_create(request, containers_in: List[ContainerSchema]) -> Htt
 ### writes
 
 # create entity
-# batch create entity
+# bulk create entity
 # update entity (replace)
 # delete entity

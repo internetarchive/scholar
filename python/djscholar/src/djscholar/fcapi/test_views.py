@@ -1,6 +1,5 @@
 from datetime import datetime
-from typing import Callable
-import json
+from typing import Callable, Dict
 import random
 import zoneinfo
 
@@ -92,6 +91,11 @@ class ContainerFactory(DjangoModelFactory):
 
 
 class ReleaseFactory(DjangoModelFactory):
+    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    work = lazy(lambda: WorkFactory.create())
+    # TODO handle ext ids
+
     class Meta:
         model = Release
 
@@ -110,8 +114,9 @@ class APIKeyFactory(DjangoModelFactory):
     class Meta:
         model = APIKey
 
+# TODO test that authed routes are in fact enforcing auth
 
-class TestContainerRoutes(TestCase):
+class APITest(TestCase):
     def setUp(self):
         user = User.objects.create_user(username="test", password="test")
         prefix = "prefix"
@@ -119,27 +124,72 @@ class TestContainerRoutes(TestCase):
         encoded = make_password(key)
         APIKey.objects.create(user=user, prefix=prefix, hashed_key=encoded)
         self.auth_headers = {"X-API-Key": f"{prefix}.{key}"}
-        self.c = ContainerFactory.create()
+
+
+class TestReleaseRoutes(APITest):
+    def setUp(self):
+        super().setUp()
+        self.entity = ReleaseFactory.create()
+
+    def test_lookup(self):
+        # TOSO
+        pass
 
     def test_get(self):
-        response = client.get(f"/container/{self.c.id}")
+        response = client.get(f"/release/{self.entity.id}")
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
+    def test_get_container(self):
+        # TODO
+        pass
+
+    def test_get_work(self):
+        # TODO
+        pass
+
+    def test_create(self):
+        # TODO
+        pass
+
+    def test_bulk_create(self):
+        # TODO
+        pass
+
+    def test_update(self):
+        # TODO
+        pass
+
+    def test_delete(self):
+        # TODO
+        pass
+
+
+class TestContainerRoutes(APITest):
+    def setUp(self):
+        super().setUp()
+        self.entity = ContainerFactory.create()
+
+    def test_get(self):
+        response = client.get(f"/container/{self.entity.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_lookup(self):
         issnl = "1111-2222"
         response = client.get(f"/container/lookup?id_type=issnl&id_value={issnl}")
         self.assertEqual(response.status_code, 404)
 
-        keys = [("wikidata_qid", self.c.wikidata_qid),
-                ("issnl", self.c.issnl),
-                ("issne", self.c.issne),
-                ("issnp", self.c.issnp),
+        keys = [("wikidata_qid", self.entity.wikidata_qid),
+                ("issnl", self.entity.issnl),
+                ("issne", self.entity.issne),
+                ("issnp", self.entity.issnp),
                 ]
 
         for id_type, id_value in keys:
             response = client.get(f"/container/lookup?id_type={id_type}&id_value={id_value}")
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.data['id'], str(self.c.id))
+            self.assertEqual(response.data['id'], str(self.entity.id))
 
     def test_get_releases(self):
         c = ContainerFactory.create()
@@ -150,12 +200,12 @@ class TestContainerRoutes(TestCase):
         rs = []
         for _ in range(4):
             r = ReleaseFactory.build()
-            r.container = self.c
+            r.container = self.entity
             r.work = WorkFactory.create()
             r.save()
             rs.append(r)
 
-        response = client.get(f"/container/{self.c.id}/releases")
+        response = client.get(f"/container/{self.entity.id}/releases")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), len(rs))
         self.assertSetEqual(set([d['id'] for d in response.data]), set([str(r.id) for r in rs]))
@@ -172,7 +222,7 @@ class TestContainerRoutes(TestCase):
         response = client.post("/container", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 400)
 
-    def test_batch_create(self):
+    def test_bulk_create(self):
         cs = [ContainerSchema.from_orm(ContainerFactory.build()) for _ in range(100)]
         data = "["+",".join([c.model_dump_json() for c in cs])+"]"
 
@@ -189,14 +239,14 @@ class TestContainerRoutes(TestCase):
         self.assertEqual(response.status_code, 404)
 
         new_name = "updated name"
-        self.c.name = new_name
-        data = ContainerSchema.from_orm(self.c).model_dump_json()
+        self.entity.name = new_name
+        data = ContainerSchema.from_orm(self.entity).model_dump_json()
         response = client.put("/container", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
-        cs = Container.objects.filter(id=self.c.id)
+        cs = Container.objects.filter(id=self.entity.id)
         self.assertEqual(len(cs), 1)
-        self.assertEqual(self.c.name, new_name)
+        self.assertEqual(self.entity.name, new_name)
 
 
     def test_delete(self):
@@ -207,8 +257,8 @@ class TestContainerRoutes(TestCase):
         response = client.delete(f"/container/{unsaved.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, 404)
 
-        response = client.delete(f"/container/{self.c.id}", headers=self.auth_headers)
+        response = client.delete(f"/container/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
-        response = client.delete(f"/container/{self.c.id}", headers=self.auth_headers)
+        response = client.delete(f"/container/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, 404)

@@ -1,12 +1,12 @@
-from typing import List
+from typing import List, Literal
 
 from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
-from ninja import NinjaAPI
+from ninja import NinjaAPI, Query, Schema
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
-from djscholar.fcapi.models import Container, Release
+from djscholar.fcapi.models import Container, Release, RELEASE_EXT_ID_TYPES, Work
 
 v2api = NinjaAPI()
 # NB: uses X-API-Key header. use admin to create keys.
@@ -20,6 +20,16 @@ apiAuth = APIKeyAuth()
 COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra"]
 
 # In/Out schemas
+
+class ContainerLookup(Schema):
+    id_type: Literal["issnl", "issne", "issnp", "wikidata_qid"]
+    id_value: str
+
+
+class ReleaseLookup(Schema):
+    id_type: Literal[*[t[0] for t in RELEASE_EXT_ID_TYPES]]
+    id_value: str
+
 
 ContainerSchema = create_schema(Container,
                                 fields=COMMON_ENTITY_FIELDS\
@@ -38,13 +48,12 @@ ReleaseSchema = create_schema(Release,
 # Container routes
 
 @v2api.get("/container/lookup")
-def container_lookup(request, id_type: str, id_value: str) -> ContainerSchema:
-    """Look up a container using an external ID. Valid ID types: issnl, issne,
-    issnp, wikidata_qid. If multiple containers match the ID, an arbitrary one
-    is returned."""
-    cs = Container.objects.filter(**{id_type: id_value})
+def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema:
+    """Look up a container using an external ID. If multiple containers match
+    the ID, an arbitrary one is returned."""
+    cs = Container.objects.filter(**{lookup.id_type: lookup.id_value})
     if len(cs) == 0:
-        raise Http404(f"no container found with {id_type} of {id_value}")
+        raise Http404(f"no container found with {lookup.id_type} of {lookup.id_value}")
     return ContainerSchema.from_orm(cs[0])
 
 @v2api.get("/container/{ident}")

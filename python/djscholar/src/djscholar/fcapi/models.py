@@ -312,13 +312,8 @@ class Release(Entity):
                              name="%(app_label)s_%(class)s_container_id_idx"),
                 ]
 
-class ReleaseExtId(models.Model):
-    """
-    This model maps releases to a set of external identifiers expressed as key
-    value pairs. Most releases in our system will have at least a doi.
-    """
-    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
-    id_type = models.CharField(choices=[
+
+RELEASE_EXT_ID_TYPES = [
         ("doi", "doi"),
         ("pmid", "pmid"),
         ("pmcid", "pmcid"),
@@ -332,7 +327,16 @@ class ReleaseExtId(models.Model):
         ("isbn13", "isbn13"),
         ("jstor", "jstor"),
         ("mag", "mag"),
-        ])
+]
+
+
+class ReleaseExtId(models.Model):
+    """
+    This model maps releases to a set of external identifiers expressed as key
+    value pairs. Most releases in our system will have at least a doi.
+    """
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
+    id_type = models.CharField(choices=RELEASE_EXT_ID_TYPES)
     id_value = models.CharField()
 
     class Meta:

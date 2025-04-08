@@ -34,19 +34,19 @@ class ContainerFactory(DjangoModelFactory):
         model = Container
 
 
+class WorkFactory(DjangoModelFactory):
+    class Meta:
+        model = Work
+
+
 class ReleaseFactory(DjangoModelFactory):
     updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    work = lazy(lambda: WorkFactory.create())
+    work = factory.SubFactory(WorkFactory)
     # TODO handle ext ids
 
     class Meta:
         model = Release
-
-
-class WorkFactory(DjangoModelFactory):
-    class Meta:
-        model = Work
 
 
 class UserFactory(DjangoModelFactory):
@@ -76,7 +76,7 @@ class TestReleaseRoutes(APITest):
         self.entity = ReleaseFactory.create()
 
     def test_lookup(self):
-        # TOSO
+        # TODO for this to work, we need entries in ReleaseExtId
         pass
 
     def test_get(self):

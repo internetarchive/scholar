@@ -6,7 +6,7 @@ from ninja import NinjaAPI, Query, Schema
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
-from djscholar.fcapi.models import Container, Release, RELEASE_EXT_ID_TYPES, Work
+from djscholar.fcapi.models import Container, Release, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
 
 v2api = NinjaAPI()
 # NB: uses X-API-Key header. use admin to create keys.
@@ -117,7 +117,9 @@ def delete_container(request, ident: str) -> ContainerSchema:
 def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
     """Look up a release using an external ID. If multiple releases match the
     ID, an arbitrary one is returned."""
-    rs = Release.objects.filter(**{lookup.id_type: lookup.id_value})
+    rs = Release.objects.filter(**{
+        "releaseextid__id_type": lookup.id_type,
+        "releaseextid__id_value": lookup.id_value})
     if len(rs) == 0:
         raise Http404(f"no release found with {lookup.id_type} of {lookup.id_value}")
     return ReleaseSchema.from_orm(rs[0])
@@ -143,20 +145,20 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
 def get_release_container(request, ident: str) -> ContainerSchema:
     """Get a release's container (ie, journal)"""
     # TODO handle legacy idents
-    release = get_object_or_404(Release, id=ident)
-    if release.container is None:
-        raise Http404(f"release {release.id} has no associated container")
-    return ContainerSchema.from_orm(Container.objects.get(id=release.container.id))
+    cs = Container.objects.filter(release__id=ident)
+    if len(cs) == 0:
+        raise Http404(f"release {ident} has no associated container")
+    return ContainerSchema.from_orm(cs[0])
 
 @v2api.get("/release/{ident}/work")
 def get_release_work(request, ident: str) -> WorkSchema:
     """Get a the work that represents the platonic version of this release."""
     # TODO handle legacy idents
-    release = get_object_or_404(Release, id=ident)
-    if release.work is None:
+    ws = Container.objects.filter(release__id=ident)
+    if len(ws) == 0:
         # TODO this is a data integrity error and might warrant more than a 404.
-        raise Http404(f"release {release.id} has no associated work")
-    return WorkSchema.from_orm(Work.objects.get(id=release.work.id))
+        raise Http404(f"release {ident} has no associated work")
+    return WorkSchema.from_orm(ws[0])
 
 @v2api.delete("/release/{ident}", auth=apiAuth)
 def delete_release(request, ident: str) -> ReleaseSchema:

@@ -1,3 +1,4 @@
+import random
 import re
 import string
 from datetime import datetime, timedelta
@@ -20,7 +21,7 @@ class ExtIDProvider(BaseProvider):
 
         See also: https://www.loc.gov/issn/basics/basics-checkdigit.html
         """
-        digits = self.numerify("#" * 7)
+        digits = [random.randint(0, 9) for _ in range(7)]
 
         # Calculate the check digit
         # Each digit is multiplied by its position (8 to 2)

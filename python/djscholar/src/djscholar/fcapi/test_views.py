@@ -12,7 +12,7 @@ from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
-from djscholar.fcapi.models import Container, Release, ReleaseExtId, Work
+from djscholar.fcapi.models import Container, Release, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
 from djscholar.fcapi.views import v2api, ContainerSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
@@ -50,8 +50,6 @@ class ReleaseFactory(DjangoModelFactory):
     updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     work = factory.SubFactory(WorkFactory)
-    # TODO handle ext ids. can i just have a post-create hook or something?
-    # need to generate a REI for each of the id_types
 
     class Meta:
         model = Release
@@ -82,10 +80,20 @@ class TestReleaseRoutes(APITest):
     def setUp(self):
         super().setUp()
         self.entity = ReleaseFactory.create()
+        self.reis = []
+        for id_type, _ in RELEASE_EXT_ID_TYPES:
+            self.reis.append(ReleaseExtIdFactory.create(release=self.entity, id_type=id_type))
 
     def test_lookup(self):
-        # TODO for this to work, we need entries in ReleaseExtId
-        pass
+        doi = "10.1111/xxxxxx.111.1111"
+        response = client.get(f"/release/lookup?id_type=doi&id_value={doi}")
+        self.assertEqual(response.status_code, 404)
+
+        for rei in self.reis:
+            response = client.get(
+                    f"/release/lookup?id_type={rei.id_type}&id_value={rei.id_value}")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get(self):
         response = client.get(f"/release/{self.entity.id}")

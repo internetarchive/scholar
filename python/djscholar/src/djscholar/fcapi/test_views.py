@@ -13,7 +13,7 @@ from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
 from djscholar.fcapi.models import Container, Release, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
-from djscholar.fcapi.views import v2api, ContainerSchema
+from djscholar.fcapi.views import v2api, ContainerSchema, ReleaseSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
 client = TestClient(v2api)
@@ -50,6 +50,7 @@ class ReleaseFactory(DjangoModelFactory):
     updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     work = factory.SubFactory(WorkFactory)
+    container = factory.SubFactory(ContainerFactory)
 
     class Meta:
         model = Release
@@ -101,16 +102,37 @@ class TestReleaseRoutes(APITest):
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get_container(self):
-        # TODO
-        pass
+        no_container = ReleaseFactory.build()
+        no_container.container = None
+        no_container.work.save()
+        no_container.save()
+        response = client.get(f"/release/{no_container.id}/container")
+        self.assertEqual(response.status_code, 404)
+
+        response = client.get(f"/release/{self.entity.id}/container")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.container.id))
 
     def test_get_work(self):
-        # TODO
-        pass
+        response = client.get(f"/release/{self.entity.id}/container")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.container.id))
 
     def test_create(self):
-        # TODO
-        pass
+        entity = ReleaseFactory.build()
+        entity.container.save()
+        entity.work.save()
+
+        data = ReleaseSchema.from_orm(entity).model_dump_json()
+        response = client.post("/release", data=data, headers=self.auth_headers)
+        import pdb; pdb.set_trace()
+        self.assertEqual(response.status_code, 201)
+
+        es = Release.objects.filter(id=entity.id)
+        self.assertEqual(len(es), 1)
+
+        response = client.post("/release", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 400)
 
     def test_bulk_create(self):
         # TODO

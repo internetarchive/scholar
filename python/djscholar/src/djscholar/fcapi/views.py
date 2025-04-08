@@ -155,9 +155,7 @@ def get_release_work(request, ident: str) -> WorkSchema:
     """Get a the work that represents the platonic version of this release."""
     # TODO handle legacy idents
     ws = Container.objects.filter(release__id=ident)
-    if len(ws) == 0:
-        # TODO this is a data integrity error and might warrant more than a 404.
-        raise Http404(f"release {ident} has no associated work")
+    # do not need to check length; work_id is required in schema
     return WorkSchema.from_orm(ws[0])
 
 @v2api.delete("/release/{ident}", auth=apiAuth)

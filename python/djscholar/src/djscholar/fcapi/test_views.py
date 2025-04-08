@@ -142,8 +142,18 @@ class TestReleaseRoutes(APITest):
         pass
 
     def test_delete(self):
-        # TODO
-        pass
+        unsaved = ReleaseFactory.build()
+        response = client.delete(f"/release/{unsaved.id}")
+        self.assertEqual(response.status_code, 401)
+
+        response = client.delete(f"/release/{unsaved.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
+
+        response = client.delete(f"/release/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        response = client.delete(f"/release/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
 
 
 class TestContainerRoutes(APITest):

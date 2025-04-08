@@ -125,7 +125,6 @@ class TestReleaseRoutes(APITest):
 
         data = ReleaseSchema.from_orm(entity).model_dump_json()
         response = client.post("/release", data=data, headers=self.auth_headers)
-        import pdb; pdb.set_trace()
         self.assertEqual(response.status_code, 201)
 
         es = Release.objects.filter(id=entity.id)

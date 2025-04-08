@@ -1,12 +1,13 @@
+import uuid
 from typing import List, Literal
 
 from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
-from ninja import NinjaAPI, Query, Schema
+from ninja import NinjaAPI, Query, Schema, ModelSchema
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
-from djscholar.fcapi.models import Container, Release, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
+from djscholar.fcapi.models import Container, Release, RELEASE_EXT_ID_TYPES, Work
 
 v2api = NinjaAPI()
 # NB: uses X-API-Key header. use admin to create keys.
@@ -35,14 +36,17 @@ ContainerSchema = create_schema(Container,
                                 fields=COMMON_ENTITY_FIELDS\
                                        + ["name", "container_type", "publisher", "issnl",
                                           "issne", "issnp", "wikidata_qid",])
+class ReleaseSchema(ModelSchema):
+    work_id: uuid.UUID
+    container_id: uuid.UUID
 
-ReleaseSchema = create_schema(Release,
-                              fields=COMMON_ENTITY_FIELDS\
-                                      + ["work", "container", "title", "original_title",
-                                         "subtitle", "release_type", "release_stage",
-                                         "release_date", "release_year", "volume", "issue",
-                                         "pages", "number", "version", "publisher", "language",
-                                         "license_slug", "withdrawn_status", "refs",])
+    class Meta:
+        model = Release
+        fields = COMMON_ENTITY_FIELDS + ["title", "original_title", "subtitle", "release_type",
+                                         "release_stage", "release_date", "release_year",
+                                         "volume", "issue", "pages", "number", "version",
+                                         "publisher", "language", "license_slug",
+                                         "withdrawn_status", "refs",]
 
 WorkSchema = create_schema(Work, fields=COMMON_ENTITY_FIELDS)
 

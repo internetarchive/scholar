@@ -12,7 +12,7 @@ from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
-from djscholar.fcapi.models import Container, Release, Work
+from djscholar.fcapi.models import Container, Release, ReleaseExtId, Work
 from djscholar.fcapi.views import v2api, ContainerSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
@@ -39,11 +39,19 @@ class WorkFactory(DjangoModelFactory):
         model = Work
 
 
+class ReleaseExtIdFactory(DjangoModelFactory):
+    id_value = factory.LazyAttribute(lambda s: factory.Faker(s.id_type))
+
+    class Meta:
+        model = ReleaseExtId
+
+
 class ReleaseFactory(DjangoModelFactory):
     updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     work = factory.SubFactory(WorkFactory)
-    # TODO handle ext ids
+    # TODO handle ext ids. can i just have a post-create hook or something?
+    # need to generate a REI for each of the id_types
 
     class Meta:
         model = Release

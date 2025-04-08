@@ -134,12 +134,38 @@ class TestReleaseRoutes(APITest):
         self.assertEqual(response.status_code, 400)
 
     def test_bulk_create(self):
-        # TODO
-        pass
+        rin = []
+        for _ in range(100):
+            r = ReleaseFactory.build()
+            r.work.save()
+            r.container.save()
+            rin.append(ReleaseSchema.from_orm(r))
+        data = "["+",".join([r.model_dump_json() for r in rin])+"]"
+
+        response = client.post("/releases", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        for r in rin:
+            rs = Release.objects.filter(id=r.id)
+            self.assertEqual(len(rs), 1)
 
     def test_update(self):
-        # TODO
-        pass
+        r = ReleaseFactory.build()
+        r.work.save()
+        r.container.save()
+        data = ReleaseSchema.from_orm(r).model_dump_json()
+        response = client.put("/release", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
+
+        new_title = "updated title"
+        self.entity.title = new_title
+        data = ReleaseSchema.from_orm(self.entity).model_dump_json()
+        response = client.put("/release", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        es = Release.objects.filter(id=self.entity.id)
+        self.assertEqual(len(es), 1)
+        self.assertEqual(self.entity.title, new_title)
 
     def test_delete(self):
         unsaved = ReleaseFactory.build()

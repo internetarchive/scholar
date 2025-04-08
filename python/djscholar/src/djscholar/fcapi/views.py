@@ -17,6 +17,7 @@ apiAuth = APIKeyAuth()
 # TODO consider generalizing route implementations if it doesn't make
 # signatures too hideous / doesn't break doc generation
 # TODO pagination
+# TODO support nested containers and works (and possibly other types) during creation/update; possibly getting
 
 COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra"]
 
@@ -137,6 +138,7 @@ def get_release(request, ident: str) -> ReleaseSchema:
 @v2api.post("/release", auth=apiAuth)
 def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """Create a new release."""
+    # TODO releases without works should have works created automagically
     rs = Release.objects.filter(id=release_in.id)
     if len(rs) != 0:
         return v2api.create_response(request,
@@ -171,7 +173,7 @@ def delete_release(request, ident: str) -> ReleaseSchema:
     return ReleaseSchema.from_orm(r)
 
 @v2api.put("/release", auth=apiAuth)
-def update_release(request, release_in: ContainerSchema) -> HttpResponse:
+def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """
     Replace a release entity wholesale. Must specify entire content of
     entity; not a patch operation. 404s if release does not yet exist.
@@ -187,6 +189,7 @@ def update_release(request, release_in: ContainerSchema) -> HttpResponse:
 def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpResponse:
     """Bulk create a list of releases. Functionally equivalent to calling
     POST /release repeatedly."""
+    # TODO releases without works should have works created automagically
     Release.objects.bulk_create([Release(**rin.dict()) for rin in releases_in])
     return v2api.create_response(request, "releases created", status=201)
 

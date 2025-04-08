@@ -9,6 +9,22 @@ URL_MAX_LENGTH = 100000 # we have some weird URLs.
 SHA1_MAX_LENGTH = 40
 SHA256_MAX_LENGTH = 64
 MD5_MAX_LENGTH = 32
+RELEASE_EXT_ID_TYPES = [
+        ("doi", "doi"),
+        ("pmid", "pmid"),
+        ("pmcid", "pmcid"),
+        ("wikidata_qid", "wikidata_qid"),
+        ("core_id", "core_id"),
+        ("ark", "ark"),
+        ("arxiv", "arxiv"),
+        ("dblp", "dblp"),
+        ("doaj", "doaj"),
+        ("hdl", "hdl"),
+        ("isbn13", "isbn13"),
+        ("jstor", "jstor"),
+        ("mag", "mag"),
+]
+
 
 
 class Entity(models.Model):
@@ -311,23 +327,6 @@ class Release(Entity):
                 models.Index(fields=["container_id"],
                              name="%(app_label)s_%(class)s_container_id_idx"),
                 ]
-
-
-RELEASE_EXT_ID_TYPES = [
-        ("doi", "doi"),
-        ("pmid", "pmid"),
-        ("pmcid", "pmcid"),
-        ("wikidata_qid", "wikidata_qid"),
-        ("core_id", "core_id"),
-        ("ark", "ark"),
-        ("arxiv", "arxiv"),
-        ("dblp", "dblp"),
-        ("doaj", "doaj"),
-        ("hdl", "hdl"),
-        ("isbn13", "isbn13"),
-        ("jstor", "jstor"),
-        ("mag", "mag"),
-]
 
 
 class ReleaseExtId(models.Model):

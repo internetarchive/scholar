@@ -195,16 +195,38 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
     Release.objects.bulk_create([Release(**rin.dict()) for rin in releases_in])
     return v2api.create_response(request, "releases created", status=201)
 
+# TODO GET /release/{ident}/files
+# TODO GET /release/{ident}/creators
+
 
 # Work routes
 
-# TODO
+# TODO get /work/{ident}/releases
+# TODO delete /work/{ident}
+# TODO put /work
 
 # Creator routes
 
-# TODO
+# TODO should support the creation of creators via release creation/update
+
+# TODO get /creator/lookup
+# TODO get /creator/{ident}
+# TODO get /creator/releases
+# TODO post /creator
+# TODO put /creator
+# TODO delete /creator
+# TODO ref routes?
 
 # File routes
+
+# TODO get /file/lookup
+# TODO get /file/{ident}
+# TODO post /file
+# TODO put /file
+# TODO post /files
+# TODO delete /file/{ident}
+
+# Changelog routes
 
 # TODO
 
@@ -213,10 +235,6 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
 # TODO
 
 # Webcapture routes
-
-# TODO
-
-# Changelog routes
 
 # TODO
 

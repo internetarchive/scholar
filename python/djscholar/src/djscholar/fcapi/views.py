@@ -248,6 +248,8 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
 
 # Changelog routes
 
+# Instead of a single /changelog, I am considering the ability to query for created or updated entities based on a time range (ie, "last 24 hours" or some other interval). I think this will end up being more useful than the current changelog system.
+
 # TODO
 
 # Fileset routes

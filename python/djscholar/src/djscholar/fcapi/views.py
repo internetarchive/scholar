@@ -99,14 +99,24 @@ def bulk_create_containers(request, containers_in: List[ContainerSchema]) -> Htt
 def update_container(request, container_in: ContainerSchema) -> HttpResponse:
     """
     Replace a container entity wholesale. Must specify entire content of
-    entity; not a patch operation. 404s if container does not yet exist.
+    entity; not a patch operation. Creates the entity if it doesn't yet exist.
+    201 if a new release was created; 200 otherwise.
     """
-    in_dict = container_in.dict()
-    c = get_object_or_404(Container, id=in_dict["id"])
-    for attr, value in in_dict.items():
-        setattr(c, attr, value)
-    c.save()
-    return v2api.create_response(request, "container replaced with new data", status=200)
+    code = 200
+    es = Container.objects.filter(id=container_in.id)
+    entity = None
+
+    if len(es) == 0:
+        code = 201
+        entity = Container(**container_in.dict())
+    else:
+        entity = es[0]
+        for attr, value in container_in.dict().items():
+            setattr(entity, attr, value)
+
+    entity.save()
+
+    return v2api.create_response(request, "release replaced with new content", status=code)
 
 @v2api.delete("/container/{ident}", auth=apiAuth)
 def delete_container(request, ident: str) -> ContainerSchema:
@@ -178,14 +188,24 @@ def delete_release(request, ident: str) -> ReleaseSchema:
 def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """
     Replace a release entity wholesale. Must specify entire content of
-    entity; not a patch operation. 404s if release does not yet exist.
+    entity; not a patch operation. Creates the entity if it doesn't yet exist.
+    201 if a new release was created; 200 otherwise.
     """
-    in_dict = release_in.dict()
-    r = get_object_or_404(Release, id=in_dict["id"])
-    for attr, value in in_dict.items():
-        setattr(r, attr, value)
-    r.save()
-    return v2api.create_response(request, "release replaced with new content", status=200)
+    code = 200
+    es = Release.objects.filter(id=release_in.id)
+    entity = None
+
+    if len(es) == 0:
+        code = 201
+        entity = Release(**release_in.dict())
+    else:
+        entity = es[0]
+        for attr, value in release_in.dict().items():
+            setattr(entity, attr, value)
+
+    entity.save()
+
+    return v2api.create_response(request, "release replaced with new content", status=code)
 
 @v2api.post("/releases", auth=apiAuth)
 def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpResponse:

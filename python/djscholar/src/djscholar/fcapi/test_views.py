@@ -150,12 +150,14 @@ class TestReleaseRoutes(APITest):
             self.assertEqual(len(rs), 1)
 
     def test_update(self):
-        r = ReleaseFactory.build()
-        r.work.save()
-        r.container.save()
-        data = ReleaseSchema.from_orm(r).model_dump_json()
+        entity = ReleaseFactory.build()
+        entity.work.save()
+        entity.container.save()
+        data = ReleaseSchema.from_orm(entity).model_dump_json()
         response = client.put("/release", data=data, headers=self.auth_headers)
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 201)
+        es = Release.objects.filter(id=entity.id)
+        self.assertEqual(len(es), 1)
 
         new_title = "updated title"
         self.entity.title = new_title
@@ -252,9 +254,12 @@ class TestContainerRoutes(APITest):
             self.assertEqual(len(cs), 1)
 
     def test_update(self):
-        data = ContainerSchema.from_orm(ContainerFactory.build()).model_dump_json()
+        entity = ContainerFactory.build()
+        data = ContainerSchema.from_orm(entity).model_dump_json()
         response = client.put("/container", data=data, headers=self.auth_headers)
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 201)
+        cs = Container.objects.filter(id=entity.id)
+        self.assertEqual(len(cs), 1)
 
         new_name = "updated name"
         self.entity.name = new_name

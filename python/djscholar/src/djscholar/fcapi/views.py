@@ -113,8 +113,9 @@ def delete_container(request, ident: str) -> ContainerSchema:
     """Delete the container with a given ID."""
     # TODO handle legacy idents
     c = get_object_or_404(Container, id=ident)
+    out = ContainerSchema.from_orm(c)
     c.delete()
-    return ContainerSchema.from_orm(c)
+    return out
 
 # Release routes
 
@@ -169,8 +170,9 @@ def delete_release(request, ident: str) -> ReleaseSchema:
     """Delete the release with a given ID."""
     # TODO handle legacy idents
     r = get_object_or_404(Release, id=ident)
+    out = ReleaseSchema.from_orm(r)
     r.delete()
-    return ReleaseSchema.from_orm(r)
+    return out
 
 @v2api.put("/release", auth=apiAuth)
 def update_release(request, release_in: ReleaseSchema) -> HttpResponse:

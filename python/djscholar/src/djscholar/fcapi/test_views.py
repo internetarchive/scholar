@@ -3,6 +3,7 @@ from typing import Callable
 import zoneinfo
 
 import factory
+from faker.providers import misc, file
 from django.contrib.auth.hashers import (
     make_password,
 )
@@ -12,12 +13,14 @@ from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
-from djscholar.fcapi.models import Container, Release, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
+from djscholar.fcapi.models import Container, File, Release, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
 from djscholar.fcapi.views import v2api, ContainerSchema, ReleaseSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
 client = TestClient(v2api)
 factory.Faker.add_provider(ExtIDProvider)
+factory.Faker.add_provider(misc.Provider)
+factory.Faker.add_provider(file.Provider)
 
 def lazy(generate: Callable) -> factory.LazyAttribute:
     return factory.LazyAttribute(lambda _: generate())
@@ -56,6 +59,19 @@ class ReleaseFactory(DjangoModelFactory):
         model = Release
 
 
+class FileFactory(DjangoModelFactory):
+    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+
+    md5 = factory.Faker("md5")
+    sha1 = factory.Faker("sha1")
+    sha256 = factory.Faker("sha256")
+    mimetype = factory.Faker("mime_type")
+
+    class Meta:
+        model = File
+
+
 class UserFactory(DjangoModelFactory):
     class Meta:
         model = User
@@ -64,6 +80,7 @@ class UserFactory(DjangoModelFactory):
 class APIKeyFactory(DjangoModelFactory):
     class Meta:
         model = APIKey
+
 
 # TODO test that authed routes are in fact enforcing auth
 
@@ -117,6 +134,18 @@ class TestReleaseRoutes(APITest):
         response = client.get(f"/release/{self.entity.id}/container")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["id"], str(self.entity.container.id))
+
+    def test_get_files(self):
+        es = []
+        for _ in range(4):
+            e = FileFactory.create()
+            e.releases.set([self.entity])
+            es.append(e)
+
+        response = client.get(f"/release/{self.entity.id}/files")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), len(es))
+        self.assertSetEqual(set([d['id'] for d in response.data]), set([str(e.id) for e in es]))
 
     def test_create(self):
         entity = ReleaseFactory.build()

@@ -7,7 +7,7 @@ from ninja import NinjaAPI, Query, Schema, ModelSchema
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
-from djscholar.fcapi.models import Container, Release, RELEASE_EXT_ID_TYPES, Work
+from djscholar.fcapi.models import Container, File, Release, RELEASE_EXT_ID_TYPES, Work
 
 v2api = NinjaAPI()
 # NB: uses X-API-Key header. use admin to create keys.
@@ -51,6 +51,8 @@ class ReleaseSchema(ModelSchema):
 
 WorkSchema = create_schema(Work, fields=COMMON_ENTITY_FIELDS)
 
+FileSchema = create_schema(File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256",
+                                                                "md5", "mimetype"])
 
 # Container routes
 
@@ -174,6 +176,10 @@ def get_release_work(request, ident: str) -> WorkSchema:
     ws = Container.objects.filter(release__id=ident)
     # do not need to check length; work_id is required in schema
     return WorkSchema.from_orm(ws[0])
+
+@v2api.get("/release/{ident}/files")
+def get_release_files(request, ident: str) -> List[FileSchema]:
+    return [FileSchema.from_orm(e) for e in File.objects.filter(releasefile__release_id=ident)]
 
 @v2api.delete("/release/{ident}", auth=apiAuth)
 def delete_release(request, ident: str) -> ReleaseSchema:

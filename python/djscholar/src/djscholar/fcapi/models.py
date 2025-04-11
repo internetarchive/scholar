@@ -465,10 +465,15 @@ class File(Entity, BaseFile):
 
 class ReleaseFile(models.Model):
     file = models.ForeignKey(File, on_delete=models.CASCADE, db_index=False)
-    release = models.ForeignKey(Release, on_delete=models.CASCADE)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
 
     class Meta:
-        unique_together = [["file", "release"]]
+        constraints = [
+                models.UniqueConstraint(
+                    fields=["file", "release"],
+                    name="%(app_label)s_%(class)s_file_release_uniq",
+                    ),
+                ]
         indexes = [
                 models.Index(fields=["file"], name="%(app_label)s_%(class)s_file_idx"),
                 models.Index(fields=["release"], name="%(app_label)s_%(class)s_release_idx"),

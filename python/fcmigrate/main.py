@@ -31,6 +31,7 @@ NEW_DB_URL="postgresql:///fatcat2?host=/home/vilmibm/src/fatcat-scholar/devdb/pg
 PKTABLES = ["release", "work", "file", "creator"]
 FKTABLES = [
         "release",
+        "releasefile"
         "releaseextid",
         "releaseabstract",
         "releasecontrib",
@@ -412,7 +413,7 @@ def dump_legacy_release_extid() -> int:
     logger.info(f"dumped {count} legacy extids")
     return count
 
-def drop_indexes(table, names: List[str]):
+def drop_indexes(table, names: List[str]) -> None:
     """drop a list of named indexes from the new fatcat db"""
     logger.info(f"{table}: dropping indexes")
 
@@ -422,8 +423,8 @@ def drop_indexes(table, names: List[str]):
 
     logger.info(f"{table}: dropped indexes")
 
-def create_indexes(table, indexes: List[Tuple[str, str]]):
-    """given tuples of (index_name, table, colum), create indexes in the new db"""
+def create_indexes(table, indexes: List[Tuple[str, str]]) -> None:
+    """given tuples of (index_name, column), create indexes in the new db"""
     logger.info(f"{table}: restoring indexes")
 
     with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor() as cur:
@@ -649,7 +650,7 @@ def restore_releaseextid() -> int:
     logger.info("created extid_lookup_idx")
     return count
 
-def restore_file():
+def restore_file() -> int:
     table = "file"
     indexes = [
             ("fcapi_file_legacy_rev_idx", "legacy_rev"),
@@ -666,7 +667,34 @@ def restore_file():
 
     return count
 
-def restore_fileurl():
+def restore_releasefile() -> int:
+    table = "releasefile"
+    logger.info(f"{table}: dropping unique constraint")
+
+    uniq_constraint_name = "fcapi_releasefile_file_release_uniq"
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor() as cur:
+        cur.execute(f"ALTER TABLE fcapi_{table} DROP CONSTRAINT {uniq_constraint_name}")
+
+    logger.info(f"{table}: dropped unique constraint")
+
+    indexes = [
+            ("fcapi_releasefile_file_idx", "file_id"),
+            ("fcapi_releasefile_release_idx", "release_id"),
+            ]
+    drop_indexes(table, [idx[0] for idx in indexes])
+    count = simple_restore(table)
+    create_indexes(table, indexes)
+
+    logger.info(f"{table}: restoring unique constraint")
+
+    with psycopg.connect(conninfo=NEW_DB_URL) as conn, conn.cursor() as cur:
+        cur.execute(f"ALTER TABLE fcapi_{table} ADD CONSTRAINT {uniq_constraint_name} UNIQUE (file_id, release_id)")
+
+    logger.info(f"{table}: restored unique constraint")
+
+    return count
+
+def restore_fileurl() -> int:
     table = "fileurl"
     indexes = [
             ("fcapi_fileurl_file_idx", "file_id"),
@@ -747,7 +775,7 @@ def create_pk_constraints(tables: List[str]):
     logger.info("created pk constraints")
 
 @timing
-def dump_all(start_from: str = "container"):
+def dump_all(start_from: str = "container") -> None:
     logger.info("starting dump")
     go = False
     for k in DUMP_SQL:
@@ -759,7 +787,7 @@ def dump_all(start_from: str = "container"):
     logger.info("finished dump")
 
 @timing
-def restore_all():
+def restore_all() -> None:
     logger.info("starting restore")
     cache = dc.Cache("fcmigrate")
 
@@ -787,8 +815,10 @@ def restore_all():
 
     restore_file()
     restore_fileurl()
+    restore_releasefile()
     simple_restore("fileset")
     simple_restore("filesetfile")
+    simple_restore("fileseturl")
     simple_restore("webcapture")
     simple_restore("webcaptureurl")
     simple_restore("webcapturecdx")
@@ -802,7 +832,7 @@ def restore_all():
     logger.info("finished restore")
 
 @timing
-def main():
+def main() -> None:
     # TODO accept dump_from_table argument from args
     dump_all()
     # TODO accept restore_from_table argument from args

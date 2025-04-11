@@ -7,7 +7,7 @@ from ninja import NinjaAPI, Query, Schema, ModelSchema
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
-from djscholar.fcapi.models import Container, File, Release, RELEASE_EXT_ID_TYPES, Work
+from djscholar.fcapi.models import Container, Creator, File, Release, ReleaseContrib, RELEASE_EXT_ID_TYPES, Work
 
 v2api = NinjaAPI()
 # NB: uses X-API-Key header. use admin to create keys.
@@ -50,6 +50,9 @@ class ReleaseSchema(ModelSchema):
                                          "withdrawn_status", "refs",]
 
 WorkSchema = create_schema(Work, fields=COMMON_ENTITY_FIELDS)
+
+CreatorSchema = create_schema(Creator, fields=COMMON_ENTITY_FIELDS+["display_name", "given_name",
+                                                                    "surname", "orcid"])
 
 FileSchema = create_schema(File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256",
                                                                 "md5", "mimetype"])
@@ -181,6 +184,28 @@ def get_release_work(request, ident: str) -> WorkSchema:
 def get_release_files(request, ident: str) -> List[FileSchema]:
     return [FileSchema.from_orm(e) for e in File.objects.filter(releasefile__release_id=ident)]
 
+@v2api.get("/release/{ident}/creators")
+def get_release_creators(request, ident: str) -> List[CreatorSchema]:
+    """Get a list of contributors to a given release. Note that, as of v2, we
+    do not have fully realized "creator" entities for every contribution to a
+    release. Thus, this endpoint may return IDless creator records that
+    represent raw contribution information scraped from, say, the author list
+    of a paper."""
+    # TODO some creators only exist as names in the contrib table. What to do, here?
+    # my first idea was to create unsaved creators
+    contribs = ReleaseContrib.objects.filter(release_id=ident)
+    creators = Creator.objects.filter(releasecontrib__release_id=ident)
+    out: List[CreatorSchema] = [CreatorSchema.from_orm(e) for e in creators]
+    for contrib in contribs:
+        if contrib.creator is None:
+            out.append(CreatorSchema.from_orm(Creator(
+                display_name=contrib.raw_name, id=None,
+                updated=contrib.release.updated, created=contrib.release.created,
+                extra=contrib.extra, given_name=contrib.given_name, surname=contrib.surname,
+                source="rawcontrib")))
+
+    return out
+
 @v2api.delete("/release/{ident}", auth=apiAuth)
 def delete_release(request, ident: str) -> ReleaseSchema:
     """Delete the release with a given ID."""
@@ -221,7 +246,6 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
     Release.objects.bulk_create([Release(**rin.dict()) for rin in releases_in])
     return v2api.create_response(request, "releases created", status=201)
 
-# TODO GET /release/{ident}/files
 # TODO GET /release/{ident}/creators
 
 

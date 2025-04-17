@@ -346,3 +346,25 @@ class TestContainerRoutes(APITest):
 
         response = client.delete(f"/container/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, 404)
+
+
+class TestWorkRoutes(APITest):
+    def setUp(self):
+        super().setUp()
+        self.entity = WorkFactory.create()
+
+    def test_get(self):
+        # TODO
+        pass
+
+    def test_get_releases(self):
+        # TODO
+        pass
+
+    def test_delete(self):
+        # TODO
+        pass
+
+    def test_update(self):
+        # TODO
+        pass

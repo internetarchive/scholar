@@ -245,9 +245,29 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
 
 # Work routes
 
-# TODO get /work/{ident}/releases
-# TODO delete /work/{ident}
-# TODO put /work
+@v2api.get("/work/{ident}")
+def get_work(request, ident: str) -> WorkSchema:
+    """Get a work (collection of releases) by its ID"""
+    # TODO legacy idents
+    return WorkSchema.from_orm(get_object_or_404(Work, id=ident))
+
+@v2api.get("/work/{ident}/releases")
+def get_work_releases(request, ident: str) -> List[ReleaseSchema]:
+    """Get all releases associated with a work's ID"""
+    # TODO
+    pass
+
+@v2api.delete("/work/{ident}", auth=apiAuth)
+def delete_work(request, ident: str) -> WorkSchema:
+    """Delete a work by its ID"""
+    # TODO
+    pass
+
+@v2api.put("/work", auth=apiAuth)
+def update_work(request, work: WorkSchema) -> HttpResponse:
+    """Replace a work record wholesale."""
+    # TODO
+    pass
 
 # Creator routes
 

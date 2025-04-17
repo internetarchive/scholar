@@ -14,7 +14,7 @@ from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
 from djscholar.fcapi.models import Container, Creator, File, Release, ReleaseContrib, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
-from djscholar.fcapi.views import v2api, ContainerSchema, ReleaseSchema, WorkSchema
+from djscholar.fcapi.views import v2api, ContainerSchema, CreatorSchema, ReleaseSchema, WorkSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
 client = TestClient(v2api)
@@ -77,6 +77,8 @@ class FileFactory(DjangoModelFactory):
 
 
 class CreatorFactory(DjangoModelFactory):
+    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     given_name = factory.Faker('first_name')
     surname = factory.Faker('last_name')
     display_name = factory.LazyAttribute(lambda c: f"{c.given_name} {c.surname}")
@@ -418,7 +420,113 @@ class TestWorkRoutes(APITest):
 
 class TestCreatorRoutes(APITest):
     def setUp(self):
-        # TODO
-        pass
+        super().setUp()
+        self.entity = CreatorFactory.create()
 
-    # TODO
+    def test_get(self):
+        response = client.get(f"/creator/{self.entity.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
+    def test_lookup(self):
+        orcid = "abc123"
+        response = client.get(f"/creator/lookup?id_type=orcid&id_value={orcid}")
+        self.assertEqual(response.status_code, 404)
+
+        self.entity.orcid = "TODO make an orcid generator"
+        self.entity.save()
+
+        keys = [("orcid", self.entity.orcid),
+                ]
+
+        for id_type, id_value in keys:
+            response = client.get(f"/creator/lookup?id_type={id_type}&id_value={id_value}")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['id'], str(self.entity.id))
+
+    def test_get_releases(self):
+        c = CreatorFactory.create()
+        response = client.get(f"/creator/{c.id}/releases")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 0)
+
+        rs = []
+        for _ in range(4):
+            r = ReleaseFactory.build()
+            r.work = WorkFactory.create()
+            r.container = None
+            r.save()
+            rc = ReleaseContribFactory.build()
+            rc.release = r
+            rc.creator = self.entity
+            rc.save()
+            rs.append(r)
+
+        response = client.get(f"/creator/{self.entity.id}/releases")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), len(rs))
+        self.assertSetEqual(set([d['id'] for d in response.data]), set([str(r.id) for r in rs]))
+
+    def test_create(self):
+        c = CreatorFactory.build()
+        data = CreatorSchema.from_orm(c).model_dump_json()
+
+        response = client.post("/creator", data=data)
+        self.assertEqual(response.status_code, 401)
+
+        response = client.post("/creator", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        cs = Creator.objects.filter(id=c.id)
+        self.assertEqual(len(cs), 1)
+
+        response = client.post("/creator", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 400)
+
+    def test_bulk_create(self):
+        cs = [CreatorSchema.from_orm(CreatorFactory.build()) for _ in range(100)]
+        data = "["+",".join([c.model_dump_json() for c in cs])+"]"
+
+        response = client.post("/creators", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        for c in cs:
+            cs = Creator.objects.filter(id=c.id)
+            self.assertEqual(len(cs), 1)
+
+    def test_update(self):
+        entity = CreatorFactory.build()
+        data = CreatorSchema.from_orm(entity).model_dump_json()
+
+        response = client.put("/creator", data=data)
+        self.assertEqual(response.status_code, 401)
+
+        response = client.put("/creator", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+        cs = Creator.objects.filter(id=entity.id)
+        self.assertEqual(len(cs), 1)
+
+        new_surname = "updated name"
+        self.entity.name = new_surname
+        data = CreatorSchema.from_orm(self.entity).model_dump_json()
+        response = client.put("/creator", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        cs = Creator.objects.filter(id=self.entity.id)
+        self.assertEqual(len(cs), 1)
+        self.assertEqual(self.entity.name, new_surname)
+
+    def test_delete(self):
+        unsaved = CreatorFactory.build()
+        response = client.delete(f"/creator/{unsaved.id}")
+        self.assertEqual(response.status_code, 401)
+
+        response = client.delete(f"/creator/{unsaved.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
+
+        response = client.delete(f"/creator/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
+        response = client.delete(f"/creator/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)

@@ -302,34 +302,64 @@ def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
         raise Http404(f"no creator found with {lookup.id_type} of {lookup.id_value}")
     return CreatorSchema.from_orm(es[0])
 
-@v2api.get("/creator/releases")
+@v2api.get("/creator/{ident}/releases")
 def get_creator_releases(request, ident: str) -> List[ReleaseSchema]:
-    """Get all the releases associated with a given creator. Note that for many releases, their authors exist only as raw contribs and do not have creator records."""
-    # TODO
-    pass
+    """Get all the releases associated with a given creator. Note that for many
+    releases, their authors exist only as raw contribs and do not have creator
+    records."""
+    # TODO handle legacy idents
+    # TODO paginate
+    return [ReleaseSchema.from_orm(r) for r in Release.objects.filter(
+        releasecontrib__creator_id=ident)]
 
 @v2api.get("/creator/{ident}")
 def get_creator(request, ident: str) -> CreatorSchema:
-    # TODO
-    pass
+    # TODO legacy ident
+    return CreatorSchema.from_orm(get_object_or_404(Creator, id=ident))
 
 @v2api.post("/creator", auth=apiAuth)
 def create_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     """Create a new creator."""
-    # TODO
-    pass
+    es = Creator.objects.filter(id=creator_in.id)
+    if len(es) != 0:
+        return v2api.create_response(request,
+                                     f"creator with id {creator_in.id} already exists",
+                                     status=400)
+    Creator(**creator_in.dict()).save()
+    return v2api.create_response(request, "creator created", status=201)
 
 @v2api.put("/creator", auth=apiAuth)
 def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     """Replace a creator record wholesale."""
-    # TODO
-    pass
+    code = 200
+    es = Creator.objects.filter(id=creator_in.id)
+    entity = None
 
-@v2api.delete("/creator", auth=apiAuth)
-def delete_creator(request, creator_in: CreatorSchema) -> HttpResponse:
+    if len(es) == 0:
+        code = 201
+        entity = Creator(**creator_in.dict())
+    else:
+        entity = es[0]
+        for attr, value in creator_in.dict().items():
+            setattr(entity, attr, value)
+
+    entity.save()
+
+    return v2api.create_response(request, "creator replaced with new content", status=code)
+
+@v2api.post("/creators", auth=apiAuth)
+def bulk_create_creators(request, creators_in: List[CreatorSchema]) -> HttpResponse:
+    Creator.objects.bulk_create([Creator(**cin.dict()) for cin in creators_in])
+    return v2api.create_response(request, "creators created", status=201)
+
+@v2api.delete("/creator/{ident}", auth=apiAuth)
+def delete_creator(request, ident: str) -> HttpResponse:
     """Delete a creator record. Note: does not delete associated releases."""
-    # TODO
-    pass
+    # TODO legacy ident
+    entity = get_object_or_404(Creator, id=ident)
+    out = CreatorSchema.from_orm(entity)
+    entity.delete()
+    return out
 
 # TODO ref routes?
 

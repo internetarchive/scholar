@@ -14,7 +14,7 @@ from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
 from djscholar.fcapi.models import Container, Creator, File, Release, ReleaseContrib, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
-from djscholar.fcapi.views import v2api, ContainerSchema, ReleaseSchema
+from djscholar.fcapi.views import v2api, ContainerSchema, ReleaseSchema, WorkSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
 client = TestClient(v2api)
@@ -39,6 +39,9 @@ class ContainerFactory(DjangoModelFactory):
 
 
 class WorkFactory(DjangoModelFactory):
+    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+
     class Meta:
         model = Work
 
@@ -354,17 +357,60 @@ class TestWorkRoutes(APITest):
         self.entity = WorkFactory.create()
 
     def test_get(self):
-        # TODO
-        pass
+        response = client.get(f"/work/{self.entity.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get_releases(self):
-        # TODO
-        pass
+        rs = []
+        for _ in range(4):
+            r = ReleaseFactory.build()
+            r.work = self.entity
+            r.container = None
+            r.save()
+            rs.append(r)
+
+        response = client.get(f"/work/{self.entity.id}/releases")
+        self.assertEqual(response.status_code, 200)
+        self.assertSetEqual(set([r['id'] for r in response.data]),
+                            set([str(r.id) for r in rs]))
 
     def test_delete(self):
-        # TODO
-        pass
+        unsaved = WorkFactory.build()
+        response = client.delete(f"/work/{unsaved.id}")
+        self.assertEqual(response.status_code, 401)
+
+        response = client.delete(f"/work/{unsaved.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
+
+        response = client.delete(f"/work/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
+        response = client.delete(f"/work/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
 
     def test_update(self):
-        # TODO
-        pass
+        entity = WorkFactory.build()
+        data = WorkSchema.from_orm(entity).model_dump_json()
+
+        response = client.put("/work", data=data)
+        self.assertEqual(response.status_code, 401)
+
+        response = client.put("/work", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+        es = Work.objects.filter(id=entity.id)
+        self.assertEqual(len(es), 1)
+
+        new_reason = "hidden for test"
+        self.entity.hidden_reason = new_reason
+        hidden_when = datetime.now(zoneinfo.ZoneInfo("UTC"))
+        self.entity.hidden_when = hidden_when
+        data = WorkSchema.from_orm(self.entity).model_dump_json()
+        response = client.put("/work", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        es = Work.objects.filter(id=self.entity.id)
+        self.assertEqual(len(es), 1)
+        self.assertEqual(self.entity.hidden_reason, new_reason)
+        self.assertEqual(self.entity.hidden_when, hidden_when)

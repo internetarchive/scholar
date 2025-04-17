@@ -39,7 +39,7 @@ ContainerSchema = create_schema(Container,
                                           "issne", "issnp", "wikidata_qid",])
 class ReleaseSchema(ModelSchema):
     work_id: uuid.UUID
-    container_id: uuid.UUID
+    container_id: Optional[uuid.UUID]
 
     class Meta:
         model = Release
@@ -254,20 +254,35 @@ def get_work(request, ident: str) -> WorkSchema:
 @v2api.get("/work/{ident}/releases")
 def get_work_releases(request, ident: str) -> List[ReleaseSchema]:
     """Get all releases associated with a work's ID"""
-    # TODO
-    pass
+    return [ReleaseSchema.from_orm(r) for r in Release.objects.filter(work_id=ident)]
 
 @v2api.delete("/work/{ident}", auth=apiAuth)
 def delete_work(request, ident: str) -> WorkSchema:
     """Delete a work by its ID"""
-    # TODO
-    pass
+    # TODO legacy ident
+    entity = get_object_or_404(Work, id=ident)
+    out = WorkSchema.from_orm(entity)
+    entity.delete()
+    return out
 
 @v2api.put("/work", auth=apiAuth)
-def update_work(request, work: WorkSchema) -> HttpResponse:
+def update_work(request, work_in: WorkSchema) -> HttpResponse:
     """Replace a work record wholesale."""
-    # TODO
-    pass
+    code = 200
+    es = Work.objects.filter(id=work_in.id)
+    entity = None
+
+    if len(es) == 0:
+        code = 201
+        entity = Work(**work_in.dict())
+    else:
+        entity = es[0]
+        for attr, value in work_in.dict().items():
+            setattr(entity, attr, value)
+
+    entity.save()
+
+    return v2api.create_response(request, "work replaced with new content", status=code)
 
 # Creator routes
 

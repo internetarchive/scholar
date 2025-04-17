@@ -28,6 +28,11 @@ class ContainerLookup(Schema):
     id_value: str
 
 
+class CreatorLookup(Schema):
+    id_type: Literal["orcid"]
+    id_value: str
+
+
 class ReleaseLookup(Schema):
     id_type: Literal[*[t[0] for t in RELEASE_EXT_ID_TYPES]]
     id_value: str
@@ -288,12 +293,44 @@ def update_work(request, work_in: WorkSchema) -> HttpResponse:
 
 # TODO should support the creation of creators via release creation/update
 
-# TODO get /creator/lookup
-# TODO get /creator/{ident}
-# TODO get /creator/releases
-# TODO post /creator
-# TODO put /creator
-# TODO delete /creator
+@v2api.get("/creator/lookup")
+def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
+    """Look up a creator using an external ID. If multiple
+    creators match the ID, an arbitrary one is returned."""
+    es = Creator.objects.filter(**{lookup.id_type: lookup.id_value})
+    if len(es) == 0:
+        raise Http404(f"no creator found with {lookup.id_type} of {lookup.id_value}")
+    return CreatorSchema.from_orm(es[0])
+
+@v2api.get("/creator/releases")
+def get_creator_releases(request, ident: str) -> List[ReleaseSchema]:
+    """Get all the releases associated with a given creator. Note that for many releases, their authors exist only as raw contribs and do not have creator records."""
+    # TODO
+    pass
+
+@v2api.get("/creator/{ident}")
+def get_creator(request, ident: str) -> CreatorSchema:
+    # TODO
+    pass
+
+@v2api.post("/creator", auth=apiAuth)
+def create_creator(request, creator_in: CreatorSchema) -> HttpResponse:
+    """Create a new creator."""
+    # TODO
+    pass
+
+@v2api.put("/creator", auth=apiAuth)
+def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
+    """Replace a creator record wholesale."""
+    # TODO
+    pass
+
+@v2api.delete("/creator", auth=apiAuth)
+def delete_creator(request, creator_in: CreatorSchema) -> HttpResponse:
+    """Delete a creator record. Note: does not delete associated releases."""
+    # TODO
+    pass
+
 # TODO ref routes?
 
 # File routes

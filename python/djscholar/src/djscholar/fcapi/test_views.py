@@ -414,3 +414,11 @@ class TestWorkRoutes(APITest):
         self.assertEqual(len(es), 1)
         self.assertEqual(self.entity.hidden_reason, new_reason)
         self.assertEqual(self.entity.hidden_when, hidden_when)
+
+
+class TestCreatorRoutes(APITest):
+    def setUp(self):
+        # TODO
+        pass
+
+    # TODO

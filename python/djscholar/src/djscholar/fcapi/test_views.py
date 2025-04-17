@@ -14,7 +14,7 @@ from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
 from djscholar.fcapi.models import Container, Creator, File, Release, ReleaseContrib, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
-from djscholar.fcapi.views import v2api, ContainerSchema, CreatorSchema, ReleaseSchema, WorkSchema
+from djscholar.fcapi.views import v2api, ContainerSchema, CreatorSchema, FileSchema, ReleaseSchema, WorkSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
 client = TestClient(v2api)
@@ -529,4 +529,112 @@ class TestCreatorRoutes(APITest):
         self.assertEqual(response.data["id"], str(self.entity.id))
 
         response = client.delete(f"/creator/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
+
+class TestFileRoutes(APITest):
+    def setUp(self):
+        super().setUp()
+        self.entity = FileFactory.create()
+
+    def test_get(self):
+        response = client.get(f"/file/{self.entity.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
+    def test_lookup(self):
+        sha1 = "abc123"
+        response = client.get(f"/file/lookup?id_type=sha1&id_value={sha1}")
+        self.assertEqual(response.status_code, 404)
+
+        keys = [("sha1", self.entity.sha1),
+                ("sha256", self.entity.sha256),
+                ("md5", self.entity.md5),
+                ]
+
+        for id_type, id_value in keys:
+            response = client.get(f"/file/lookup?id_type={id_type}&id_value={id_value}")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['id'], str(self.entity.id))
+
+    def test_get_releases(self):
+        f = FileFactory.create()
+        response = client.get(f"/file/{f.id}/releases")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 0)
+
+        rs = []
+        for _ in range(4):
+            r = ReleaseFactory.build()
+            r.work = WorkFactory.create()
+            r.container = None
+            r.save()
+            # TODO use this trick in creator releases test
+            rs.append(r)
+
+        self.entity.releases.set(rs)
+        response = client.get(f"/file/{self.entity.id}/releases")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), len(rs))
+        self.assertSetEqual(set([d['id'] for d in response.data]), set([str(r.id) for r in rs]))
+
+    def test_create(self):
+        c = FileFactory.build()
+        data = FileSchema.from_orm(c).model_dump_json()
+
+        response = client.post("/file", data=data)
+        self.assertEqual(response.status_code, 401)
+
+        response = client.post("/file", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        cs = File.objects.filter(id=c.id)
+        self.assertEqual(len(cs), 1)
+
+        response = client.post("/file", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 400)
+
+    def test_bulk_create(self):
+        es = [FileSchema.from_orm(FileFactory.build()) for _ in range(100)]
+        data = "["+",".join([e.model_dump_json() for e in es])+"]"
+
+        response = client.post("/files", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        for f in es:
+            self.assertEqual(File.objects.filter(id=f.id).count(), 1)
+
+    def test_update(self):
+        entity = FileFactory.build()
+        data = FileSchema.from_orm(entity).model_dump_json()
+
+        response = client.put("/file", data=data)
+        self.assertEqual(response.status_code, 401)
+
+        response = client.put("/file", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        self.assertEqual(File.objects.filter(id=entity.id).count(), 1)
+
+        new_surname = "updated name"
+        self.entity.name = new_surname
+        data = FileSchema.from_orm(self.entity).model_dump_json()
+        response = client.put("/file", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(File.objects.filter(id=entity.id).count(), 1)
+        self.assertEqual(self.entity.name, new_surname)
+
+    def test_delete(self):
+        unsaved = FileFactory.build()
+        response = client.delete(f"/file/{unsaved.id}")
+        self.assertEqual(response.status_code, 401)
+
+        response = client.delete(f"/file/{unsaved.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 404)
+
+        response = client.delete(f"/file/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
+        response = client.delete(f"/file/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, 404)

@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
@@ -53,6 +53,15 @@ WorkSchema = create_schema(Work, fields=COMMON_ENTITY_FIELDS)
 
 CreatorSchema = create_schema(Creator, fields=COMMON_ENTITY_FIELDS+["display_name", "given_name",
                                                                     "surname", "orcid"])
+
+class ReleaseContribSchema(ModelSchema):
+    release_id: uuid.UUID
+    creator_id: Optional[uuid.UUID]
+
+    class Meta:
+        model = ReleaseContrib
+        fields = ["raw_name", "given_name", "surname", "role", "raw_affiliation",
+                  "position", "extra"]
 
 FileSchema = create_schema(File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256",
                                                                 "md5", "mimetype"])
@@ -184,27 +193,14 @@ def get_release_work(request, ident: str) -> WorkSchema:
 def get_release_files(request, ident: str) -> List[FileSchema]:
     return [FileSchema.from_orm(e) for e in File.objects.filter(releasefile__release_id=ident)]
 
-@v2api.get("/release/{ident}/creators")
-def get_release_creators(request, ident: str) -> List[CreatorSchema]:
-    """Get a list of contributors to a given release. Note that, as of v2, we
-    do not have fully realized "creator" entities for every contribution to a
-    release. Thus, this endpoint may return IDless creator records that
-    represent raw contribution information scraped from, say, the author list
-    of a paper."""
-    # TODO some creators only exist as names in the contrib table. What to do, here?
-    # my first idea was to create unsaved creators
-    contribs = ReleaseContrib.objects.filter(release_id=ident)
-    creators = Creator.objects.filter(releasecontrib__release_id=ident)
-    out: List[CreatorSchema] = [CreatorSchema.from_orm(e) for e in creators]
-    for contrib in contribs:
-        if contrib.creator is None:
-            out.append(CreatorSchema.from_orm(Creator(
-                display_name=contrib.raw_name, id=None,
-                updated=contrib.release.updated, created=contrib.release.created,
-                extra=contrib.extra, given_name=contrib.given_name, surname=contrib.surname,
-                source="rawcontrib")))
-
-    return out
+@v2api.get("/release/{ident}/contribs")
+def get_release_contribs(request, ident: str) -> List[CreatorSchema]:
+    """Get a list of contributions to a given release; for example, authors.
+    Some contributions will feature a creator_id that can be used to select
+    richer information about a contribution (eg, orcid); many contributions
+    will just be raw names pulled from a paper's author list, however."""
+    return [ReleaseContribSchema.from_orm(rc)
+            for rc in ReleaseContrib.objects.filter(release_id=ident)]
 
 @v2api.delete("/release/{ident}", auth=apiAuth)
 def delete_release(request, ident: str) -> ReleaseSchema:
@@ -245,8 +241,6 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
     # TODO releases without works should have works created automagically
     Release.objects.bulk_create([Release(**rin.dict()) for rin in releases_in])
     return v2api.create_response(request, "releases created", status=201)
-
-# TODO GET /release/{ident}/creators
 
 
 # Work routes

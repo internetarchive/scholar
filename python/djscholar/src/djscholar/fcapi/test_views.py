@@ -3,7 +3,7 @@ from typing import Callable
 import zoneinfo
 
 import factory
-from faker.providers import misc, file
+from faker.providers import file, misc, person
 from django.contrib.auth.hashers import (
     make_password,
 )
@@ -13,7 +13,7 @@ from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
-from djscholar.fcapi.models import Container, File, Release, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
+from djscholar.fcapi.models import Container, Creator, File, Release, ReleaseContrib, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
 from djscholar.fcapi.views import v2api, ContainerSchema, ReleaseSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
@@ -21,6 +21,7 @@ client = TestClient(v2api)
 factory.Faker.add_provider(ExtIDProvider)
 factory.Faker.add_provider(misc.Provider)
 factory.Faker.add_provider(file.Provider)
+factory.Faker.add_provider(person.Provider)
 
 def lazy(generate: Callable) -> factory.LazyAttribute:
     return factory.LazyAttribute(lambda _: generate())
@@ -70,6 +71,20 @@ class FileFactory(DjangoModelFactory):
 
     class Meta:
         model = File
+
+
+class CreatorFactory(DjangoModelFactory):
+    given_name = factory.Faker('first_name')
+    surname = factory.Faker('last_name')
+    display_name = factory.LazyAttribute(lambda c: f"{c.given_name} {c.surname}")
+    # TODO orcid generator
+    class Meta:
+        model = Creator
+
+class ReleaseContribFactory(DjangoModelFactory):
+    raw_name = f"{factory.Faker('first_name')} {factory.Faker('last_name')}"
+    class Meta:
+        model = ReleaseContrib
 
 
 class UserFactory(DjangoModelFactory):
@@ -146,6 +161,22 @@ class TestReleaseRoutes(APITest):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), len(es))
         self.assertSetEqual(set([d['id'] for d in response.data]), set([str(e.id) for e in es]))
+
+    def test_get_contribs(self):
+        contribs = []
+        for x in range(4):
+            c = ReleaseContribFactory.build()
+            if x % 2 == 0:
+                c.creator = CreatorFactory.create()
+            c.release = self.entity
+            c.save()
+            contribs.append(c)
+
+        response = client.get(f"/release/{self.entity.id}/contribs")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), len(contribs))
+        self.assertSetEqual(set([d['raw_name'] for d in response.data]),
+                            set([str(c.raw_name) for c in contribs]))
 
     def test_create(self):
         entity = ReleaseFactory.build()

@@ -33,6 +33,11 @@ class CreatorLookup(Schema):
     id_value: str
 
 
+class FileLookup(Schema):
+    id_type: Literal["sha1", "sha256", "md5"]
+    id_value: str
+
+
 class ReleaseLookup(Schema):
     id_type: Literal[*[t[0] for t in RELEASE_EXT_ID_TYPES]]
     id_value: str
@@ -365,12 +370,73 @@ def delete_creator(request, ident: str) -> HttpResponse:
 
 # File routes
 
-# TODO get /file/lookup
-# TODO get /file/{ident}
-# TODO post /file
-# TODO put /file
-# TODO post /files
-# TODO delete /file/{ident}
+@v2api.get("/file/lookup")
+def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
+    """Look up a file by checksum."""
+    es = File.objects.filter(**{lookup.id_type: lookup.id_value})
+    if len(es) == 0:
+        raise Http404(f"no file found with {lookup.id_type} of {lookup.id_value}")
+    return FileSchema.from_orm(es[0])
+
+@v2api.get("/file/{ident}/releases")
+def get_file_releases(request, ident: str) -> List[ReleaseSchema]:
+    """Get all the releases associated with a given file."""
+    # TODO handle legacy idents
+    # TODO paginate
+    return [ReleaseSchema.from_orm(r) for r in Release.objects.filter(
+        releasefile__file_id=ident)]
+
+@v2api.get("/file/{ident}")
+def get_file(request, ident: str) -> FileSchema:
+    # TODO legacy ident
+    return FileSchema.from_orm(get_object_or_404(File, id=ident))
+
+@v2api.post("/file", auth=apiAuth)
+def create_file(request, file_in: FileSchema) -> HttpResponse:
+    """Create a new file. Note that file contents do not live in this database;
+    we only track checksums and metadata here. File contents, if stored at all,
+    live in blob storage elsewhere."""
+    es = File.objects.filter(id=file_in.id)
+    if len(es) != 0:
+        return v2api.create_response(request,
+                                     f"file with id {file_in.id} already exists",
+                                     status=400)
+    File(**file_in.dict()).save()
+    return v2api.create_response(request, "file created", status=201)
+
+@v2api.put("/file", auth=apiAuth)
+def update_file(request, file_in: FileSchema) -> HttpResponse:
+    """Replace a file record wholesale."""
+    code = 200
+    es = File.objects.filter(id=file_in.id)
+    entity = None
+
+    if len(es) == 0:
+        code = 201
+        entity = File(**file_in.dict())
+    else:
+        entity = es[0]
+        for attr, value in file_in.dict().items():
+            setattr(entity, attr, value)
+
+    entity.save()
+
+    return v2api.create_response(request, "file replaced with new content", status=code)
+
+@v2api.post("/files", auth=apiAuth)
+def bulk_create_files(request, files_in: List[FileSchema]) -> HttpResponse:
+    File.objects.bulk_create([File(**cin.dict()) for cin in files_in])
+    return v2api.create_response(request, "files created", status=201)
+
+@v2api.delete("/file/{ident}", auth=apiAuth)
+def delete_file(request, ident: str) -> HttpResponse:
+    """Delete a file record. Does not delete associated releases. Actual
+    file contents will continue to live in blob storage."""
+    # TODO legacy ident
+    entity = get_object_or_404(File, id=ident)
+    out = FileSchema.from_orm(entity)
+    entity.delete()
+    return out
 
 # Changelog routes
 

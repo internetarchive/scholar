@@ -282,6 +282,11 @@ class TestContainerRoutes(APITest):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data['id'], str(self.entity.id))
 
+        legacy_ident = uuid2fcid(self.entity.id)
+        response = client.get(f"/container/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
     def test_get_releases(self):
         c = ContainerFactory.create()
         response = client.get(f"/container/{c.id}/releases")
@@ -369,6 +374,12 @@ class TestWorkRoutes(APITest):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
+    def test_lookup(self):
+        legacy_ident = uuid2fcid(self.entity.id)
+        response = client.get(f"/work/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
     def test_get_releases(self):
         rs = []
         for _ in range(4):
@@ -449,6 +460,11 @@ class TestCreatorRoutes(APITest):
             response = client.get(f"/creator/lookup?id_type={id_type}&id_value={id_value}")
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data['id'], str(self.entity.id))
+
+        legacy_ident = uuid2fcid(self.entity.id)
+        response = client.get(f"/creator/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get_releases(self):
         c = CreatorFactory.create()
@@ -561,6 +577,11 @@ class TestFileRoutes(APITest):
             response = client.get(f"/file/lookup?id_type={id_type}&id_value={id_value}")
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data['id'], str(self.entity.id))
+
+        legacy_ident = uuid2fcid(self.entity.id)
+        response = client.get(f"/file/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get_releases(self):
         f = FileFactory.create()

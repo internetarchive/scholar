@@ -19,23 +19,24 @@ apiAuth = APIKeyAuth()
 # signatures too hideous / doesn't break doc generation
 # TODO pagination
 # TODO support nested containers and works (and possibly other types) during creation/update; possibly getting
+# TODO add legacy_ident lookup to all entity lookup routes
 
 COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra"]
 
 # In/Out schemas
 
 class ContainerLookup(Schema):
-    id_type: Literal["issnl", "issne", "issnp", "wikidata_qid"]
+    id_type: Literal["issnl", "issne", "issnp", "wikidata_qid", "legacy_ident"]
     id_value: str
 
 
 class CreatorLookup(Schema):
-    id_type: Literal["orcid"]
+    id_type: Literal["orcid", "legacy_ident"]
     id_value: str
 
 
 class FileLookup(Schema):
-    id_type: Literal["sha1", "sha256", "md5"]
+    id_type: Literal["sha1", "sha256", "md5", "legacy_ident"]
     id_value: str
 
 
@@ -44,10 +45,17 @@ class ReleaseLookup(Schema):
     id_value: str
 
 
+class WorkLookup(Schema):
+    id_type: Literal["legacy_ident"]
+    id_value: str
+
+
 ContainerSchema = create_schema(Container,
                                 fields=COMMON_ENTITY_FIELDS\
                                        + ["name", "container_type", "publisher", "issnl",
                                           "issne", "issnp", "wikidata_qid",])
+
+
 class ReleaseSchema(ModelSchema):
     work_id: uuid.UUID
     container_id: Optional[uuid.UUID]
@@ -83,6 +91,10 @@ FileSchema = create_schema(File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "s
 def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema:
     """Look up a container using an external ID. If multiple containers match
     the ID, an arbitrary one is returned."""
+    if lookup.id_type == "legacy_ident":
+        ident = fcid2uuid(lookup.id_value)
+        return ContainerSchema.from_orm(get_object_or_404(Container, id=ident))
+
     cs = Container.objects.filter(**{lookup.id_type: lookup.id_value})
     if len(cs) == 0:
         raise Http404(f"no container found with {lookup.id_type} of {lookup.id_value}")
@@ -91,13 +103,11 @@ def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema
 @v2api.get("/container/{ident}")
 def get_container(request, ident: str) -> ContainerSchema:
     """Get a single container by its ID."""
-    # TODO handle legacy idents
     return ContainerSchema.from_orm(get_object_or_404(Container, id=ident))
 
 @v2api.get("/container/{ident}/releases")
 def get_container_releases(request, ident: str) -> List[ReleaseSchema]:
     """Get all releases for a given container ID."""
-    # TODO handle legacy idents
     # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in Release.objects.filter(container__id=ident)]
 
@@ -146,7 +156,6 @@ def update_container(request, container_in: ContainerSchema) -> HttpResponse:
 @v2api.delete("/container/{ident}", auth=apiAuth)
 def delete_container(request, ident: str) -> ContainerSchema:
     """Delete the container with a given ID."""
-    # TODO handle legacy idents
     c = get_object_or_404(Container, id=ident)
     out = ContainerSchema.from_orm(c)
     c.delete()
@@ -172,7 +181,6 @@ def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
 @v2api.get("/release/{ident}")
 def get_release(request, ident: str) -> ReleaseSchema:
     """Get a single release by its ID."""
-    # TODO handle legacy idents
     return ReleaseSchema.from_orm(get_object_or_404(Release, id=ident))
 
 @v2api.post("/release", auth=apiAuth)
@@ -190,7 +198,6 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
 @v2api.get("/release/{ident}/container")
 def get_release_container(request, ident: str) -> ContainerSchema:
     """Get a release's container (ie, journal)"""
-    # TODO handle legacy idents
     cs = Container.objects.filter(release__id=ident)
     if len(cs) == 0:
         raise Http404(f"release {ident} has no associated container")
@@ -199,7 +206,6 @@ def get_release_container(request, ident: str) -> ContainerSchema:
 @v2api.get("/release/{ident}/work")
 def get_release_work(request, ident: str) -> WorkSchema:
     """Get a the work that represents the platonic version of this release."""
-    # TODO handle legacy idents
     ws = Container.objects.filter(release__id=ident)
     # do not need to check length; work_id is required in schema
     return WorkSchema.from_orm(ws[0])
@@ -220,7 +226,6 @@ def get_release_contribs(request, ident: str) -> List[CreatorSchema]:
 @v2api.delete("/release/{ident}", auth=apiAuth)
 def delete_release(request, ident: str) -> ReleaseSchema:
     """Delete the release with a given ID."""
-    # TODO handle legacy idents
     r = get_object_or_404(Release, id=ident)
     out = ReleaseSchema.from_orm(r)
     r.delete()
@@ -260,10 +265,18 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
 
 # Work routes
 
+@v2api.get("/work/lookup")
+def lookup_work(request, lookup: Query[WorkLookup]) -> WorkSchema:
+    """Lookup a work by metadata other than its UUID"""
+    if lookup.id_type == "legacy_ident":
+        ident = fcid2uuid(lookup.id_value)
+        return WorkSchema.from_orm(get_object_or_404(Work, id=ident))
+    else:
+        raise NotImplementedError()
+
 @v2api.get("/work/{ident}")
 def get_work(request, ident: str) -> WorkSchema:
     """Get a work (collection of releases) by its ID"""
-    # TODO legacy idents
     return WorkSchema.from_orm(get_object_or_404(Work, id=ident))
 
 @v2api.get("/work/{ident}/releases")
@@ -274,7 +287,6 @@ def get_work_releases(request, ident: str) -> List[ReleaseSchema]:
 @v2api.delete("/work/{ident}", auth=apiAuth)
 def delete_work(request, ident: str) -> WorkSchema:
     """Delete a work by its ID"""
-    # TODO legacy ident
     entity = get_object_or_404(Work, id=ident)
     out = WorkSchema.from_orm(entity)
     entity.delete()
@@ -307,6 +319,10 @@ def update_work(request, work_in: WorkSchema) -> HttpResponse:
 def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
     """Look up a creator using an external ID. If multiple
     creators match the ID, an arbitrary one is returned."""
+    if lookup.id_type == "legacy_ident":
+        ident = fcid2uuid(lookup.id_value)
+        return CreatorSchema.from_orm(get_object_or_404(Creator, id=ident))
+
     es = Creator.objects.filter(**{lookup.id_type: lookup.id_value})
     if len(es) == 0:
         raise Http404(f"no creator found with {lookup.id_type} of {lookup.id_value}")
@@ -317,14 +333,12 @@ def get_creator_releases(request, ident: str) -> List[ReleaseSchema]:
     """Get all the releases associated with a given creator. Note that for many
     releases, their authors exist only as raw contribs and do not have creator
     records."""
-    # TODO handle legacy idents
     # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in Release.objects.filter(
         releasecontrib__creator_id=ident)]
 
 @v2api.get("/creator/{ident}")
 def get_creator(request, ident: str) -> CreatorSchema:
-    # TODO legacy ident
     return CreatorSchema.from_orm(get_object_or_404(Creator, id=ident))
 
 @v2api.post("/creator", auth=apiAuth)
@@ -365,7 +379,6 @@ def bulk_create_creators(request, creators_in: List[CreatorSchema]) -> HttpRespo
 @v2api.delete("/creator/{ident}", auth=apiAuth)
 def delete_creator(request, ident: str) -> HttpResponse:
     """Delete a creator record. Note: does not delete associated releases."""
-    # TODO legacy ident
     entity = get_object_or_404(Creator, id=ident)
     out = CreatorSchema.from_orm(entity)
     entity.delete()
@@ -378,6 +391,10 @@ def delete_creator(request, ident: str) -> HttpResponse:
 @v2api.get("/file/lookup")
 def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
     """Look up a file by checksum."""
+    if lookup.id_type == "legacy_ident":
+        ident = fcid2uuid(lookup.id_value)
+        return FileSchema.from_orm(get_object_or_404(File, id=ident))
+
     es = File.objects.filter(**{lookup.id_type: lookup.id_value})
     if len(es) == 0:
         raise Http404(f"no file found with {lookup.id_type} of {lookup.id_value}")
@@ -386,14 +403,12 @@ def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
 @v2api.get("/file/{ident}/releases")
 def get_file_releases(request, ident: str) -> List[ReleaseSchema]:
     """Get all the releases associated with a given file."""
-    # TODO handle legacy idents
     # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in Release.objects.filter(
         releasefile__file_id=ident)]
 
 @v2api.get("/file/{ident}")
 def get_file(request, ident: str) -> FileSchema:
-    # TODO legacy ident
     return FileSchema.from_orm(get_object_or_404(File, id=ident))
 
 @v2api.post("/file", auth=apiAuth)
@@ -437,7 +452,6 @@ def bulk_create_files(request, files_in: List[FileSchema]) -> HttpResponse:
 def delete_file(request, ident: str) -> HttpResponse:
     """Delete a file record. Does not delete associated releases. Actual
     file contents will continue to live in blob storage."""
-    # TODO legacy ident
     entity = get_object_or_404(File, id=ident)
     out = FileSchema.from_orm(entity)
     entity.delete()

@@ -13,6 +13,7 @@ from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
+from djscholar.fcapi.fcid import uuid2fcid
 from djscholar.fcapi.models import Container, Creator, File, Release, ReleaseContrib, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
 from djscholar.fcapi.views import v2api, ContainerSchema, CreatorSchema, FileSchema, ReleaseSchema, WorkSchema
 from djscholar.fcapi.faker_providers import ExtIDProvider
@@ -132,6 +133,11 @@ class TestReleaseRoutes(APITest):
                     f"/release/lookup?id_type={rei.id_type}&id_value={rei.id_value}")
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data["id"], str(self.entity.id))
+
+        legacy_ident = uuid2fcid(self.entity.id)
+        response = client.get(f"/release/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get(self):
         response = client.get(f"/release/{self.entity.id}")

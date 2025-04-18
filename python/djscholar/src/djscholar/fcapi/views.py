@@ -7,6 +7,7 @@ from ninja import NinjaAPI, Query, Schema, ModelSchema
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
+from djscholar.fcapi.fcid import fcid2uuid
 from djscholar.fcapi.models import Container, Creator, File, Release, ReleaseContrib, RELEASE_EXT_ID_TYPES, Work
 
 v2api = NinjaAPI()
@@ -39,7 +40,7 @@ class FileLookup(Schema):
 
 
 class ReleaseLookup(Schema):
-    id_type: Literal[*[t[0] for t in RELEASE_EXT_ID_TYPES]]
+    id_type: Literal[*[t[0] for t in RELEASE_EXT_ID_TYPES] + ["legacy_ident"]]
     id_value: str
 
 
@@ -157,6 +158,10 @@ def delete_container(request, ident: str) -> ContainerSchema:
 def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
     """Look up a release using an external ID. If multiple releases match the
     ID, an arbitrary one is returned."""
+    if lookup.id_type == "legacy_ident":
+        ident = fcid2uuid(lookup.id_value)
+        return ReleaseSchema.from_orm(get_object_or_404(Release, id=ident))
+
     rs = Release.objects.filter(**{
         "releaseextid__id_type": lookup.id_type,
         "releaseextid__id_value": lookup.id_value})

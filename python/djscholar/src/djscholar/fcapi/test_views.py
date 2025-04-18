@@ -79,10 +79,10 @@ class FileFactory(DjangoModelFactory):
 class CreatorFactory(DjangoModelFactory):
     updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    given_name = factory.Faker('first_name')
-    surname = factory.Faker('last_name')
+    given_name = factory.Faker("first_name")
+    surname = factory.Faker("last_name")
     display_name = factory.LazyAttribute(lambda c: f"{c.given_name} {c.surname}")
-    # TODO orcid generator
+    orcid = factory.Faker("orcid")
     class Meta:
         model = Creator
 

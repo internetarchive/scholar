@@ -339,3 +339,43 @@ class ExtIDProvider(BaseProvider):
             id_length = self.random_int(6, 7)
 
         return self.numerify("#"*id_length)
+
+    def orcid(self):
+        """Generate a random ORCID (Open Researcher and Contributor ID).
+
+        ORCIDs have the format: XXXX-XXXX-XXXX-XXXX where X is a digit 0-9.
+        The last digit is a check digit calculated using the ISO/IEC 7064:2003 algorithm.
+        """
+        # Generate 15 random digits (the 16th will be the check digit)
+        base_digits = [self.random_int(0, 9) for _ in range(15)]
+
+        # Calculate the check digit (ISO/IEC 7064:2003, MOD 11-2)
+        total = 0
+        for digit in base_digits:
+            # Each digit is multiplied by 2, then added to the total
+            total = (total + digit) * 2
+
+        # Determine remainder when divided by 11
+        remainder = total % 11
+
+        # Calculate check digit (11 - remainder), with 10 represented as X
+        check_digit = 11 - remainder
+        if check_digit == 10:
+            check_digit = 'X'
+        elif check_digit == 11:
+            check_digit = 0
+
+        # Add check digit to the end
+        all_digits = base_digits + [check_digit]
+
+        # Format with hyphens
+        orcid_parts = [
+            ''.join(str(d) for d in all_digits[0:4]),
+            ''.join(str(d) for d in all_digits[4:8]),
+            ''.join(str(d) for d in all_digits[8:12]),
+            ''.join(str(d) for d in all_digits[12:16])
+        ]
+
+        orcid = '-'.join(orcid_parts)
+
+        return orcid

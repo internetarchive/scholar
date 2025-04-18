@@ -80,12 +80,21 @@ class ReleaseContribSchema(ModelSchema):
     creator_id: Optional[uuid.UUID]
 
     class Meta:
-        model = ReleaseContrib
+        model = m.ReleaseContrib
         fields = ["raw_name", "given_name", "surname", "role", "raw_affiliation",
                   "position", "extra"]
 
-FileSchema = create_schema(File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256",
+FileSchema = create_schema(m.File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256",
                                                                 "md5", "mimetype"])
+
+class WebcaptureSchema(ModelSchema):
+    release_id: uuid.UUID
+    # TODO embed CDXs
+    # TODO embed URLs
+
+    class Meta:
+        model = m.Webcapture
+        fields = ["original_url", "captured"]
 
 # Container routes
 
@@ -465,11 +474,23 @@ def delete_file(request, ident: str) -> HttpResponse:
 
 # TODO
 
-# Fileset routes
-
-# TODO
 
 # Webcapture routes
+
+# TODO embed a urls list
+# TODO support embedded CDX dict when creating/updating
+
+# TODO lookup_webcapture
+# TODO get_webcapture
+# TODO get_webcapture_release
+# TODO get_webcapture_resources
+# TODO get_webcapture_resources
+# TODO create_webcapture
+# TODO bulk_create_webcaptures
+# TODO update_webcapture
+# TODO delete_webcapture
+
+# Fileset routes
 
 # TODO
 

@@ -665,3 +665,13 @@ class TestFileRoutes(APITest):
 
         response = client.delete(f"/file/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, 404)
+
+class TestWebcaptureRoutes(APITest):
+    def setUp(self):
+        super().setUp()
+        self.entity = FileFactory.create()
+
+    def test_get(self):
+        response = client.get(f"/file/{self.entity.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))

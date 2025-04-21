@@ -1,18 +1,20 @@
-import uuid
-from typing import List, Literal, Optional
+from uuid import UUID
+from typing import Annotated, List, Literal, Optional
 
 from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
 from ninja import NinjaAPI, Query, Schema, ModelSchema
-from ninja.orm import create_schema
+from ninja.orm import create_schema, factory
 from ninja_apikey.security import APIKeyAuth
+from pydantic import Field
 
 import djscholar.fcapi.models as m
 from djscholar.fcapi.fcid import fcid2uuid
 
+COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra"]
+
 v2api = NinjaAPI()
-# NB: uses X-API-Key header. use admin to create keys.
-apiAuth = APIKeyAuth()
+api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 
 # TODO filter hidden things
 # TODO consider generalizing route implementations if it doesn't make
@@ -20,8 +22,10 @@ apiAuth = APIKeyAuth()
 # TODO pagination
 # TODO support nested containers and works (and possibly other types) during creation/update; possibly getting
 # TODO add get_release_webcaptures
-
-COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra"]
+# TODO sort entities by updated or created time
+# TODO query for releases that do not have associated files -- wantlist
+# TODO should support the creation of creators via release creation/update?
+# TODO release creation begets work creation
 
 # In/Out schemas
 
@@ -49,52 +53,76 @@ class WorkLookup(Schema):
     id_type: Literal["legacy_ident"]
     id_value: str
 
+# Notes on schemas
+
+# Once used in an argument, schemas appear in a nice "schemas" list in the API
+# docs. we want that. I could not figure out a way to get things into that list
+# otherwise. Frustratingly, the only way I can figure out how to control the
+# name of the schema in that list is via the "name" parameter in create_schema
+# -- otherwise it uses class name. Thus, I've tried as much as possible to use
+# the create_schema helper so I can have schemas called "<Model>Schema" in this
+# namespace.
+# I do not like how implicit this is; it's especially confusing to not have
+# using a schema in a return type register it in the API. I'd like to submit
+# upstream the option to just explicitly name things when using the class based
+# definition via the meta class.
+
+# TODO support a map of external IDs to use when creating/updating
+# TODO support a map of contribs to use when creating/updating
+ReleaseSchema = create_schema(
+        m.Release,
+        fields=COMMON_ENTITY_FIELDS + ["title", "original_title", "subtitle", "release_type",
+                                       "release_stage", "release_date", "release_year",
+                                       "volume", "issue", "pages", "number", "version",
+                                       "publisher", "language", "license_slug",
+                                       "withdrawn_status", "refs",],
+        custom_fields=[
+            ("work_id", UUID, Field()),
+            ("container_id", Optional[UUID], Field()),
+            ])
+
+ReleaseContribSchema = create_schema(
+        m.ReleaseContrib,
+        fields=["raw_name", "given_name", "surname", "role", "raw_affiliation", "position",
+                "extra"],
+        custom_fields=[
+            ("release_id", UUID, Field()),
+            ("creator_id", Optional[UUID], Field()),
+            ])
+
+WebcaptureCDXSchema = create_schema(
+        m.WebcaptureCDX,
+        fields=["surt", "captured", "url", "mimetype", "status_code", 
+                "sha1", "sha256", "size_bytes"]
+        )
+
+WebcaptureURLSchema = create_schema(
+        m.WebcaptureURL,
+        fields = ["url", "rel"]
+        )
+
+
+WebcaptureSchema = create_schema(m.Webcapture,
+                                 fields=["original_url", "captured"],
+                                 custom_fields=[
+                                     ("release_id", UUID, Field()),
+                                     ("urls", List[WebcaptureURLSchema], Field(alias="webcaptureurl_set")),
+                                     ("cdx_lines", List[WebcaptureCDXSchema], Field(alias="webcapturecdx_set")),
+                                     ])
 
 ContainerSchema = create_schema(m.Container,
                                 fields=COMMON_ENTITY_FIELDS\
                                        + ["name", "container_type", "publisher", "issnl",
                                           "issne", "issnp", "wikidata_qid",])
 
-
-class ReleaseSchema(ModelSchema):
-    work_id: uuid.UUID
-    container_id: Optional[uuid.UUID]
-    # TODO support a map of external IDs to use when creating/updating
-    # TODO support a map of contribs to use when creating/updating
-
-    class Meta:
-        model = m.Release
-        fields = COMMON_ENTITY_FIELDS + ["title", "original_title", "subtitle", "release_type",
-                                         "release_stage", "release_date", "release_year",
-                                         "volume", "issue", "pages", "number", "version",
-                                         "publisher", "language", "license_slug",
-                                         "withdrawn_status", "refs",]
-
 WorkSchema = create_schema(m.Work, fields=COMMON_ENTITY_FIELDS)
 
 CreatorSchema = create_schema(m.Creator, fields=COMMON_ENTITY_FIELDS+["display_name", "given_name",
                                                                     "surname", "orcid"])
 
-class ReleaseContribSchema(ModelSchema):
-    release_id: uuid.UUID
-    creator_id: Optional[uuid.UUID]
-
-    class Meta:
-        model = m.ReleaseContrib
-        fields = ["raw_name", "given_name", "surname", "role", "raw_affiliation",
-                  "position", "extra"]
-
 FileSchema = create_schema(m.File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256",
                                                                 "md5", "mimetype"])
 
-class WebcaptureSchema(ModelSchema):
-    release_id: uuid.UUID
-    # TODO embed CDXs
-    # TODO embed URLs
-
-    class Meta:
-        model = m.Webcapture
-        fields = ["original_url", "captured"]
 
 # Container routes
 
@@ -123,7 +151,7 @@ def get_container_releases(request, ident: str) -> List[ReleaseSchema]:
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(container__id=ident)]
 
 
-@v2api.post("/container", auth=apiAuth)
+@v2api.post("/container", auth=api_auth)
 def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     """Create a new container."""
     cs = m.Container.objects.filter(id=container_in.id)
@@ -134,14 +162,14 @@ def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     m.Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=201)
 
-@v2api.post("/containers", auth=apiAuth)
+@v2api.post("/containers", auth=api_auth)
 def bulk_create_containers(request, containers_in: List[ContainerSchema]) -> HttpResponse:
     """Bulk create a list of containers. Functionally equivalent to calling
     POST /container repeatedly."""
     m.Container.objects.bulk_create([m.Container(**cin.dict()) for cin in containers_in])
     return v2api.create_response(request, "containers created", status=201)
 
-@v2api.put("/container", auth=apiAuth)
+@v2api.put("/container", auth=api_auth)
 def update_container(request, container_in: ContainerSchema) -> HttpResponse:
     """
     Replace a container entity wholesale. Must specify entire content of
@@ -164,7 +192,7 @@ def update_container(request, container_in: ContainerSchema) -> HttpResponse:
 
     return v2api.create_response(request, "release replaced with new content", status=code)
 
-@v2api.delete("/container/{ident}", auth=apiAuth)
+@v2api.delete("/container/{ident}", auth=api_auth)
 def delete_container(request, ident: str) -> ContainerSchema:
     """Delete the container with a given ID."""
     c = get_object_or_404(m.Container, id=ident)
@@ -194,7 +222,7 @@ def get_release(request, ident: str) -> ReleaseSchema:
     """Get a single release by its ID."""
     return ReleaseSchema.from_orm(get_object_or_404(m.Release, id=ident))
 
-@v2api.post("/release", auth=apiAuth)
+@v2api.post("/release", auth=api_auth)
 def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """Create a new release."""
     # TODO releases without works should have works created automagically
@@ -234,7 +262,7 @@ def get_release_contribs(request, ident: str) -> List[CreatorSchema]:
     return [ReleaseContribSchema.from_orm(rc)
             for rc in m.ReleaseContrib.objects.filter(release_id=ident)]
 
-@v2api.delete("/release/{ident}", auth=apiAuth)
+@v2api.delete("/release/{ident}", auth=api_auth)
 def delete_release(request, ident: str) -> ReleaseSchema:
     """Delete the release with a given ID."""
     r = get_object_or_404(m.Release, id=ident)
@@ -242,7 +270,7 @@ def delete_release(request, ident: str) -> ReleaseSchema:
     r.delete()
     return out
 
-@v2api.put("/release", auth=apiAuth)
+@v2api.put("/release", auth=api_auth)
 def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """
     Replace a release entity wholesale. Must specify entire content of
@@ -265,7 +293,7 @@ def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
 
     return v2api.create_response(request, "release replaced with new content", status=code)
 
-@v2api.post("/releases", auth=apiAuth)
+@v2api.post("/releases", auth=api_auth)
 def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpResponse:
     """Bulk create a list of releases. Functionally equivalent to calling
     POST /release repeatedly."""
@@ -295,7 +323,7 @@ def get_work_releases(request, ident: str) -> List[ReleaseSchema]:
     """Get all releases associated with a work's ID"""
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(work_id=ident)]
 
-@v2api.delete("/work/{ident}", auth=apiAuth)
+@v2api.delete("/work/{ident}", auth=api_auth)
 def delete_work(request, ident: str) -> WorkSchema:
     """Delete a work by its ID"""
     entity = get_object_or_404(m.Work, id=ident)
@@ -303,7 +331,7 @@ def delete_work(request, ident: str) -> WorkSchema:
     entity.delete()
     return out
 
-@v2api.put("/work", auth=apiAuth)
+@v2api.put("/work", auth=api_auth)
 def update_work(request, work_in: WorkSchema) -> HttpResponse:
     """Replace a work record wholesale."""
     code = 200
@@ -322,9 +350,8 @@ def update_work(request, work_in: WorkSchema) -> HttpResponse:
 
     return v2api.create_response(request, "work replaced with new content", status=code)
 
-# Creator routes
 
-# TODO should support the creation of creators via release creation/update
+# Creator routes
 
 @v2api.get("/creator/lookup")
 def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
@@ -352,7 +379,7 @@ def get_creator_releases(request, ident: str) -> List[ReleaseSchema]:
 def get_creator(request, ident: str) -> CreatorSchema:
     return CreatorSchema.from_orm(get_object_or_404(m.Creator, id=ident))
 
-@v2api.post("/creator", auth=apiAuth)
+@v2api.post("/creator", auth=api_auth)
 def create_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     """Create a new creator."""
     es = m.Creator.objects.filter(id=creator_in.id)
@@ -363,7 +390,7 @@ def create_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     m.Creator(**creator_in.dict()).save()
     return v2api.create_response(request, "creator created", status=201)
 
-@v2api.put("/creator", auth=apiAuth)
+@v2api.put("/creator", auth=api_auth)
 def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     """Replace a creator record wholesale."""
     code = 200
@@ -382,12 +409,12 @@ def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
 
     return v2api.create_response(request, "creator replaced with new content", status=code)
 
-@v2api.post("/creators", auth=apiAuth)
+@v2api.post("/creators", auth=api_auth)
 def bulk_create_creators(request, creators_in: List[CreatorSchema]) -> HttpResponse:
     m.Creator.objects.bulk_create([m.Creator(**cin.dict()) for cin in creators_in])
     return v2api.create_response(request, "creators created", status=201)
 
-@v2api.delete("/creator/{ident}", auth=apiAuth)
+@v2api.delete("/creator/{ident}", auth=api_auth)
 def delete_creator(request, ident: str) -> HttpResponse:
     """Delete a creator record. Note: does not delete associated releases."""
     entity = get_object_or_404(m.Creator, id=ident)
@@ -422,7 +449,7 @@ def get_file_releases(request, ident: str) -> List[ReleaseSchema]:
 def get_file(request, ident: str) -> FileSchema:
     return FileSchema.from_orm(get_object_or_404(m.File, id=ident))
 
-@v2api.post("/file", auth=apiAuth)
+@v2api.post("/file", auth=api_auth)
 def create_file(request, file_in: FileSchema) -> HttpResponse:
     """Create a new file. Note that file contents do not live in this database;
     we only track checksums and metadata here. File contents, if stored at all,
@@ -435,7 +462,7 @@ def create_file(request, file_in: FileSchema) -> HttpResponse:
     m.File(**file_in.dict()).save()
     return v2api.create_response(request, "file created", status=201)
 
-@v2api.put("/file", auth=apiAuth)
+@v2api.put("/file", auth=api_auth)
 def update_file(request, file_in: FileSchema) -> HttpResponse:
     """Replace a file record wholesale."""
     code = 200
@@ -454,12 +481,12 @@ def update_file(request, file_in: FileSchema) -> HttpResponse:
 
     return v2api.create_response(request, "file replaced with new content", status=code)
 
-@v2api.post("/files", auth=apiAuth)
+@v2api.post("/files", auth=api_auth)
 def bulk_create_files(request, files_in: List[FileSchema]) -> HttpResponse:
     m.File.objects.bulk_create([m.File(**cin.dict()) for cin in files_in])
     return v2api.create_response(request, "files created", status=201)
 
-@v2api.delete("/file/{ident}", auth=apiAuth)
+@v2api.delete("/file/{ident}", auth=api_auth)
 def delete_file(request, ident: str) -> HttpResponse:
     """Delete a file record. Does not delete associated releases. Actual
     file contents will continue to live in blob storage."""
@@ -477,22 +504,43 @@ def delete_file(request, ident: str) -> HttpResponse:
 
 # Webcapture routes
 
-# TODO embed a urls list
-# TODO support embedded CDX dict when creating/updating
+@v2api.get("/webcapture/{ident}")
+def get_webcapture(request, ident: str) -> WebcaptureSchema:
+    # TODO get related urls
+    # TODO get related cdxs
+    return WebcaptureSchema.from_orm(get_object_or_404(m.Webcapture, id=ident))
+
+@v2api.post("/webcapture", auth=api_auth)
+def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
+    es = m.Webcapture.objects.filter(id=webcapture_in.id)
+    if len(es) != 0:
+        return v2api.create_response(request,
+                                     f"webcapture with id {webcapture_in.id} already exists",
+                                     status=400)
+    data = webcapture_in.dict()
+    urls = webcapture_in["urls"]
+    cdx = webcapture_in["cdx"]
+    del data["urls"]
+    del data["cdx"]
+    wc = m.Webcapture(**data)
+    for url in urls:
+        wc.webcaptureurl_set.add(m.WebcaptureURL(**url.dict()))
+    for line in cdx:
+        wc.webcapturecdx_set.add(m.WebcaptureCDX(**line.dict()))
+    wc.save()
+    return v2api.create_response(request, "webcapture created", status=201)
 
 # TODO lookup_webcapture
-# TODO get_webcapture
 # TODO get_webcapture_release
 # TODO get_webcapture_resources
 # TODO get_webcapture_resources
-# TODO create_webcapture
 # TODO bulk_create_webcaptures
 # TODO update_webcapture
 # TODO delete_webcapture
 
 # Fileset routes
 
-# TODO
+# TODO I'm punting on these.
 
 #### routes outline:
 

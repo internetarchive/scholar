@@ -14,11 +14,11 @@ from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
 from djscholar.fcapi.fcid import uuid2fcid
-from djscholar.fcapi.models import Container, Creator, File, Release, ReleaseContrib, ReleaseExtId, RELEASE_EXT_ID_TYPES, Work
-from djscholar.fcapi.views import v2api, ContainerSchema, CreatorSchema, FileSchema, ReleaseSchema, WorkSchema
+import djscholar.fcapi.models as m
+import djscholar.fcapi.views as v
 from djscholar.fcapi.faker_providers import ExtIDProvider
 
-client = TestClient(v2api)
+client = TestClient(v.v2api)
 factory.Faker.add_provider(ExtIDProvider)
 factory.Faker.add_provider(misc.Provider)
 factory.Faker.add_provider(file.Provider)
@@ -36,7 +36,7 @@ class ContainerFactory(DjangoModelFactory):
     created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
 
     class Meta:
-        model = Container
+        model = m.Container
 
 
 class WorkFactory(DjangoModelFactory):
@@ -44,14 +44,14 @@ class WorkFactory(DjangoModelFactory):
     created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
 
     class Meta:
-        model = Work
+        model = m.Work
 
 
 class ReleaseExtIdFactory(DjangoModelFactory):
     id_value = factory.LazyAttribute(lambda s: factory.Faker(s.id_type))
 
     class Meta:
-        model = ReleaseExtId
+        model = m.ReleaseExtId
 
 
 class ReleaseFactory(DjangoModelFactory):
@@ -61,7 +61,7 @@ class ReleaseFactory(DjangoModelFactory):
     container = factory.SubFactory(ContainerFactory)
 
     class Meta:
-        model = Release
+        model = m.Release
 
 
 class FileFactory(DjangoModelFactory):
@@ -74,7 +74,7 @@ class FileFactory(DjangoModelFactory):
     mimetype = factory.Faker("mime_type")
 
     class Meta:
-        model = File
+        model = m.File
 
 
 class CreatorFactory(DjangoModelFactory):
@@ -85,12 +85,12 @@ class CreatorFactory(DjangoModelFactory):
     display_name = factory.LazyAttribute(lambda c: f"{c.given_name} {c.surname}")
     orcid = factory.Faker("orcid")
     class Meta:
-        model = Creator
+        model = m.Creator
 
 class ReleaseContribFactory(DjangoModelFactory):
     raw_name = f"{factory.Faker('first_name')} {factory.Faker('last_name')}"
     class Meta:
-        model = ReleaseContrib
+        model = m.ReleaseContrib
 
 
 class UserFactory(DjangoModelFactory):
@@ -120,7 +120,7 @@ class TestReleaseRoutes(APITest):
         super().setUp()
         self.entity = ReleaseFactory.create()
         self.reis = []
-        for id_type, _ in RELEASE_EXT_ID_TYPES:
+        for id_type, _ in m.RELEASE_EXT_ID_TYPES:
             self.reis.append(ReleaseExtIdFactory.create(release=self.entity, id_type=id_type))
 
     def test_lookup(self):
@@ -194,11 +194,11 @@ class TestReleaseRoutes(APITest):
         entity.container.save()
         entity.work.save()
 
-        data = ReleaseSchema.from_orm(entity).model_dump_json()
+        data = v.ReleaseSchema.from_orm(entity).model_dump_json()
         response = client.post("/release", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
-        es = Release.objects.filter(id=entity.id)
+        es = m.Release.objects.filter(id=entity.id)
         self.assertEqual(len(es), 1)
 
         response = client.post("/release", data=data, headers=self.auth_headers)
@@ -210,33 +210,33 @@ class TestReleaseRoutes(APITest):
             r = ReleaseFactory.build()
             r.work.save()
             r.container.save()
-            rin.append(ReleaseSchema.from_orm(r))
+            rin.append(v.ReleaseSchema.from_orm(r))
         data = "["+",".join([r.model_dump_json() for r in rin])+"]"
 
         response = client.post("/releases", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
         for r in rin:
-            rs = Release.objects.filter(id=r.id)
+            rs = m.Release.objects.filter(id=r.id)
             self.assertEqual(len(rs), 1)
 
     def test_update(self):
         entity = ReleaseFactory.build()
         entity.work.save()
         entity.container.save()
-        data = ReleaseSchema.from_orm(entity).model_dump_json()
+        data = v.ReleaseSchema.from_orm(entity).model_dump_json()
         response = client.put("/release", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
-        es = Release.objects.filter(id=entity.id)
+        es = m.Release.objects.filter(id=entity.id)
         self.assertEqual(len(es), 1)
 
         new_title = "updated title"
         self.entity.title = new_title
-        data = ReleaseSchema.from_orm(self.entity).model_dump_json()
+        data = v.ReleaseSchema.from_orm(self.entity).model_dump_json()
         response = client.put("/release", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
-        es = Release.objects.filter(id=self.entity.id)
+        es = m.Release.objects.filter(id=self.entity.id)
         self.assertEqual(len(es), 1)
         self.assertEqual(self.entity.title, new_title)
 
@@ -308,42 +308,42 @@ class TestContainerRoutes(APITest):
 
     def test_create(self):
         c = ContainerFactory.build()
-        data = ContainerSchema.from_orm(c).model_dump_json()
+        data = v.ContainerSchema.from_orm(c).model_dump_json()
         response = client.post("/container", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
-        cs = Container.objects.filter(id=c.id)
+        cs = m.Container.objects.filter(id=c.id)
         self.assertEqual(len(cs), 1)
 
         response = client.post("/container", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 400)
 
     def test_bulk_create(self):
-        cs = [ContainerSchema.from_orm(ContainerFactory.build()) for _ in range(100)]
+        cs = [v.ContainerSchema.from_orm(ContainerFactory.build()) for _ in range(100)]
         data = "["+",".join([c.model_dump_json() for c in cs])+"]"
 
         response = client.post("/containers", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
         for c in cs:
-            cs = Container.objects.filter(id=c.id)
+            cs = m.Container.objects.filter(id=c.id)
             self.assertEqual(len(cs), 1)
 
     def test_update(self):
         entity = ContainerFactory.build()
-        data = ContainerSchema.from_orm(entity).model_dump_json()
+        data = v.ContainerSchema.from_orm(entity).model_dump_json()
         response = client.put("/container", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
-        cs = Container.objects.filter(id=entity.id)
+        cs = m.Container.objects.filter(id=entity.id)
         self.assertEqual(len(cs), 1)
 
         new_name = "updated name"
         self.entity.name = new_name
-        data = ContainerSchema.from_orm(self.entity).model_dump_json()
+        data = v.ContainerSchema.from_orm(self.entity).model_dump_json()
         response = client.put("/container", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
-        cs = Container.objects.filter(id=self.entity.id)
+        cs = m.Container.objects.filter(id=self.entity.id)
         self.assertEqual(len(cs), 1)
         self.assertEqual(self.entity.name, new_name)
 
@@ -411,25 +411,25 @@ class TestWorkRoutes(APITest):
 
     def test_update(self):
         entity = WorkFactory.build()
-        data = WorkSchema.from_orm(entity).model_dump_json()
+        data = v.WorkSchema.from_orm(entity).model_dump_json()
 
         response = client.put("/work", data=data)
         self.assertEqual(response.status_code, 401)
 
         response = client.put("/work", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
-        es = Work.objects.filter(id=entity.id)
+        es = m.Work.objects.filter(id=entity.id)
         self.assertEqual(len(es), 1)
 
         new_reason = "hidden for test"
         self.entity.hidden_reason = new_reason
         hidden_when = datetime.now(zoneinfo.ZoneInfo("UTC"))
         self.entity.hidden_when = hidden_when
-        data = WorkSchema.from_orm(self.entity).model_dump_json()
+        data = v.WorkSchema.from_orm(self.entity).model_dump_json()
         response = client.put("/work", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
-        es = Work.objects.filter(id=self.entity.id)
+        es = m.Work.objects.filter(id=self.entity.id)
         self.assertEqual(len(es), 1)
         self.assertEqual(self.entity.hidden_reason, new_reason)
         self.assertEqual(self.entity.hidden_when, hidden_when)
@@ -491,7 +491,7 @@ class TestCreatorRoutes(APITest):
 
     def test_create(self):
         c = CreatorFactory.build()
-        data = CreatorSchema.from_orm(c).model_dump_json()
+        data = v.CreatorSchema.from_orm(c).model_dump_json()
 
         response = client.post("/creator", data=data)
         self.assertEqual(response.status_code, 401)
@@ -499,42 +499,42 @@ class TestCreatorRoutes(APITest):
         response = client.post("/creator", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
-        cs = Creator.objects.filter(id=c.id)
+        cs = m.Creator.objects.filter(id=c.id)
         self.assertEqual(len(cs), 1)
 
         response = client.post("/creator", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 400)
 
     def test_bulk_create(self):
-        cs = [CreatorSchema.from_orm(CreatorFactory.build()) for _ in range(100)]
+        cs = [v.CreatorSchema.from_orm(CreatorFactory.build()) for _ in range(100)]
         data = "["+",".join([c.model_dump_json() for c in cs])+"]"
 
         response = client.post("/creators", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
         for c in cs:
-            cs = Creator.objects.filter(id=c.id)
+            cs = m.Creator.objects.filter(id=c.id)
             self.assertEqual(len(cs), 1)
 
     def test_update(self):
         entity = CreatorFactory.build()
-        data = CreatorSchema.from_orm(entity).model_dump_json()
+        data = v.CreatorSchema.from_orm(entity).model_dump_json()
 
         response = client.put("/creator", data=data)
         self.assertEqual(response.status_code, 401)
 
         response = client.put("/creator", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
-        cs = Creator.objects.filter(id=entity.id)
+        cs = m.Creator.objects.filter(id=entity.id)
         self.assertEqual(len(cs), 1)
 
         new_surname = "updated name"
         self.entity.name = new_surname
-        data = CreatorSchema.from_orm(self.entity).model_dump_json()
+        data = v.CreatorSchema.from_orm(self.entity).model_dump_json()
         response = client.put("/creator", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
-        cs = Creator.objects.filter(id=self.entity.id)
+        cs = m.Creator.objects.filter(id=self.entity.id)
         self.assertEqual(len(cs), 1)
         self.assertEqual(self.entity.name, new_surname)
 
@@ -606,7 +606,7 @@ class TestFileRoutes(APITest):
 
     def test_create(self):
         c = FileFactory.build()
-        data = FileSchema.from_orm(c).model_dump_json()
+        data = v.FileSchema.from_orm(c).model_dump_json()
 
         response = client.post("/file", data=data)
         self.assertEqual(response.status_code, 401)
@@ -614,25 +614,25 @@ class TestFileRoutes(APITest):
         response = client.post("/file", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
-        cs = File.objects.filter(id=c.id)
+        cs = m.File.objects.filter(id=c.id)
         self.assertEqual(len(cs), 1)
 
         response = client.post("/file", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 400)
 
     def test_bulk_create(self):
-        es = [FileSchema.from_orm(FileFactory.build()) for _ in range(100)]
+        es = [v.FileSchema.from_orm(FileFactory.build()) for _ in range(100)]
         data = "["+",".join([e.model_dump_json() for e in es])+"]"
 
         response = client.post("/files", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
         for f in es:
-            self.assertEqual(File.objects.filter(id=f.id).count(), 1)
+            self.assertEqual(m.File.objects.filter(id=f.id).count(), 1)
 
     def test_update(self):
         entity = FileFactory.build()
-        data = FileSchema.from_orm(entity).model_dump_json()
+        data = v.FileSchema.from_orm(entity).model_dump_json()
 
         response = client.put("/file", data=data)
         self.assertEqual(response.status_code, 401)
@@ -640,15 +640,15 @@ class TestFileRoutes(APITest):
         response = client.put("/file", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 201)
 
-        self.assertEqual(File.objects.filter(id=entity.id).count(), 1)
+        self.assertEqual(m.File.objects.filter(id=entity.id).count(), 1)
 
         new_surname = "updated name"
         self.entity.name = new_surname
-        data = FileSchema.from_orm(self.entity).model_dump_json()
+        data = v.FileSchema.from_orm(self.entity).model_dump_json()
         response = client.put("/file", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
-        self.assertEqual(File.objects.filter(id=entity.id).count(), 1)
+        self.assertEqual(m.File.objects.filter(id=entity.id).count(), 1)
         self.assertEqual(self.entity.name, new_surname)
 
     def test_delete(self):

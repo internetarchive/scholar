@@ -81,8 +81,10 @@ WSGI_APPLICATION = 'djscholar.site.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
+        'USER': 'fatcat2',
+        'PASSWORD': 'fatcat2',
         'NAME': 'fatcat2',
-        'HOST': BASE_DIR / 'devdb/pgdata/sockets',
+        'HOST': 'localhost',
     }
 }
 

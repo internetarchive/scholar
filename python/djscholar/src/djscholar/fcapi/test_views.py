@@ -706,11 +706,11 @@ class TestWebcaptureRoutes(APITest):
         super().setUp()
         wc = WebcaptureFactory.build()
         wc.release_id = ReleaseFactory.create().id
+        wc.save()
         for _ in range(10):
             wc.webcapturecdx_set.add(WebcaptureCDXFactory.build(), bulk=False)
         for _ in range(4):
             wc.webcaptureurl_set.add(WebcaptureURLFactory.build(), bulk=False)
-        wc.save()
         self.entity = wc
 
     def test_get(self):
@@ -719,3 +719,26 @@ class TestWebcaptureRoutes(APITest):
         self.assertEqual(response.data["id"], str(self.entity.id))
         self.assertEqual(len(response.data["urls"]), 4)
         self.assertEqual(len(response.data["cdx_lines"]), 10)
+
+    def test_create(self):
+        wc = WebcaptureFactory.build()
+        wc.release_id = ReleaseFactory.create().id
+        urls = [WebcaptureURLFactory.build for _ in range(4)]
+        cdx_lines = [WebcaptureCDXFactory.build for _ in range(10)]
+        wcs = v.WebcaptureSchema.from_orm(wc)
+        wcs.urls = urls
+        wcs.cdx_lines = cdx_lines
+
+        data = wcs.model_dump_json()
+
+        response = client.post("/webcapture", data=data)
+        self.assertEqual(response.status_code, 401)
+
+        #response = client.post("/file", data=data, headers=self.auth_headers)
+        #self.assertEqual(response.status_code, 201)
+
+        #cs = m.File.objects.filter(id=c.id)
+        #self.assertEqual(len(cs), 1)
+
+        #response = client.post("/file", data=data, headers=self.auth_headers)
+        #self.assertEqual(response.status_code, 400)

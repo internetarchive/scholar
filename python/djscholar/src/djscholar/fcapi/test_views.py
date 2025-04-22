@@ -3,7 +3,7 @@ from typing import Callable
 import zoneinfo
 
 import factory
-from faker.providers import file, misc, person
+from faker.providers import file, internet, misc, person
 from django.contrib.auth.hashers import (
     make_password,
 )
@@ -13,6 +13,7 @@ from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
+import surt
 from djscholar.fcapi.fcid import uuid2fcid
 import djscholar.fcapi.models as m
 import djscholar.fcapi.views as v
@@ -23,6 +24,7 @@ factory.Faker.add_provider(ExtIDProvider)
 factory.Faker.add_provider(misc.Provider)
 factory.Faker.add_provider(file.Provider)
 factory.Faker.add_provider(person.Provider)
+factory.Faker.add_provider(internet.Provider)
 
 def lazy(generate: Callable) -> factory.LazyAttribute:
     return factory.LazyAttribute(lambda _: generate())
@@ -87,10 +89,43 @@ class CreatorFactory(DjangoModelFactory):
     class Meta:
         model = m.Creator
 
+
 class ReleaseContribFactory(DjangoModelFactory):
     raw_name = f"{factory.Faker('first_name')} {factory.Faker('last_name')}"
     class Meta:
         model = m.ReleaseContrib
+
+
+class WebcaptureFactory(DjangoModelFactory):
+    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    captured = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    original_url = factory.Faker("uri")
+
+    class Meta:
+        model = m.Webcapture
+
+
+class WebcaptureCDXFactory(DjangoModelFactory):
+    url = factory.Faker("uri")
+    surt = factory.LazyAttribute(lambda c: surt.surt(c.url))
+    mimetype = factory.Faker("mime_type")
+    captured = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    sha1 = factory.Faker("sha1")
+    sha256 = factory.Faker("sha256")
+    status_code = 200
+    size_bytes = 1
+
+    class Meta:
+        model = m.WebcaptureCDX
+
+
+class WebcaptureURLFactory(DjangoModelFactory):
+    rel = "warc"
+    url = factory.Faker("uri")
+
+    class Meta:
+        model = m.WebcaptureURL
 
 
 class UserFactory(DjangoModelFactory):
@@ -669,9 +704,18 @@ class TestFileRoutes(APITest):
 class TestWebcaptureRoutes(APITest):
     def setUp(self):
         super().setUp()
-        self.entity = FileFactory.create()
+        wc = WebcaptureFactory.build()
+        wc.release_id = ReleaseFactory.create().id
+        for _ in range(10):
+            wc.webcapturecdx_set.add(WebcaptureCDXFactory.build(), bulk=False)
+        for _ in range(4):
+            wc.webcaptureurl_set.add(WebcaptureURLFactory.build(), bulk=False)
+        wc.save()
+        self.entity = wc
 
     def test_get(self):
-        response = client.get(f"/file/{self.entity.id}")
+        response = client.get(f"/webcapture/{self.entity.id}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["id"], str(self.entity.id))
+        self.assertEqual(len(response.data["urls"]), 4)
+        self.assertEqual(len(response.data["cdx_lines"]), 10)

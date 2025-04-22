@@ -103,7 +103,8 @@ WebcaptureURLSchema = create_schema(
 
 
 WebcaptureSchema = create_schema(m.Webcapture,
-                                 fields=["original_url", "captured"],
+                                 fields=COMMON_ENTITY_FIELDS\
+                                         + ["original_url", "captured"],
                                  custom_fields=[
                                      ("release_id", UUID, Field()),
                                      ("urls", List[WebcaptureURLSchema], Field(alias="webcaptureurl_set")),
@@ -505,9 +506,7 @@ def delete_file(request, ident: str) -> HttpResponse:
 # Webcapture routes
 
 @v2api.get("/webcapture/{ident}")
-def get_webcapture(request, ident: str) -> WebcaptureSchema:
-    # TODO get related urls
-    # TODO get related cdxs
+def get_webcapture(request, ident: UUID) -> WebcaptureSchema:
     return WebcaptureSchema.from_orm(get_object_or_404(m.Webcapture, id=ident))
 
 @v2api.post("/webcapture", auth=api_auth)

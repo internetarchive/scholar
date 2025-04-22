@@ -561,7 +561,7 @@ class WebcaptureCDX(models.Model):
     """
     A CDX line that constitutes part of a webcapture.
     """
-    webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE)
+    webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE, related_name="cdx_lines")
     surt = models.TextField(help_text="sortable URL format")
     captured = models.DateTimeField(help_text="capture time")
     url = models.URLField(max_length=URL_MAX_LENGTH)
@@ -583,7 +583,7 @@ class WebcaptureURL(models.Model):
     all the capture resources.  Often will only be a single archive. Order is not
     meaningful, and may not be preserved.
     """
-    webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE)
+    webcapture = models.ForeignKey(Webcapture, on_delete=models.CASCADE, related_name="urls")
     rel = models.CharField(choices=[
         ("warc", "warc"),
         ("wayback", "wayback"),

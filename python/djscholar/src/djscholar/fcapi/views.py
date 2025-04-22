@@ -90,26 +90,48 @@ ReleaseContribSchema = create_schema(
             ("creator_id", Optional[UUID], Field()),
             ])
 
-WebcaptureCDXSchema = create_schema(
-        m.WebcaptureCDX,
+#WebcaptureCDXSchema = create_schema(
+#        m.WebcaptureCDX,
+#        fields=["surt", "captured", "url", "mimetype", "status_code", 
+#                "sha1", "sha256", "size_bytes"]
+#        )
+
+#WebcaptureSchema = create_schema(m.Webcapture,
+#                                 fields=COMMON_ENTITY_FIELDS\
+#                                         + ["original_url", "captured"],
+#                                 custom_fields=[
+#                                     ("release_id", UUID, Field()),
+#                                     ("urls", List[WebcaptureURLSchema], Field(alias="webcaptureurl_set")),
+#                                     ("cdx_lines", List[WebcaptureCDXSchema], Field(alias="webcapturecdx_set")),
+#                                     ])
+#
+
+# TODO annoying name thing
+class WebcaptureCDXSchema(ModelSchema):
+    webcapture_id: UUID
+
+    class Meta:
+        model = m.WebcaptureCDX
         fields=["surt", "captured", "url", "mimetype", "status_code", 
                 "sha1", "sha256", "size_bytes"]
-        )
 
-WebcaptureURLSchema = create_schema(
-        m.WebcaptureURL,
+# TODO annoying name thing
+class WebcaptureURLSchema(ModelSchema):
+    webcapture_id: UUID
+
+    class Meta:
+        model = m.WebcaptureURL
         fields = ["url", "rel"]
-        )
 
+# TODO annoying name thing
+class WebcaptureSchema(ModelSchema):
+    release_id: UUID
+    urls: List[WebcaptureURLSchema] = []
+    cdx_lines: List[WebcaptureCDXSchema] = []
 
-WebcaptureSchema = create_schema(m.Webcapture,
-                                 fields=COMMON_ENTITY_FIELDS\
-                                         + ["original_url", "captured"],
-                                 custom_fields=[
-                                     ("release_id", UUID, Field()),
-                                     ("urls", List[WebcaptureURLSchema], Field(alias="webcaptureurl_set")),
-                                     ("cdx_lines", List[WebcaptureCDXSchema], Field(alias="webcapturecdx_set")),
-                                     ])
+    class Meta:
+        model = m.Webcapture
+        fields = COMMON_ENTITY_FIELDS + ["original_url", "captured"]
 
 ContainerSchema = create_schema(m.Container,
                                 fields=COMMON_ENTITY_FIELDS\
@@ -496,13 +518,6 @@ def delete_file(request, ident: str) -> HttpResponse:
     entity.delete()
     return out
 
-# Changelog routes
-
-# Instead of a single /changelog, I am considering the ability to query for created or updated entities based on a time range (ie, "last 24 hours" or some other interval). I think this will end up being more useful than the current changelog system.
-
-# TODO
-
-
 # Webcapture routes
 
 @v2api.get("/webcapture/{ident}")
@@ -517,16 +532,17 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
                                      f"webcapture with id {webcapture_in.id} already exists",
                                      status=400)
     data = webcapture_in.dict()
-    urls = webcapture_in["urls"]
-    cdx = webcapture_in["cdx"]
+    urls = data["urls"]
+    cdx = data["cdx_lines"]
     del data["urls"]
-    del data["cdx"]
+    del data["cdx_lines"]
     wc = m.Webcapture(**data)
-    for url in urls:
-        wc.webcaptureurl_set.add(m.WebcaptureURL(**url.dict()))
-    for line in cdx:
-        wc.webcapturecdx_set.add(m.WebcaptureCDX(**line.dict()))
+    # TODO transaction
     wc.save()
+
+    import pdb; pdb.set_trace()
+    [m.WebcaptureURL(**url).save() for url in urls]
+    [m.WebcaptureCDX(**line).save() for line in cdx]
     return v2api.create_response(request, "webcapture created", status=201)
 
 # TODO lookup_webcapture
@@ -536,6 +552,13 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
 # TODO bulk_create_webcaptures
 # TODO update_webcapture
 # TODO delete_webcapture
+
+# Changelog routes
+
+# Instead of a single /changelog, I am considering the ability to query for created or updated entities based on a time range (ie, "last 24 hours" or some other interval). I think this will end up being more useful than the current changelog system.
+
+# TODO
+
 
 # Fileset routes
 

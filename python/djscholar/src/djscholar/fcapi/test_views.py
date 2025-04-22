@@ -708,9 +708,9 @@ class TestWebcaptureRoutes(APITest):
         wc.release_id = ReleaseFactory.create().id
         wc.save()
         for _ in range(10):
-            wc.webcapturecdx_set.add(WebcaptureCDXFactory.build(), bulk=False)
+            wc.cdx_lines.add(WebcaptureCDXFactory.build(), bulk=False)
         for _ in range(4):
-            wc.webcaptureurl_set.add(WebcaptureURLFactory.build(), bulk=False)
+            wc.urls.add(WebcaptureURLFactory.build(), bulk=False)
         self.entity = wc
 
     def test_get(self):
@@ -723,19 +723,30 @@ class TestWebcaptureRoutes(APITest):
     def test_create(self):
         wc = WebcaptureFactory.build()
         wc.release_id = ReleaseFactory.create().id
-        urls = [WebcaptureURLFactory.build for _ in range(4)]
-        cdx_lines = [WebcaptureCDXFactory.build for _ in range(10)]
-        wcs = v.WebcaptureSchema.from_orm(wc)
-        wcs.urls = urls
-        wcs.cdx_lines = cdx_lines
+        urls = []
+        cdx_lines = []
+        for _ in range(4):
+            url = WebcaptureURLFactory.build()
+            url.webcapture_id = wc.id
+            urls.append(url)
 
-        data = wcs.model_dump_json()
+        for _ in range(10):
+            cdx_line = WebcaptureCDXFactory.build()
+            cdx_line.webcapture_id = wc.id
+            cdx_lines.append(cdx_line)
+
+        wcs = v.WebcaptureSchema.from_orm(wc)
+        wcs.urls = [v.WebcaptureURLSchema.from_orm(url) for url in urls]
+        wcs.cdx_lines = [v.WebcaptureCDXSchema.from_orm(line) for line in cdx_lines]
+
+        data = wcs.model_dump_json(by_alias=True)
 
         response = client.post("/webcapture", data=data)
         self.assertEqual(response.status_code, 401)
 
-        #response = client.post("/file", data=data, headers=self.auth_headers)
-        #self.assertEqual(response.status_code, 201)
+        response = client.post("/webcapture", data=data, headers=self.auth_headers)
+        import pdb; pdb.set_trace()
+        self.assertEqual(response.status_code, 201)
 
         #cs = m.File.objects.filter(id=c.id)
         #self.assertEqual(len(cs), 1)

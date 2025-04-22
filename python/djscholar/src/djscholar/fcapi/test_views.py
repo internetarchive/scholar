@@ -745,11 +745,13 @@ class TestWebcaptureRoutes(APITest):
         self.assertEqual(response.status_code, 401)
 
         response = client.post("/webcapture", data=data, headers=self.auth_headers)
-        import pdb; pdb.set_trace()
         self.assertEqual(response.status_code, 201)
 
-        #cs = m.File.objects.filter(id=c.id)
-        #self.assertEqual(len(cs), 1)
+        es = m.Webcapture.objects.filter(id=wc.id)
+        self.assertEqual(len(es), 1)
 
-        #response = client.post("/file", data=data, headers=self.auth_headers)
-        #self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(es[0].urls.all()), 4)
+        self.assertEqual(len(es[0].cdx_lines.all()), 10)
+
+        response = client.post("/webcapture", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 400)

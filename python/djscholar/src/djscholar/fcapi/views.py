@@ -1,10 +1,11 @@
 from uuid import UUID
-from typing import Annotated, List, Literal, Optional
+from typing import List, Literal, Optional
 
+from django.db import transaction
 from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
 from ninja import NinjaAPI, Query, Schema, ModelSchema
-from ninja.orm import create_schema, factory
+from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 from pydantic import Field
 
@@ -536,13 +537,12 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
     cdx = data["cdx_lines"]
     del data["urls"]
     del data["cdx_lines"]
-    wc = m.Webcapture(**data)
-    # TODO transaction
-    wc.save()
-
-    import pdb; pdb.set_trace()
-    [m.WebcaptureURL(**url).save() for url in urls]
-    [m.WebcaptureCDX(**line).save() for line in cdx]
+    with transaction.atomic():
+        wc = m.Webcapture(**data)
+        # TODO transaction
+        wc.save()
+        m.WebcaptureURL.objects.bulk_create([m.WebcaptureURL(**url) for url in urls])
+        m.WebcaptureCDX.objects.bulk_create([m.WebcaptureCDX(**line) for line in cdx])
     return v2api.create_response(request, "webcapture created", status=201)
 
 # TODO lookup_webcapture

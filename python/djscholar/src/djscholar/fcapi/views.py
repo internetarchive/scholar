@@ -17,15 +17,15 @@ COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra", "hidden_r
 v2api = NinjaAPI()
 api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 
-# TODO filter hidden things
-# TODO consider generalizing route implementations if it doesn't make
-# signatures too hideous / doesn't break doc generation
 # TODO pagination
+# TODO release creation begets work creation
+# TODO filter hidden things
 # TODO support nested containers and works (and possibly other types) during creation/update; possibly getting
 # TODO sort entities by updated or created time
 # TODO query for releases that do not have associated files -- wantlist
+# TODO consider generalizing route implementations if it doesn't make
+# signatures too hideous / doesn't break doc generation
 # TODO should support the creation of creators via release creation/update?
-# TODO release creation begets work creation
 
 # In/Out schemas
 

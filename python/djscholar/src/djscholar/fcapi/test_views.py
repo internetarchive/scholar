@@ -795,3 +795,13 @@ class TestWebcaptureRoutes(APITest):
         self.assertEqual(len(es), 1)
         self.assertEqual(es[0].hidden_reason, new_reason)
         self.assertEqual(len(es[0].urls.all()), len(wcs.urls))
+
+    def test_delete(self):
+        response = client.delete(f"/webcapture/{self.entity.id}")
+        self.assertEqual(response.status_code, 401)
+
+        response = client.delete(f"/webcapture/{self.entity.id}", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
+        self.assertEqual(m.Webcapture.objects.filter(id=self.entity.id).count(), 0)

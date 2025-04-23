@@ -585,8 +585,12 @@ def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
 
     return v2api.create_response(request, "webcapture replaced with new content", status=code)
 
-
-# TODO delete_webcapture
+@v2api.delete("/webcapture/{ident}", auth=api_auth)
+def delete_webcapture(request, ident: UUID) -> WebcaptureSchema:
+    entity = get_object_or_404(m.Webcapture, id=ident)
+    out = WebcaptureSchema.from_orm(entity)
+    entity.delete()
+    return out
 
 # Changelog routes
 

@@ -12,7 +12,7 @@ from pydantic import Field
 import djscholar.fcapi.models as m
 from djscholar.fcapi.fcid import fcid2uuid
 
-COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra"]
+COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra", "hidden_reason", "hidden_when"]
 
 v2api = NinjaAPI()
 api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.

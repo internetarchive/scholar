@@ -704,14 +704,9 @@ class TestFileRoutes(APITest):
 class TestWebcaptureRoutes(APITest):
     def setUp(self):
         super().setUp()
-        wc = WebcaptureFactory.build()
-        wc.release_id = ReleaseFactory.create().id
-        wc.save()
-        for _ in range(10):
-            wc.cdx_lines.add(WebcaptureCDXFactory.build(), bulk=False)
-        for _ in range(4):
-            wc.urls.add(WebcaptureURLFactory.build(), bulk=False)
-        self.entity = wc
+        self.entity = WebcaptureFactory.create(release_id=ReleaseFactory.create().id)
+        WebcaptureCDXFactory.create_batch(10, webcapture_id=self.entity.id)
+        WebcaptureURLFactory.create_batch(4, webcapture_id=self.entity.id)
 
     def test_get(self):
         response = client.get(f"/webcapture/{self.entity.id}")
@@ -723,15 +718,8 @@ class TestWebcaptureRoutes(APITest):
     def test_create(self):
         wc = WebcaptureFactory.build()
         wc.release_id = ReleaseFactory.create().id
-        urls = []
-        cdx_lines = []
-        for _ in range(4):
-            url = WebcaptureURLFactory.build()
-            urls.append(url)
-
-        for _ in range(10):
-            cdx_line = WebcaptureCDXFactory.build()
-            cdx_lines.append(cdx_line)
+        urls = WebcaptureURLFactory.build_batch(4)
+        cdx_lines = WebcaptureCDXFactory.build_batch(10)
 
         wcs = v.WebcaptureSchema.from_orm(wc)
         wcs.urls = [v.WebcaptureURLSchema.from_orm(url) for url in urls]

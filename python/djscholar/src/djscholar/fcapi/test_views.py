@@ -755,3 +755,14 @@ class TestWebcaptureRoutes(APITest):
 
         response = client.post("/webcapture", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 400)
+
+    def test_lookup(self):
+        legacy_ident = uuid2fcid(self.entity.id)
+        response = client.get(f"/webcapture/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.id))
+
+    def test_get_release(self):
+        response = client.get(f"/webcapture/{self.entity.id}/release")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], str(self.entity.release_id))

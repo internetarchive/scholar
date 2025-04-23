@@ -50,7 +50,7 @@ class ReleaseLookup(Schema):
     id_value: str
 
 
-class WorkLookup(Schema):
+class LegacyLookup(Schema):
     id_type: Literal["legacy_ident"]
     id_value: str
 
@@ -329,7 +329,7 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
 # Work routes
 
 @v2api.get("/work/lookup")
-def lookup_work(request, lookup: Query[WorkLookup]) -> WorkSchema:
+def lookup_work(request, lookup: Query[LegacyLookup]) -> WorkSchema:
     """Lookup a work by metadata other than its UUID"""
     if lookup.id_type == "legacy_ident":
         ident = fcid2uuid(lookup.id_value)
@@ -521,6 +521,19 @@ def delete_file(request, ident: str) -> HttpResponse:
 
 # Webcapture routes
 
+@v2api.get("/webcapture/lookup")
+def lookup_webcapture(request, lookup: Query[LegacyLookup]) -> WebcaptureSchema:
+    """Look up a webcapture by its legacy ID."""
+    if lookup.id_type == "legacy_ident":
+        ident = fcid2uuid(lookup.id_value)
+        return WebcaptureSchema.from_orm(get_object_or_404(m.Webcapture, id=ident))
+    else:
+        raise NotImplementedError()
+
+@v2api.get("/webcapture/{ident}/release")
+def get_webcapture_release(request, ident: UUID) -> ReleaseSchema:
+    return ReleaseSchema.from_orm(get_object_or_404(m.Webcapture, id=ident).release)
+
 @v2api.get("/webcapture/{ident}")
 def get_webcapture(request, ident: UUID) -> WebcaptureSchema:
     return WebcaptureSchema.from_orm(get_object_or_404(m.Webcapture, id=ident))
@@ -539,15 +552,12 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
     del data["cdx_lines"]
     with transaction.atomic():
         wc = m.Webcapture(**data)
-        # TODO transaction
         wc.save()
         m.WebcaptureURL.objects.bulk_create([m.WebcaptureURL(**url) for url in urls])
         m.WebcaptureCDX.objects.bulk_create([m.WebcaptureCDX(**line) for line in cdx])
     return v2api.create_response(request, "webcapture created", status=201)
 
-# TODO lookup_webcapture
-# TODO get_webcapture_release
-# TODO get_webcapture_resources
+
 # TODO get_webcapture_resources
 # TODO bulk_create_webcaptures
 # TODO update_webcapture

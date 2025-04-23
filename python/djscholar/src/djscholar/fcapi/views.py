@@ -91,25 +91,10 @@ ReleaseContribSchema = create_schema(
             ("creator_id", Optional[UUID], Field()),
             ])
 
-#WebcaptureCDXSchema = create_schema(
-#        m.WebcaptureCDX,
-#        fields=["surt", "captured", "url", "mimetype", "status_code", 
-#                "sha1", "sha256", "size_bytes"]
-#        )
-
-#WebcaptureSchema = create_schema(m.Webcapture,
-#                                 fields=COMMON_ENTITY_FIELDS\
-#                                         + ["original_url", "captured"],
-#                                 custom_fields=[
-#                                     ("release_id", UUID, Field()),
-#                                     ("urls", List[WebcaptureURLSchema], Field(alias="webcaptureurl_set")),
-#                                     ("cdx_lines", List[WebcaptureCDXSchema], Field(alias="webcapturecdx_set")),
-#                                     ])
-#
 
 # TODO annoying name thing
 class WebcaptureCDXSchema(ModelSchema):
-    webcapture_id: UUID
+    webcapture_id: Optional[UUID]
 
     class Meta:
         model = m.WebcaptureCDX
@@ -118,7 +103,7 @@ class WebcaptureCDXSchema(ModelSchema):
 
 # TODO annoying name thing
 class WebcaptureURLSchema(ModelSchema):
-    webcapture_id: UUID
+    webcapture_id: Optional[UUID]
 
     class Meta:
         model = m.WebcaptureURL
@@ -546,19 +531,18 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
                                      f"webcapture with id {webcapture_in.id} already exists",
                                      status=400)
     data = webcapture_in.dict()
-    urls = data["urls"]
-    cdx = data["cdx_lines"]
-    del data["urls"]
-    del data["cdx_lines"]
+    urls = data.pop("urls")
+    cdx = data.pop("cdx_lines")
     with transaction.atomic():
         wc = m.Webcapture(**data)
         wc.save()
-        m.WebcaptureURL.objects.bulk_create([m.WebcaptureURL(**url) for url in urls])
-        m.WebcaptureCDX.objects.bulk_create([m.WebcaptureCDX(**line) for line in cdx])
+        m.WebcaptureURL.objects.bulk_create(
+                [m.WebcaptureURL(**url|{"webcapture_id": wc.id}) for url in urls])
+        m.WebcaptureCDX.objects.bulk_create(
+                [m.WebcaptureCDX(**line|{"webcapture_id":wc.id}) for line in cdx])
     return v2api.create_response(request, "webcapture created", status=201)
 
 
-# TODO get_webcapture_resources
 # TODO bulk_create_webcaptures
 # TODO update_webcapture
 # TODO delete_webcapture

@@ -727,12 +727,10 @@ class TestWebcaptureRoutes(APITest):
         cdx_lines = []
         for _ in range(4):
             url = WebcaptureURLFactory.build()
-            url.webcapture_id = wc.id
             urls.append(url)
 
         for _ in range(10):
             cdx_line = WebcaptureCDXFactory.build()
-            cdx_line.webcapture_id = wc.id
             cdx_lines.append(cdx_line)
 
         wcs = v.WebcaptureSchema.from_orm(wc)

@@ -275,7 +275,7 @@ def get_release_webcaptures(request, ident: UUID) -> List[WebcaptureSchema]:
     return [WebcaptureSchema.from_orm(wc) for wc in m.Webcapture.objects.filter(release_id=ident)]
 
 @v2api.delete("/release/{ident}", auth=api_auth)
-def delete_release(request, ident: str) -> ReleaseSchema:
+def delete_release(request, ident: UUID) -> ReleaseSchema:
     """Delete the release with a given ID."""
     r = get_object_or_404(m.Release, id=ident)
     out = ReleaseSchema.from_orm(r)
@@ -326,17 +326,17 @@ def lookup_work(request, lookup: Query[LegacyLookup]) -> WorkSchema:
         raise NotImplementedError()
 
 @v2api.get("/work/{ident}")
-def get_work(request, ident: str) -> WorkSchema:
+def get_work(request, ident: UUID) -> WorkSchema:
     """Get a work (collection of releases) by its ID"""
     return WorkSchema.from_orm(get_object_or_404(m.Work, id=ident))
 
 @v2api.get("/work/{ident}/releases")
-def get_work_releases(request, ident: str) -> List[ReleaseSchema]:
+def get_work_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all releases associated with a work's ID"""
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(work_id=ident)]
 
 @v2api.delete("/work/{ident}", auth=api_auth)
-def delete_work(request, ident: str) -> WorkSchema:
+def delete_work(request, ident: UUID) -> WorkSchema:
     """Delete a work by its ID"""
     entity = get_object_or_404(m.Work, id=ident)
     out = WorkSchema.from_orm(entity)
@@ -379,7 +379,7 @@ def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
     return CreatorSchema.from_orm(es[0])
 
 @v2api.get("/creator/{ident}/releases")
-def get_creator_releases(request, ident: str) -> List[ReleaseSchema]:
+def get_creator_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all the releases associated with a given creator. Note that for many
     releases, their authors exist only as raw contribs and do not have creator
     records."""
@@ -388,7 +388,7 @@ def get_creator_releases(request, ident: str) -> List[ReleaseSchema]:
         releasecontrib__creator_id=ident)]
 
 @v2api.get("/creator/{ident}")
-def get_creator(request, ident: str) -> CreatorSchema:
+def get_creator(request, ident: UUID) -> CreatorSchema:
     return CreatorSchema.from_orm(get_object_or_404(m.Creator, id=ident))
 
 @v2api.post("/creator", auth=api_auth)
@@ -427,7 +427,7 @@ def bulk_create_creators(request, creators_in: List[CreatorSchema]) -> HttpRespo
     return v2api.create_response(request, "creators created", status=201)
 
 @v2api.delete("/creator/{ident}", auth=api_auth)
-def delete_creator(request, ident: str) -> HttpResponse:
+def delete_creator(request, ident: UUID) -> HttpResponse:
     """Delete a creator record. Note: does not delete associated releases."""
     entity = get_object_or_404(m.Creator, id=ident)
     out = CreatorSchema.from_orm(entity)
@@ -451,14 +451,14 @@ def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
     return FileSchema.from_orm(es[0])
 
 @v2api.get("/file/{ident}/releases")
-def get_file_releases(request, ident: str) -> List[ReleaseSchema]:
+def get_file_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all the releases associated with a given file."""
     # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
         releasefile__file_id=ident)]
 
 @v2api.get("/file/{ident}")
-def get_file(request, ident: str) -> FileSchema:
+def get_file(request, ident: UUID) -> FileSchema:
     return FileSchema.from_orm(get_object_or_404(m.File, id=ident))
 
 @v2api.post("/file", auth=api_auth)
@@ -499,7 +499,7 @@ def bulk_create_files(request, files_in: List[FileSchema]) -> HttpResponse:
     return v2api.create_response(request, "files created", status=201)
 
 @v2api.delete("/file/{ident}", auth=api_auth)
-def delete_file(request, ident: str) -> HttpResponse:
+def delete_file(request, ident: UUID) -> HttpResponse:
     """Delete a file record. Does not delete associated releases. Actual
     file contents will continue to live in blob storage."""
     entity = get_object_or_404(m.File, id=ident)

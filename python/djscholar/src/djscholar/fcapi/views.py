@@ -560,8 +560,32 @@ def bulk_create_webcaptures(request, webcaptures_in: List[WebcaptureSchema]) -> 
 
     return v2api.create_response(request, "webcaptures created", status=201)
 
+@v2api.put("/webcapture", auth=api_auth)
+def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
+    code = 200
+    es = m.Webcapture.objects.filter(id=webcapture_in.id)
 
-# TODO update_webcapture
+    data = webcapture_in.dict()
+    urls = data.pop("urls")
+    cdx_lines = data.pop("cdx_lines")
+
+    with transaction.atomic():
+        entity = None
+        if len(es) == 0:
+            code = 201
+            entity = m.Webcapture(**data)
+        else:
+            entity = es[0]
+            for attr, value in data.items():
+                setattr(entity, attr, value)
+        entity.save()
+        entity.urls.all().delete()
+        entity.urls.set([m.WebcaptureURL(**url|{"webcapture_id": entity.id}) for url in urls], clear=True, bulk=False)
+        entity.cdx_lines.set([m.WebcaptureCDX(**line|{"webcapture_id":entity.id}) for line in cdx_lines], clear=True, bulk=False)
+
+    return v2api.create_response(request, "webcapture replaced with new content", status=code)
+
+
 # TODO delete_webcapture
 
 # Changelog routes

@@ -101,6 +101,7 @@ class WebcaptureFactory(DjangoModelFactory):
     created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     captured = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     original_url = factory.Faker("uri")
+    release = factory.SubFactory(ReleaseFactory)
 
     class Meta:
         model = m.Webcapture
@@ -273,7 +274,7 @@ class TestReleaseRoutes(APITest):
 
         es = m.Release.objects.filter(id=self.entity.id)
         self.assertEqual(len(es), 1)
-        self.assertEqual(self.entity.title, new_title)
+        self.assertEqual(es[0].title, new_title)
 
     def test_delete(self):
         unsaved = ReleaseFactory.build()
@@ -380,7 +381,7 @@ class TestContainerRoutes(APITest):
 
         cs = m.Container.objects.filter(id=self.entity.id)
         self.assertEqual(len(cs), 1)
-        self.assertEqual(self.entity.name, new_name)
+        self.assertEqual(cs[0].name, new_name)
 
 
     def test_delete(self):
@@ -466,8 +467,8 @@ class TestWorkRoutes(APITest):
 
         es = m.Work.objects.filter(id=self.entity.id)
         self.assertEqual(len(es), 1)
-        self.assertEqual(self.entity.hidden_reason, new_reason)
-        self.assertEqual(self.entity.hidden_when, hidden_when)
+        self.assertEqual(es[0].hidden_reason, new_reason)
+        self.assertEqual(es[0].hidden_when, hidden_when)
 
 
 class TestCreatorRoutes(APITest):
@@ -564,14 +565,14 @@ class TestCreatorRoutes(APITest):
         self.assertEqual(len(cs), 1)
 
         new_surname = "updated name"
-        self.entity.name = new_surname
+        self.entity.surname = new_surname
         data = v.CreatorSchema.from_orm(self.entity).model_dump_json()
         response = client.put("/creator", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
         cs = m.Creator.objects.filter(id=self.entity.id)
         self.assertEqual(len(cs), 1)
-        self.assertEqual(self.entity.name, new_surname)
+        self.assertEqual(cs[0].surname, new_surname)
 
     def test_delete(self):
         unsaved = CreatorFactory.build()
@@ -677,14 +678,15 @@ class TestFileRoutes(APITest):
 
         self.assertEqual(m.File.objects.filter(id=entity.id).count(), 1)
 
-        new_surname = "updated name"
-        self.entity.name = new_surname
+        new_size = 100
+        self.entity.size_bytes = new_size
         data = v.FileSchema.from_orm(self.entity).model_dump_json()
         response = client.put("/file", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
 
-        self.assertEqual(m.File.objects.filter(id=entity.id).count(), 1)
-        self.assertEqual(self.entity.name, new_surname)
+        es = m.File.objects.filter(id=self.entity.id)
+        self.assertEqual(len(es), 1)
+        self.assertEqual(es[0].size_bytes, new_size)
 
     def test_delete(self):
         unsaved = FileFactory.build()
@@ -704,7 +706,7 @@ class TestFileRoutes(APITest):
 class TestWebcaptureRoutes(APITest):
     def setUp(self):
         super().setUp()
-        self.entity = WebcaptureFactory.create(release_id=ReleaseFactory.create().id)
+        self.entity = WebcaptureFactory.create()
         WebcaptureCDXFactory.create_batch(10, webcapture_id=self.entity.id)
         WebcaptureURLFactory.create_batch(4, webcapture_id=self.entity.id)
 
@@ -717,12 +719,9 @@ class TestWebcaptureRoutes(APITest):
 
     def test_create(self):
         wc = WebcaptureFactory.build(release_id=ReleaseFactory.create().id)
-        urls = WebcaptureURLFactory.build_batch(4)
-        cdx_lines = WebcaptureCDXFactory.build_batch(10)
-
         wcs = v.WebcaptureSchema.from_orm(wc)
-        wcs.urls = [v.WebcaptureURLSchema.from_orm(url) for url in urls]
-        wcs.cdx_lines = [v.WebcaptureCDXSchema.from_orm(line) for line in cdx_lines]
+        wcs.urls = [v.WebcaptureURLSchema.from_orm(url) for url in WebcaptureURLFactory.build_batch(4)]
+        wcs.cdx_lines = [v.WebcaptureCDXSchema.from_orm(line) for line in WebcaptureCDXFactory.build_batch(10)]
 
         data = wcs.model_dump_json(by_alias=True)
 
@@ -735,8 +734,8 @@ class TestWebcaptureRoutes(APITest):
         es = m.Webcapture.objects.filter(id=wc.id)
         self.assertEqual(len(es), 1)
 
-        self.assertEqual(len(es[0].urls.all()), 4)
-        self.assertEqual(len(es[0].cdx_lines.all()), 10)
+        self.assertEqual(len(es[0].urls.all()), len(wcs.urls))
+        self.assertEqual(len(es[0].cdx_lines.all()), len(wcs.cdx_lines))
 
         response = client.post("/webcapture", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 400)
@@ -766,3 +765,33 @@ class TestWebcaptureRoutes(APITest):
         response = client.get(f"/webcapture/{self.entity.id}/release")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["id"], str(self.entity.release_id))
+
+    def test_update(self):
+        wc = WebcaptureFactory.build(release_id=ReleaseFactory.create().id)
+        wcs = v.WebcaptureSchema.from_orm(wc)
+        wcs.urls = [v.WebcaptureURLSchema.from_orm(url) for url in WebcaptureURLFactory.build_batch(4)]
+        wcs.cdx_lines = [v.WebcaptureCDXSchema.from_orm(line) for line in WebcaptureCDXFactory.build_batch(10)]
+
+        data = wcs.model_dump_json()
+
+        response = client.put("/webcapture", data=data)
+        self.assertEqual(response.status_code, 401)
+
+        response = client.put("/webcapture", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        self.assertEqual(m.Webcapture.objects.filter(id=wc.id).count(), 1)
+
+        new_reason = "some hidden reason"
+        self.entity.hidden_reason = new_reason
+
+        wcs = v.WebcaptureSchema.from_orm(self.entity)
+        wcs.urls = [v.WebcaptureURLSchema.from_orm(url) for url in WebcaptureURLFactory.build_batch(2)]
+        data = wcs.model_dump_json()
+        response = client.put("/webcapture", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+
+        es = m.Webcapture.objects.filter(id=self.entity.id)
+        self.assertEqual(len(es), 1)
+        self.assertEqual(es[0].hidden_reason, new_reason)
+        self.assertEqual(len(es[0].urls.all()), len(wcs.urls))

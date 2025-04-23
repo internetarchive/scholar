@@ -532,18 +532,35 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
                                      status=400)
     data = webcapture_in.dict()
     urls = data.pop("urls")
-    cdx = data.pop("cdx_lines")
+    cdx_lines = data.pop("cdx_lines")
     with transaction.atomic():
         wc = m.Webcapture(**data)
         wc.save()
         m.WebcaptureURL.objects.bulk_create(
                 [m.WebcaptureURL(**url|{"webcapture_id": wc.id}) for url in urls])
         m.WebcaptureCDX.objects.bulk_create(
-                [m.WebcaptureCDX(**line|{"webcapture_id":wc.id}) for line in cdx])
+                [m.WebcaptureCDX(**line|{"webcapture_id":wc.id}) for line in cdx_lines])
     return v2api.create_response(request, "webcapture created", status=201)
 
+@v2api.post("/webcaptures", auth=api_auth)
+def bulk_create_webcaptures(request, webcaptures_in: List[WebcaptureSchema]) -> HttpResponse:
+    webcapture_kwargs = []
+    urls = []
+    cdx_lines = []
+    for wcs in webcaptures_in:
+        data = wcs.dict()
+        urls += [url|{"webcapture_id":data["id"]} for url in data.pop("urls")]
+        cdx_lines += [line|{"webcapture_id":data["id"]} for line in data.pop("cdx_lines")]
+        webcapture_kwargs.append(data)
 
-# TODO bulk_create_webcaptures
+    with transaction.atomic():
+        m.Webcapture.objects.bulk_create([m.Webcapture(**kw) for kw in webcapture_kwargs])
+        m.WebcaptureURL.objects.bulk_create([m.WebcaptureURL(**url) for url in urls])
+        m.WebcaptureCDX.objects.bulk_create([m.WebcaptureCDX(**line) for line in cdx_lines])
+
+    return v2api.create_response(request, "webcaptures created", status=201)
+
+
 # TODO update_webcapture
 # TODO delete_webcapture
 

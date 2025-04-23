@@ -716,8 +716,7 @@ class TestWebcaptureRoutes(APITest):
         self.assertEqual(len(response.data["cdx_lines"]), 10)
 
     def test_create(self):
-        wc = WebcaptureFactory.build()
-        wc.release_id = ReleaseFactory.create().id
+        wc = WebcaptureFactory.build(release_id=ReleaseFactory.create().id)
         urls = WebcaptureURLFactory.build_batch(4)
         cdx_lines = WebcaptureCDXFactory.build_batch(10)
 
@@ -741,6 +740,21 @@ class TestWebcaptureRoutes(APITest):
 
         response = client.post("/webcapture", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, 400)
+
+    def test_bulk_create(self):
+        webcaptures = []
+        for _ in range(10):
+            wc = v.WebcaptureSchema.from_orm(WebcaptureFactory.build(release_id=ReleaseFactory.create().id))
+            wc.urls = WebcaptureURLFactory.build_batch(4)
+            wc.cdx_lines = WebcaptureCDXFactory.build_batch(10)
+            webcaptures.append(wc)
+        data = "["+",".join([wc.model_dump_json() for wc in webcaptures])+"]"
+
+        response = client.post("/webcaptures", data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, 201)
+
+        for wc in webcaptures:
+            self.assertEqual(m.Webcapture.objects.filter(id=wc.id).count(), 1)
 
     def test_lookup(self):
         legacy_ident = uuid2fcid(self.entity.id)

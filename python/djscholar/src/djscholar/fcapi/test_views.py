@@ -225,6 +225,21 @@ class TestReleaseRoutes(APITest):
         self.assertSetEqual(set([d['raw_name'] for d in response.data]),
                             set([str(c.raw_name) for c in contribs]))
 
+    def test_get_webcaptures(self):
+        webcaptures = []
+        for _ in range(4):
+            wc = v.WebcaptureSchema.from_orm(WebcaptureFactory.create(release_id=self.entity.id))
+            wc.urls = WebcaptureURLFactory.create_batch(2, webcapture_id=wc.id)
+            wc.cdx_lines = WebcaptureCDXFactory.create_batch(4, webcapture_id=wc.id)
+            webcaptures.append(wc)
+
+        response = client.get(f"/release/{self.entity.id}/webcaptures")
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(len(response.data), 4)
+        self.assertEqual(len(response.data[0]["urls"]), 2)
+        self.assertEqual(len(response.data[0]["cdx_lines"]), 4)
+
     def test_create(self):
         entity = ReleaseFactory.build()
         entity.container.save()

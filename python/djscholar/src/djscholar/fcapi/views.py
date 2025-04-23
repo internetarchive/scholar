@@ -22,7 +22,6 @@ api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 # signatures too hideous / doesn't break doc generation
 # TODO pagination
 # TODO support nested containers and works (and possibly other types) during creation/update; possibly getting
-# TODO add get_release_webcaptures
 # TODO sort entities by updated or created time
 # TODO query for releases that do not have associated files -- wantlist
 # TODO should support the creation of creators via release creation/update?
@@ -149,12 +148,12 @@ def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema
     return ContainerSchema.from_orm(cs[0])
 
 @v2api.get("/container/{ident}")
-def get_container(request, ident: str) -> ContainerSchema:
+def get_container(request, ident: UUID) -> ContainerSchema:
     """Get a single container by its ID."""
     return ContainerSchema.from_orm(get_object_or_404(m.Container, id=ident))
 
 @v2api.get("/container/{ident}/releases")
-def get_container_releases(request, ident: str) -> List[ReleaseSchema]:
+def get_container_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all releases for a given container ID."""
     # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(container__id=ident)]
@@ -202,7 +201,7 @@ def update_container(request, container_in: ContainerSchema) -> HttpResponse:
     return v2api.create_response(request, "release replaced with new content", status=code)
 
 @v2api.delete("/container/{ident}", auth=api_auth)
-def delete_container(request, ident: str) -> ContainerSchema:
+def delete_container(request, ident: UUID) -> ContainerSchema:
     """Delete the container with a given ID."""
     c = get_object_or_404(m.Container, id=ident)
     out = ContainerSchema.from_orm(c)
@@ -227,7 +226,7 @@ def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
     return ReleaseSchema.from_orm(rs[0])
 
 @v2api.get("/release/{ident}")
-def get_release(request, ident: str) -> ReleaseSchema:
+def get_release(request, ident: UUID) -> ReleaseSchema:
     """Get a single release by its ID."""
     return ReleaseSchema.from_orm(get_object_or_404(m.Release, id=ident))
 
@@ -244,7 +243,7 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     return v2api.create_response(request, "release created", status=201)
 
 @v2api.get("/release/{ident}/container")
-def get_release_container(request, ident: str) -> ContainerSchema:
+def get_release_container(request, ident: UUID) -> ContainerSchema:
     """Get a release's container (ie, journal)"""
     cs = m.Container.objects.filter(release__id=ident)
     if len(cs) == 0:
@@ -252,24 +251,28 @@ def get_release_container(request, ident: str) -> ContainerSchema:
     return ContainerSchema.from_orm(cs[0])
 
 @v2api.get("/release/{ident}/work")
-def get_release_work(request, ident: str) -> WorkSchema:
+def get_release_work(request, ident: UUID) -> WorkSchema:
     """Get a the work that represents the platonic version of this release."""
     ws = m.Container.objects.filter(release__id=ident)
     # do not need to check length; work_id is required in schema
     return WorkSchema.from_orm(ws[0])
 
 @v2api.get("/release/{ident}/files")
-def get_release_files(request, ident: str) -> List[FileSchema]:
+def get_release_files(request, ident: UUID) -> List[FileSchema]:
     return [FileSchema.from_orm(e) for e in m.File.objects.filter(releasefile__release_id=ident)]
 
 @v2api.get("/release/{ident}/contribs")
-def get_release_contribs(request, ident: str) -> List[CreatorSchema]:
+def get_release_contribs(request, ident: UUID) -> List[CreatorSchema]:
     """Get a list of contributions to a given release; for example, authors.
     Some contributions will feature a creator_id that can be used to select
     richer information about a contribution (eg, orcid); many contributions
     will just be raw names pulled from a paper's author list, however."""
     return [ReleaseContribSchema.from_orm(rc)
             for rc in m.ReleaseContrib.objects.filter(release_id=ident)]
+
+@v2api.get("/release/{ident}/webcaptures")
+def get_release_webcaptures(request, ident: UUID) -> List[WebcaptureSchema]:
+    return [WebcaptureSchema.from_orm(wc) for wc in m.Webcapture.objects.filter(release_id=ident)]
 
 @v2api.delete("/release/{ident}", auth=api_auth)
 def delete_release(request, ident: str) -> ReleaseSchema:

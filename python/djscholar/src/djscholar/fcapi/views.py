@@ -29,6 +29,7 @@ api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 # signatures too hideous / doesn't break doc generation
 # TODO should support the creation of creators via release creation/update?
 # TODO use tags to split auth/unauth sections out in docs
+# TODO use response= in all the decorators so the docs work
 
 # NB I hate that I have to use response= in addition to a return type. the latter should imply the former.
 

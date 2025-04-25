@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 
 from django.db import transaction
 from django.http import HttpResponse, Http404
+from ninja.pagination import paginate
 from django.shortcuts import get_object_or_404
 from ninja import NinjaAPI, Query, Schema, ModelSchema
 from ninja.orm import create_schema
@@ -21,11 +22,15 @@ api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 # TODO release creation begets work creation
 # TODO filter hidden things
 # TODO support nested containers and works (and possibly other types) during creation/update; possibly getting
+# TODO nest abstract(s) in release
 # TODO sort entities by updated or created time
 # TODO query for releases that do not have associated files -- wantlist
 # TODO consider generalizing route implementations if it doesn't make
 # signatures too hideous / doesn't break doc generation
 # TODO should support the creation of creators via release creation/update?
+# TODO use tags to split auth/unauth sections out in docs
+
+# NB I hate that I have to use response= in addition to a return type. the latter should imply the former.
 
 # In/Out schemas
 
@@ -152,10 +157,10 @@ def get_container(request, ident: UUID) -> ContainerSchema:
     """Get a single container by its ID."""
     return ContainerSchema.from_orm(get_object_or_404(m.Container, id=ident))
 
-@v2api.get("/container/{ident}/releases")
+@v2api.get("/container/{ident}/releases", response=List[ReleaseSchema])
+@paginate
 def get_container_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all releases for a given container ID."""
-    # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(container__id=ident)]
 
 
@@ -257,12 +262,14 @@ def get_release_work(request, ident: UUID) -> WorkSchema:
     # do not need to check length; work_id is required in schema
     return WorkSchema.from_orm(ws[0])
 
-@v2api.get("/release/{ident}/files")
+@v2api.get("/release/{ident}/files", response=List[FileSchema])
+@paginate
 def get_release_files(request, ident: UUID) -> List[FileSchema]:
     return [FileSchema.from_orm(e) for e in m.File.objects.filter(releasefile__release_id=ident)]
 
-@v2api.get("/release/{ident}/contribs")
-def get_release_contribs(request, ident: UUID) -> List[CreatorSchema]:
+@v2api.get("/release/{ident}/contribs", response=List[ReleaseContribSchema])
+@paginate
+def get_release_contribs(request, ident: UUID) -> List[ReleaseContribSchema]:
     """Get a list of contributions to a given release; for example, authors.
     Some contributions will feature a creator_id that can be used to select
     richer information about a contribution (eg, orcid); many contributions
@@ -270,7 +277,8 @@ def get_release_contribs(request, ident: UUID) -> List[CreatorSchema]:
     return [ReleaseContribSchema.from_orm(rc)
             for rc in m.ReleaseContrib.objects.filter(release_id=ident)]
 
-@v2api.get("/release/{ident}/webcaptures")
+@v2api.get("/release/{ident}/webcaptures", response=List[WebcaptureSchema])
+@paginate
 def get_release_webcaptures(request, ident: UUID) -> List[WebcaptureSchema]:
     return [WebcaptureSchema.from_orm(wc) for wc in m.Webcapture.objects.filter(release_id=ident)]
 
@@ -330,7 +338,8 @@ def get_work(request, ident: UUID) -> WorkSchema:
     """Get a work (collection of releases) by its ID"""
     return WorkSchema.from_orm(get_object_or_404(m.Work, id=ident))
 
-@v2api.get("/work/{ident}/releases")
+@v2api.get("/work/{ident}/releases", response=List[ReleaseSchema])
+@paginate
 def get_work_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all releases associated with a work's ID"""
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(work_id=ident)]
@@ -378,12 +387,12 @@ def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
         raise Http404(f"no creator found with {lookup.id_type} of {lookup.id_value}")
     return CreatorSchema.from_orm(es[0])
 
-@v2api.get("/creator/{ident}/releases")
+@v2api.get("/creator/{ident}/releases", response=List[ReleaseSchema])
+@paginate
 def get_creator_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all the releases associated with a given creator. Note that for many
     releases, their authors exist only as raw contribs and do not have creator
     records."""
-    # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
         releasecontrib__creator_id=ident)]
 
@@ -450,10 +459,10 @@ def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
         raise Http404(f"no file found with {lookup.id_type} of {lookup.id_value}")
     return FileSchema.from_orm(es[0])
 
-@v2api.get("/file/{ident}/releases")
+@v2api.get("/file/{ident}/releases", response=List[ReleaseSchema])
+@paginate
 def get_file_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all the releases associated with a given file."""
-    # TODO paginate
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
         releasefile__file_id=ident)]
 

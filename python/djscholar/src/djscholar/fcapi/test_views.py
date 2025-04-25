@@ -206,8 +206,8 @@ class TestReleaseRoutes(APITest):
 
         response = client.get(f"/release/{self.entity.id}/files")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), len(es))
-        self.assertSetEqual(set([d['id'] for d in response.data]), set([str(e.id) for e in es]))
+        self.assertEqual(response.data["count"], len(es))
+        self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(e.id) for e in es]))
 
     def test_get_contribs(self):
         contribs = []
@@ -221,8 +221,8 @@ class TestReleaseRoutes(APITest):
 
         response = client.get(f"/release/{self.entity.id}/contribs")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), len(contribs))
-        self.assertSetEqual(set([d['raw_name'] for d in response.data]),
+        self.assertEqual(response.data["count"], len(contribs))
+        self.assertSetEqual(set([d['raw_name'] for d in response.data["items"]]),
                             set([str(c.raw_name) for c in contribs]))
 
     def test_get_webcaptures(self):
@@ -236,9 +236,9 @@ class TestReleaseRoutes(APITest):
         response = client.get(f"/release/{self.entity.id}/webcaptures")
         self.assertEqual(response.status_code, 200)
 
-        self.assertEqual(len(response.data), 4)
-        self.assertEqual(len(response.data[0]["urls"]), 2)
-        self.assertEqual(len(response.data[0]["cdx_lines"]), 4)
+        self.assertEqual(response.data["count"], 4)
+        self.assertEqual(len(response.data["items"][0]["urls"]), 2)
+        self.assertEqual(len(response.data["items"][0]["cdx_lines"]), 4)
 
     def test_create(self):
         entity = ReleaseFactory.build()
@@ -342,7 +342,7 @@ class TestContainerRoutes(APITest):
         c = ContainerFactory.create()
         response = client.get(f"/container/{c.id}/releases")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(response.data["count"], 0)
 
         rs = []
         for _ in range(4):
@@ -354,8 +354,8 @@ class TestContainerRoutes(APITest):
 
         response = client.get(f"/container/{self.entity.id}/releases")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), len(rs))
-        self.assertSetEqual(set([d['id'] for d in response.data]), set([str(r.id) for r in rs]))
+        self.assertEqual(response.data["count"], len(rs))
+        self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
 
     def test_create(self):
         c = ContainerFactory.build()
@@ -442,7 +442,7 @@ class TestWorkRoutes(APITest):
 
         response = client.get(f"/work/{self.entity.id}/releases")
         self.assertEqual(response.status_code, 200)
-        self.assertSetEqual(set([r['id'] for r in response.data]),
+        self.assertSetEqual(set([r['id'] for r in response.data["items"]]),
                             set([str(r.id) for r in rs]))
 
     def test_delete(self):
@@ -521,7 +521,7 @@ class TestCreatorRoutes(APITest):
         c = CreatorFactory.create()
         response = client.get(f"/creator/{c.id}/releases")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(response.data["count"], 0)
 
         rs = []
         for _ in range(4):
@@ -537,8 +537,8 @@ class TestCreatorRoutes(APITest):
 
         response = client.get(f"/creator/{self.entity.id}/releases")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), len(rs))
-        self.assertSetEqual(set([d['id'] for d in response.data]), set([str(r.id) for r in rs]))
+        self.assertEqual(response.data["count"], len(rs))
+        self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
 
     def test_create(self):
         c = CreatorFactory.build()
@@ -638,7 +638,7 @@ class TestFileRoutes(APITest):
         f = FileFactory.create()
         response = client.get(f"/file/{f.id}/releases")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 0)
+        self.assertEqual(response.data["count"], 0)
 
         rs = []
         for _ in range(4):
@@ -652,8 +652,8 @@ class TestFileRoutes(APITest):
         self.entity.releases.set(rs)
         response = client.get(f"/file/{self.entity.id}/releases")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), len(rs))
-        self.assertSetEqual(set([d['id'] for d in response.data]), set([str(r.id) for r in rs]))
+        self.assertEqual(response.data["count"], len(rs))
+        self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
 
     def test_create(self):
         c = FileFactory.build()

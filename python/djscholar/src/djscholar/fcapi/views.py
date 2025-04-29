@@ -1,3 +1,4 @@
+from http import HTTPStatus
 from uuid import UUID
 from typing import List, Literal, Optional
 
@@ -172,16 +173,16 @@ def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     if len(cs) != 0:
         return v2api.create_response(request,
                                      f"container with id {container_in.id} already exists",
-                                     status=400)
+                                     status=HTTPStatus.BAD_REQUEST)
     m.Container(**container_in.dict()).save()
-    return v2api.create_response(request, "container created", status=201)
+    return v2api.create_response(request, "container created", status=HTTPStatus.CREATED)
 
 @v2api.post("/containers", auth=api_auth)
 def bulk_create_containers(request, containers_in: List[ContainerSchema]) -> HttpResponse:
     """Bulk create a list of containers. Functionally equivalent to calling
     POST /container repeatedly."""
     m.Container.objects.bulk_create([m.Container(**cin.dict()) for cin in containers_in])
-    return v2api.create_response(request, "containers created", status=201)
+    return v2api.create_response(request, "containers created", status=HTTPStatus.CREATED)
 
 @v2api.put("/container", auth=api_auth)
 def update_container(request, container_in: ContainerSchema) -> HttpResponse:
@@ -190,12 +191,12 @@ def update_container(request, container_in: ContainerSchema) -> HttpResponse:
     entity; not a patch operation. Creates the entity if it doesn't yet exist.
     201 if a new release was created; 200 otherwise.
     """
-    code = 200
+    code = HTTPStatus.OK
     es = m.Container.objects.filter(id=container_in.id)
     entity = None
 
     if len(es) == 0:
-        code = 201
+        code = HTTPStatus.CREATED
         entity = m.Container(**container_in.dict())
     else:
         entity = es[0]
@@ -298,12 +299,12 @@ def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
     entity; not a patch operation. Creates the entity if it doesn't yet exist.
     201 if a new release was created; 200 otherwise.
     """
-    code = 200
+    code = HTTPStatus.OK
     es = m.Release.objects.filter(id=release_in.id)
     entity = None
 
     if len(es) == 0:
-        code = 201
+        code = HTTPStatus.CREATED
         entity = m.Release(**release_in.dict())
     else:
         entity = es[0]
@@ -320,7 +321,7 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
     POST /release repeatedly."""
     # TODO releases without works should have works created automagically
     m.Release.objects.bulk_create([m.Release(**rin.dict()) for rin in releases_in])
-    return v2api.create_response(request, "releases created", status=201)
+    return v2api.create_response(request, "releases created", status=HTTPStatus.CREATED)
 
 
 # Work routes
@@ -356,12 +357,12 @@ def delete_work(request, ident: UUID) -> WorkSchema:
 @v2api.put("/work", auth=api_auth)
 def update_work(request, work_in: WorkSchema) -> HttpResponse:
     """Replace a work record wholesale."""
-    code = 200
+    code = HTTPStatus.OK
     es = m.Work.objects.filter(id=work_in.id)
     entity = None
 
     if len(es) == 0:
-        code = 201
+        code = HTTPStatus.CREATED
         entity = m.Work(**work_in.dict())
     else:
         entity = es[0]
@@ -408,19 +409,19 @@ def create_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     if len(es) != 0:
         return v2api.create_response(request,
                                      f"creator with id {creator_in.id} already exists",
-                                     status=400)
+                                     status=HTTPStatus.BadRequest)
     m.Creator(**creator_in.dict()).save()
-    return v2api.create_response(request, "creator created", status=201)
+    return v2api.create_response(request, "creator created", status=HTTPStatus.CREATED)
 
 @v2api.put("/creator", auth=api_auth)
 def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     """Replace a creator record wholesale."""
-    code = 200
+    code = HTTPStatus.OK
     es = m.Creator.objects.filter(id=creator_in.id)
     entity = None
 
     if len(es) == 0:
-        code = 201
+        code = HTTPStatus.CREATED
         entity = m.Creator(**creator_in.dict())
     else:
         entity = es[0]
@@ -434,7 +435,7 @@ def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
 @v2api.post("/creators", auth=api_auth)
 def bulk_create_creators(request, creators_in: List[CreatorSchema]) -> HttpResponse:
     m.Creator.objects.bulk_create([m.Creator(**cin.dict()) for cin in creators_in])
-    return v2api.create_response(request, "creators created", status=201)
+    return v2api.create_response(request, "creators created", status=HTTPStatus.CREATED)
 
 @v2api.delete("/creator/{ident}", auth=api_auth)
 def delete_creator(request, ident: UUID) -> HttpResponse:
@@ -480,19 +481,19 @@ def create_file(request, file_in: FileSchema) -> HttpResponse:
     if len(es) != 0:
         return v2api.create_response(request,
                                      f"file with id {file_in.id} already exists",
-                                     status=400)
+                                     status=HTTPStatus.BadRequest)
     m.File(**file_in.dict()).save()
-    return v2api.create_response(request, "file created", status=201)
+    return v2api.create_response(request, "file created", status=HTTPStatus.CREATED)
 
 @v2api.put("/file", auth=api_auth)
 def update_file(request, file_in: FileSchema) -> HttpResponse:
     """Replace a file record wholesale."""
-    code = 200
+    code = HTTPStatus.OK
     es = m.File.objects.filter(id=file_in.id)
     entity = None
 
     if len(es) == 0:
-        code = 201
+        code = HTTPStatus.CREATED
         entity = m.File(**file_in.dict())
     else:
         entity = es[0]
@@ -506,7 +507,7 @@ def update_file(request, file_in: FileSchema) -> HttpResponse:
 @v2api.post("/files", auth=api_auth)
 def bulk_create_files(request, files_in: List[FileSchema]) -> HttpResponse:
     m.File.objects.bulk_create([m.File(**cin.dict()) for cin in files_in])
-    return v2api.create_response(request, "files created", status=201)
+    return v2api.create_response(request, "files created", status=HTTPStatus.CREATED)
 
 @v2api.delete("/file/{ident}", auth=api_auth)
 def delete_file(request, ident: UUID) -> HttpResponse:
@@ -542,7 +543,7 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
     if len(es) != 0:
         return v2api.create_response(request,
                                      f"webcapture with id {webcapture_in.id} already exists",
-                                     status=400)
+                                     status=HTTPStatus.BadRequest)
     data = webcapture_in.dict()
     urls = data.pop("urls")
     cdx_lines = data.pop("cdx_lines")
@@ -553,7 +554,7 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
                 [m.WebcaptureURL(**url|{"webcapture_id": wc.id}) for url in urls])
         m.WebcaptureCDX.objects.bulk_create(
                 [m.WebcaptureCDX(**line|{"webcapture_id":wc.id}) for line in cdx_lines])
-    return v2api.create_response(request, "webcapture created", status=201)
+    return v2api.create_response(request, "webcapture created", status=HTTPStatus.CREATED)
 
 @v2api.post("/webcaptures", auth=api_auth)
 def bulk_create_webcaptures(request, webcaptures_in: List[WebcaptureSchema]) -> HttpResponse:
@@ -571,11 +572,11 @@ def bulk_create_webcaptures(request, webcaptures_in: List[WebcaptureSchema]) -> 
         m.WebcaptureURL.objects.bulk_create([m.WebcaptureURL(**url) for url in urls])
         m.WebcaptureCDX.objects.bulk_create([m.WebcaptureCDX(**line) for line in cdx_lines])
 
-    return v2api.create_response(request, "webcaptures created", status=201)
+    return v2api.create_response(request, "webcaptures created", status=HTTPStatus.CREATED)
 
 @v2api.put("/webcapture", auth=api_auth)
 def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
-    code = 200
+    code = HTTPStatus.OK
     es = m.Webcapture.objects.filter(id=webcapture_in.id)
 
     data = webcapture_in.dict()
@@ -585,7 +586,7 @@ def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
     with transaction.atomic():
         entity = None
         if len(es) == 0:
-            code = 201
+            code = HTTPStatus.CREATED
             entity = m.Webcapture(**data)
         else:
             entity = es[0]

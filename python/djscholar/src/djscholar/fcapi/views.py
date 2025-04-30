@@ -18,17 +18,19 @@ COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra", "hidden_r
 v2api = NinjaAPI()
 api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 
-# TODO release creation begets work creation
-# TODO filter hidden things
-# TODO support nested containers and works (and possibly other types) during creation/update; possibly getting
+# crawl MVP
+# TODO touch update column whenever an update route called
 # TODO nest abstract(s) in release
 # TODO sort entities by updated or created time
 # TODO query for releases that do not have associated files -- wantlist
+# TODO use response= in all the decorators so the docs work
+
+# post crawl MVP
+# TODO filter hidden things
 # TODO consider generalizing route implementations if it doesn't make
 # signatures too hideous / doesn't break doc generation
 # TODO should support the creation of creators via release creation/update?
 # TODO use tags to split auth/unauth sections out in docs
-# TODO use response= in all the decorators so the docs work
 
 # NB I hate that I have to use response= in addition to a return type. the latter should imply the former.
 
@@ -111,7 +113,8 @@ class ReleaseSchema(ModelSchema):
                                        "publisher", "language", "license_slug",
                                        "withdrawn_status", "refs",]
 
-
+class ReleaseUpdateSchema(ReleaseSchema):
+    work_id: UUID
 
 # TODO annoying name thing
 class WebcaptureCDXSchema(ModelSchema):
@@ -323,7 +326,7 @@ def delete_release(request, ident: UUID) -> ReleaseSchema:
     return out
 
 @v2api.put("/release", auth=api_auth)
-def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
+def update_release(request, release_in: ReleaseUpdateSchema) -> HttpResponse:
     """
     Replace a release entity wholesale. Must specify entire content of
     entity; not a patch operation. Creates the entity if it doesn't yet exist.

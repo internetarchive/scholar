@@ -318,13 +318,28 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_create_without_work(self):
-        #entity = ReleaseFactory.build()
-        # TODO
-        pass
+        entity = ReleaseFactory.build()
+        entity.container.save()
+        entity.work = None
+
+        data = v.ReleaseSchema.from_orm(entity).model_dump_json()
+        response = client.post(self.create, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+
+        r = m.Release.objects.filter(id=entity.id)[0]
+        self.assertTrue(r.work is not None)
 
     def test_update_without_work(self):
-        # TODO
-        pass
+        entity = ReleaseFactory.create()
+        entity.container.save()
+        entity.work.save()
+
+        entity.work = None
+
+        data = v.ReleaseSchema.from_orm(entity).model_dump_json()
+
+        response = client.put(self.update, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_CONTENT)
 
     def test_bulk_create_without_work(self):
         # TODO
@@ -333,7 +348,6 @@ class TestReleaseRoutes(EntityCRUDTestCase):
     def test_create_with_children(self):
         # TODO
         pass
-
 
     def test_bulk_create_with_children(self):
         # TODO

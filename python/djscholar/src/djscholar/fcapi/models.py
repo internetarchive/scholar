@@ -333,7 +333,8 @@ class ReleaseExtId(models.Model):
     This model maps releases to a set of external identifiers expressed as key
     value pairs. Most releases in our system will have at least a doi.
     """
-    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False,
+                                related_name="extids")
     id_type = models.CharField(choices=RELEASE_EXT_ID_TYPES)
     id_value = models.CharField()
 
@@ -347,7 +348,8 @@ class ReleaseExtId(models.Model):
 
 class ReleaseAbstract(models.Model):
     """The text of a release's abstract"""
-    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False,
+                                related_name="abstracts")
     mimetype = models.CharField(default="text/plain")
     language = models.CharField(
             help_text="Primary language of abstract. Two-letter RFC1766/ISO639-1 language code.",
@@ -370,7 +372,8 @@ class ReleaseContrib(models.Model):
     hence, we allow nulling of the whole row, which is not ideal. Position is
     nullable in the old schema and, indeed, we have many null positions that
     are carried over (sadly)."""
-    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False)
+    release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False,
+                                related_name="contribs")
     creator = models.ForeignKey(Creator, on_delete=models.CASCADE,
                                 null=True, blank=True, db_index=False)
     raw_name = models.CharField(

@@ -226,8 +226,8 @@ def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
         return ReleaseSchema.from_orm(get_object_or_404(m.Release, id=ident))
 
     rs = m.Release.objects.filter(**{
-        "releaseextid__id_type": lookup.id_type,
-        "releaseextid__id_value": lookup.id_value})
+        "extids__id_type": lookup.id_type,
+        "extids__id_value": lookup.id_value})
     if len(rs) == 0:
         raise Http404(f"no release found with {lookup.id_type} of {lookup.id_value}")
     return ReleaseSchema.from_orm(rs[0])
@@ -396,7 +396,7 @@ def get_creator_releases(request, ident: UUID) -> List[ReleaseSchema]:
     releases, their authors exist only as raw contribs and do not have creator
     records."""
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
-        releasecontrib__creator_id=ident)]
+            contribs__creator_id=ident)]
 
 @v2api.get("/creator/{ident}")
 def get_creator(request, ident: UUID) -> CreatorSchema:

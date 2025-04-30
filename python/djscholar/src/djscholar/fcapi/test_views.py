@@ -63,6 +63,21 @@ class ReleaseExtIdFactory(DjangoModelFactory):
         model = m.ReleaseExtId
 
 
+class ReleaseRefFactory(DjangoModelFactory):
+    position = factory.LazyFunction(lambda: random.randint(0,100))
+
+    class Meta:
+        model = m.ReleaseRef
+
+
+class ReleaseAbstractFactory(DjangoModelFactory):
+    mimetype = "text/plain"
+    sha1 = factory.Faker("sha1")
+    content = factory.Faker("paragraph", ext_word_list=["screw", "flanders"])
+    class Meta:
+        model = m.ReleaseAbstract
+
+
 class ReleaseFactory(DjangoModelFactory):
     updated = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     created = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
@@ -347,12 +362,65 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_CONTENT)
 
     def test_bulk_create_without_work(self):
-        # TODO
-        pass
+        rin = []
+        for x in range(100):
+            r = ReleaseFactory.build()
+            if x % 2 == 0:
+                r.work.save()
+            else:
+                r.work = None
+            r.container.save()
+            rin.append(v.ReleaseSchema.from_orm(r))
+        data = "["+",".join([r.model_dump_json() for r in rin])+"]"
+
+        response = client.post(self.bulk_create, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+
+        for r in rin:
+            rs = m.Release.objects.filter(id=r.id)
+            self.assertEqual(len(rs), 1)
+
+    def test_get_with_children(self):
+        r = ReleaseFactory.create()
+        r.work.save()
+        r.container.save()
+
+        extids = []
+        extids.append(ReleaseExtIdFactory.create(release=r, id_type="doi"))
+        extids.append(ReleaseExtIdFactory.create(release=r, id_type="pmcid"))
+        contribs = ReleaseContribFactory.create_batch(4, release=r)
+        abstracts = ReleaseAbstractFactory.create_batch(4, release=r)
+        citations = []
+        for _ in range(4):
+            tr = ReleaseFactory.create()
+            citations.append(ReleaseRefFactory.create(release=r, target_release=tr))
+
+        response = client.get(f"{self.get}/{r.id}")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+        self.assertEqual(len(response.data["extids"]), len(extids))
+        self.assertSetEqual(
+                set([(e["id_type"], e["id_value"]) for e in response.data["extids"]]),
+                set([(e.id_type, e.id_value) for e in extids]))
+
+        self.assertEqual(len(response.data["contribs"]), len(contribs))
+        self.assertEqual(len(response.data["citations"]), len(citations))
+        self.assertEqual(len(response.data["abstracts"]), len(abstracts))
 
     def test_create_with_children(self):
         # TODO
-        pass
+        # ext ids, contribs, abstracts, citations
+        r = ReleaseFactory.build()
+        r.work.save()
+        r.container.save()
+
+        #ReleaseExtIdFactory.create(release=r, id_type="doi")
+        #ReleaseExtIdFactory.create(release=r, id_type="pmcid")
+        #ReleaseContribFactory.create_batch(4, release=r)
+        #ReleaseAbstractFactory.create_batch(4, release=r)
+        #for _ in range(4):
+        #    tr = ReleaseFactory.create()
+        #    ReleaseRefFactory.create(release=r, target_release=tr)
 
     def test_bulk_create_with_children(self):
         # TODO

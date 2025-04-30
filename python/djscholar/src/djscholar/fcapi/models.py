@@ -412,7 +412,8 @@ class ReleaseRef(models.Model):
     release = models.ForeignKey(
             Release,
             help_text="release in which this citation occurred",
-            on_delete=models.CASCADE, db_index=False)
+            on_delete=models.CASCADE, db_index=False,
+            related_name="citations")
     position = models.SmallIntegerField(
             help_text="Position in list of references")
     target_release = models.ForeignKey(

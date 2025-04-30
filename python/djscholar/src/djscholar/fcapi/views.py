@@ -98,12 +98,42 @@ class ReleaseContribSchema(ModelSchema):
                   "extra"]
 
 
+class ReleaseAbstractSchema(ModelSchema):
+    # NB not really optional; this is for creation of releases where a list of
+    # this model is embedded.
+    release_id: Optional[UUID]
+
+    class Meta:
+        model = m.ReleaseAbstract
+        fields = ["sha1", "content", "language", "mimetype"]
+
+class ReleaseRefSchema(ModelSchema):
+    # NB not really optional; this is for creation of releases where a list of
+    # this model is embedded.
+    release_id: Optional[UUID]
+    target_release_id: UUID
+
+    class Meta:
+        model = m.ReleaseRef
+        fields = ["position"]
+
+
 class ReleaseSchema(ModelSchema):
     # will be created automatically if none
     work_id: Optional[UUID]
     container_id: Optional[UUID]
     extids: List[ReleaseExtIdSchema] = []
     contribs: List[ReleaseContribSchema] = []
+    abstracts: List[ReleaseAbstractSchema] = []
+
+    # NB the discrepancy between ReleaseRef and the citations field is due to
+    # the 'refs' column on the release table. In old fatcat refs were derived
+    # in different ways and stored in different places: one, a table of raw
+    # JSON. another, a table representing references. I got confused during the
+    # data migration and inlined the raw blobs while also preserving the table
+    # of parsed references. I may rename the refs column to reflect its more
+    # "raw" nature but even so, I kind of prefer exposing refs as citations.
+    citations: List[ReleaseRefSchema] = []
 
     class Meta:
         model = m.Release
@@ -266,6 +296,8 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     data = release_in.dict()
     extids = data.pop("extids")
     contribs = data.pop("contribs")
+    abstracts = data.pop("abstracts")
+    citations = data.pop("citations")
     with transaction.atomic():
         work_id = release_in.work_id
         if work_id is None:
@@ -279,6 +311,10 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
                                                            for ext_id in extids])
         m.ReleaseContrib.objects.bulk_create([m.ReleaseContrib(**c|{"release_id":r.id})
                                               for c in contribs])
+        m.ReleaseAbstract.objects.bulk_create([m.ReleaseAbstract(**a|{"release_id":r.id})
+                                              for a in abstracts])
+        m.ReleaseRef.objects.bulk_create([m.ReleaseRef(**c|{"release_id":r.id})
+                                              for c in citations])
 
     return v2api.create_response(request, "release created", status=HTTPStatus.CREATED)
 
@@ -338,6 +374,8 @@ def update_release(request, release_in: ReleaseUpdateSchema) -> HttpResponse:
     data = release_in.dict()
     extids = data.pop("extids")
     contribs = data.pop("contribs")
+    abstracts = data.pop("abstracts")
+    citations = data.pop("citations")
 
     with transaction.atomic():
         entity = None
@@ -356,6 +394,13 @@ def update_release(request, release_in: ReleaseUpdateSchema) -> HttpResponse:
         m.ReleaseContrib.objects.bulk_create([m.ReleaseExtId(**contrib|{"release_id":entity.id})
                                               for contrib in contribs])
 
+        entity.abstracts.all().delete()
+        m.ReleaseAbstract.objects.bulk_create([m.ReleaseAbstract(**a|{"release_id":entity.id})
+                                               for a in abstracts])
+        entity.citations.all().delete()
+        m.ReleaseRef.objects.bulk_create([m.ReleaseRef(**c|{"release_id":entity.id})
+                                          for c in citations])
+
     return v2api.create_response(request, "release replaced with new content", status=code)
 
 @v2api.post("/releases", auth=api_auth)
@@ -366,20 +411,26 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
     release_kwargs = []
     extids = []
     contribs = []
+    abstracts = []
+    citations = []
     with transaction.atomic():
         for rs in releases_in:
             data = rs.dict()
             extids = [ext_id|{"release_id":data["id"]} for ext_id in data.pop("extids")]
             contribs = [contrib|{"release_id":data["id"]} for contrib in data.pop("contribs")]
+            abstracts = [a|{"release_id":data["id"]} for a in data.pop("abstracts")]
+            citations = [c|{"release_id":data["id"]} for c in data.pop("citations")]
             if data.get("work_id") is None:
                 work = m.Work()
                 work.save()
-                release_kwargs["work_id"] = work.id
+                data["work_id"] = work.id
             release_kwargs.append(data)
 
         m.Release.objects.bulk_create([m.Release(**kw) for kw in release_kwargs])
         m.ReleaseExtId.objects.bulk_create([m.ReleaseExtId(**ext_id) for ext_id in extids])
         m.ReleaseContrib.objects.bulk_create([m.ReleaseContrib(**c) for c in contribs])
+        m.ReleaseAbstract.objects.bulk_create([m.ReleaseAbstract(**a) for a in abstracts])
+        m.ReleaseRef.objects.bulk_create([m.ReleaseRef(**c) for c in citations])
 
     return v2api.create_response(request, "webcaptures created", status=HTTPStatus.CREATED)
     m.Release.objects.bulk_create([m.Release(**rin.dict()) for rin in releases_in])

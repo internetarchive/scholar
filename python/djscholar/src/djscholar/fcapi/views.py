@@ -9,7 +9,6 @@ from django.shortcuts import get_object_or_404
 from ninja import NinjaAPI, Query, Schema, ModelSchema
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
-from pydantic import Field
 
 import djscholar.fcapi.models as m
 from djscholar.fcapi.fcid import fcid2uuid
@@ -19,7 +18,6 @@ COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra", "hidden_r
 v2api = NinjaAPI()
 api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 
-# TODO pagination
 # TODO release creation begets work creation
 # TODO filter hidden things
 # TODO support nested containers and works (and possibly other types) during creation/update; possibly getting
@@ -76,26 +74,43 @@ class LegacyLookup(Schema):
 
 # TODO support a map of external IDs to use when creating/updating
 # TODO support a map of contribs to use when creating/updating
-ReleaseSchema = create_schema(
-        m.Release,
-        fields=COMMON_ENTITY_FIELDS + ["title", "original_title", "subtitle", "release_type",
+class ReleaseExtIdSchema(ModelSchema):
+    # NB not really optional; this is for creation of releases where a list of
+    # this model is embedded.
+    release_id: Optional[UUID]
+
+    class Meta:
+        model = m.ReleaseExtId
+        fields = ["id_type", "id_value"]
+
+
+class ReleaseContribSchema(ModelSchema):
+    # NB not really optional; this is for creation of releases where a list of
+    # this model is embedded.
+    release_id: Optional[UUID]
+    creator_id: Optional[UUID]
+
+    class Meta:
+        model = m.ReleaseContrib
+        fields = ["raw_name", "given_name", "surname", "role", "raw_affiliation", "position",
+                  "extra"]
+
+
+class ReleaseSchema(ModelSchema):
+    # will be created automatically if none
+    work_id: Optional[UUID]
+    container_id: Optional[UUID]
+    extids: List[ReleaseExtIdSchema] = []
+    contribs: List[ReleaseContribSchema] = []
+
+    class Meta:
+        model = m.Release
+        fields = COMMON_ENTITY_FIELDS + ["title", "original_title", "subtitle", "release_type",
                                        "release_stage", "release_date", "release_year",
                                        "volume", "issue", "pages", "number", "version",
                                        "publisher", "language", "license_slug",
-                                       "withdrawn_status", "refs",],
-        custom_fields=[
-            ("work_id", UUID, Field()),
-            ("container_id", Optional[UUID], Field()),
-            ])
+                                       "withdrawn_status", "refs",]
 
-ReleaseContribSchema = create_schema(
-        m.ReleaseContrib,
-        fields=["raw_name", "given_name", "surname", "role", "raw_affiliation", "position",
-                "extra"],
-        custom_fields=[
-            ("release_id", UUID, Field()),
-            ("creator_id", Optional[UUID], Field()),
-            ])
 
 
 # TODO annoying name thing
@@ -240,14 +255,29 @@ def get_release(request, ident: UUID) -> ReleaseSchema:
 @v2api.post("/release", auth=api_auth)
 def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """Create a new release."""
-    # TODO releases without works should have works created automagically
     rs = m.Release.objects.filter(id=release_in.id)
     if len(rs) != 0:
         return v2api.create_response(request,
-                                     f"release with id {release_in.id} already exists",
-                                     status=400)
-    m.Release(**release_in.dict()).save()
-    return v2api.create_response(request, "release created", status=201)
+                                    f"release with id {release_in.id} already exists",
+                                    status=HTTPStatus.BAD_REQUEST)
+    data = release_in.dict()
+    extids = data.pop("extids")
+    contribs = data.pop("contribs")
+    with transaction.atomic():
+        work_id = release_in.work_id
+        if work_id is None:
+            work = m.Work()
+            work.save()
+            work_id = work.id
+
+        r = m.Release(**data|{"work_id":work_id})
+        r.save()
+        m.ReleaseExtId.objects.bulk_create([m.ReleaseExtId(**ext_id|{"release_id":r.id})
+                                                           for ext_id in extids])
+        m.ReleaseContrib.objects.bulk_create([m.ReleaseContrib(**c|{"release_id":r.id})
+                                              for c in contribs])
+
+    return v2api.create_response(request, "release created", status=HTTPStatus.CREATED)
 
 @v2api.get("/release/{ident}/container")
 def get_release_container(request, ident: UUID) -> ContainerSchema:
@@ -302,16 +332,26 @@ def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
     code = HTTPStatus.OK
     es = m.Release.objects.filter(id=release_in.id)
     entity = None
+    data = release_in.dict()
+    extids = data.pop("extids")
+    contribs = data.pop("contribs")
 
-    if len(es) == 0:
-        code = HTTPStatus.CREATED
-        entity = m.Release(**release_in.dict())
-    else:
-        entity = es[0]
-        for attr, value in release_in.dict().items():
-            setattr(entity, attr, value)
-
-    entity.save()
+    with transaction.atomic():
+        entity = None
+        if len(es) == 0:
+            code = HTTPStatus.CREATED
+            entity = m.Release(**data)
+        else:
+            entity = es[0]
+            for attr, value in data.items():
+                setattr(entity, attr, value)
+        entity.save()
+        entity.extids.all().delete()
+        m.ReleaseExtId.objects.bulk_create([m.ReleaseExtId(**extid|{"release_id":entity.id})
+                                            for extid in extids])
+        entity.contribs.all().delete()
+        m.ReleaseContrib.objects.bulk_create([m.ReleaseExtId(**contrib|{"release_id":entity.id})
+                                              for contrib in contribs])
 
     return v2api.create_response(request, "release replaced with new content", status=code)
 
@@ -319,7 +359,26 @@ def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
 def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpResponse:
     """Bulk create a list of releases. Functionally equivalent to calling
     POST /release repeatedly."""
-    # TODO releases without works should have works created automagically
+
+    release_kwargs = []
+    extids = []
+    contribs = []
+    with transaction.atomic():
+        for rs in releases_in:
+            data = rs.dict()
+            extids = [ext_id|{"release_id":data["id"]} for ext_id in data.pop("extids")]
+            contribs = [contrib|{"release_id":data["id"]} for contrib in data.pop("contribs")]
+            if data.get("work_id") is None:
+                work = m.Work()
+                work.save()
+                release_kwargs["work_id"] = work.id
+            release_kwargs.append(data)
+
+        m.Release.objects.bulk_create([m.Release(**kw) for kw in release_kwargs])
+        m.ReleaseExtId.objects.bulk_create([m.ReleaseExtId(**ext_id) for ext_id in extids])
+        m.ReleaseContrib.objects.bulk_create([m.ReleaseContrib(**c) for c in contribs])
+
+    return v2api.create_response(request, "webcaptures created", status=HTTPStatus.CREATED)
     m.Release.objects.bulk_create([m.Release(**rin.dict()) for rin in releases_in])
     return v2api.create_response(request, "releases created", status=HTTPStatus.CREATED)
 

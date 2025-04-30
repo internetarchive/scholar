@@ -241,12 +241,15 @@ class TestReleaseRoutes(APITest):
         self.assertEqual(len(response.data["items"][0]["urls"]), 2)
         self.assertEqual(len(response.data["items"][0]["cdx_lines"]), 4)
 
-    def test_create(self):
+    def test_create_with_work(self):
         entity = ReleaseFactory.build()
         entity.container.save()
         entity.work.save()
 
         data = v.ReleaseSchema.from_orm(entity).model_dump_json()
+        response = client.post("/release", data=data)
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
         response = client.post("/release", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
@@ -254,7 +257,33 @@ class TestReleaseRoutes(APITest):
         self.assertEqual(len(es), 1)
 
         response = client.post("/release", data=data, headers=self.auth_headers)
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+
+    def test_create_without_work(self):
+        #entity = ReleaseFactory.build()
+        # TODO
+        pass
+
+    def test_update_without_work(self):
+        # TODO
+        pass
+
+    def test_bulk_create_without_work(self):
+        # TODO
+        pass
+
+    def test_create_with_children(self):
+        # TODO
+        pass
+
+
+    def test_bulk_create_with_children(self):
+        # TODO
+        pass
+
+    def test_update_with_children(self):
+        # TODO
+        pass
 
     def test_bulk_create(self):
         rin = []

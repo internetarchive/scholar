@@ -409,7 +409,7 @@ def create_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     if len(es) != 0:
         return v2api.create_response(request,
                                      f"creator with id {creator_in.id} already exists",
-                                     status=HTTPStatus.BadRequest)
+                                     status=HTTPStatus.BAD_REQUEST)
     m.Creator(**creator_in.dict()).save()
     return v2api.create_response(request, "creator created", status=HTTPStatus.CREATED)
 
@@ -481,7 +481,7 @@ def create_file(request, file_in: FileSchema) -> HttpResponse:
     if len(es) != 0:
         return v2api.create_response(request,
                                      f"file with id {file_in.id} already exists",
-                                     status=HTTPStatus.BadRequest)
+                                     status=HTTPStatus.BAD_REQUEST)
     m.File(**file_in.dict()).save()
     return v2api.create_response(request, "file created", status=HTTPStatus.CREATED)
 
@@ -543,7 +543,7 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
     if len(es) != 0:
         return v2api.create_response(request,
                                      f"webcapture with id {webcapture_in.id} already exists",
-                                     status=HTTPStatus.BadRequest)
+                                     status=HTTPStatus.BAD_REQUEST)
     data = webcapture_in.dict()
     urls = data.pop("urls")
     cdx_lines = data.pop("cdx_lines")

@@ -1,11 +1,12 @@
 from datetime import datetime
 from http import HTTPStatus
-from typing import Callable
 from uuid import uuid4
+import random
 import zoneinfo
 
 import factory
-from faker.providers import file, internet, misc, person
+from faker import Faker
+from faker.providers import file, internet, misc, person, lorem
 from django.contrib.auth.hashers import (
     make_password,
 )
@@ -27,40 +28,44 @@ factory.Faker.add_provider(misc.Provider)
 factory.Faker.add_provider(file.Provider)
 factory.Faker.add_provider(person.Provider)
 factory.Faker.add_provider(internet.Provider)
+factory.Faker.add_provider(lorem.Provider)
 
-def lazy(generate: Callable) -> factory.LazyAttribute:
-    return factory.LazyAttribute(lambda _: generate())
+# NB factory_boy uses faker in an annoying way and it means we can't use faker
+# generators in LazyAttributes. this is a dumb hack for that.
+realfaker = Faker()
+realfaker.add_provider(ExtIDProvider)
+
 
 class ContainerFactory(DjangoModelFactory):
     issnl = factory.Faker("issn")
     issne = factory.Faker("issn")
     issnp = factory.Faker("issn")
     wikidata_qid = factory.Faker("wikidata_qid")
-    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    updated = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
 
     class Meta:
         model = m.Container
 
 
 class WorkFactory(DjangoModelFactory):
-    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    updated = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
 
     class Meta:
         model = m.Work
 
 
 class ReleaseExtIdFactory(DjangoModelFactory):
-    id_value = factory.LazyAttribute(lambda s: factory.Faker(s.id_type))
+    id_value = factory.LazyAttribute(lambda s: getattr(realfaker, s.id_type)())
 
     class Meta:
         model = m.ReleaseExtId
 
 
 class ReleaseFactory(DjangoModelFactory):
-    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    updated = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     work = factory.SubFactory(WorkFactory)
     container = factory.SubFactory(ContainerFactory)
 
@@ -69,8 +74,8 @@ class ReleaseFactory(DjangoModelFactory):
 
 
 class FileFactory(DjangoModelFactory):
-    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    updated = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
 
     md5 = factory.Faker("md5")
     sha1 = factory.Faker("sha1")
@@ -82,8 +87,8 @@ class FileFactory(DjangoModelFactory):
 
 
 class CreatorFactory(DjangoModelFactory):
-    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    updated = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     given_name = factory.Faker("first_name")
     surname = factory.Faker("last_name")
     display_name = factory.LazyAttribute(lambda c: f"{c.given_name} {c.surname}")
@@ -99,9 +104,9 @@ class ReleaseContribFactory(DjangoModelFactory):
 
 
 class WebcaptureFactory(DjangoModelFactory):
-    updated = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    created = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
-    captured = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    updated = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    created = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    captured = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     original_url = factory.Faker("uri")
     release = factory.SubFactory(ReleaseFactory)
 
@@ -113,7 +118,7 @@ class WebcaptureCDXFactory(DjangoModelFactory):
     url = factory.Faker("uri")
     surt = factory.LazyAttribute(lambda c: surt.surt(c.url))
     mimetype = factory.Faker("mime_type")
-    captured = lazy(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
+    captured = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     sha1 = factory.Faker("sha1")
     sha256 = factory.Faker("sha256")
     status_code = HTTPStatus.OK

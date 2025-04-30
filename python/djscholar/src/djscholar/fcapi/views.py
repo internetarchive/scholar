@@ -653,9 +653,11 @@ def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
                 setattr(entity, attr, value)
         entity.save()
         entity.urls.all().delete()
-        entity.urls.set([m.WebcaptureURL(**url|{"webcapture_id": entity.id}) for url in urls], clear=True, bulk=False)
+        m.WebcaptureURL.objects.bulk_create([m.WebcaptureURL(**url|{"webcapture_id": entity.id})
+                                             for url in urls])
         entity.cdx_lines.all().delete()
-        entity.cdx_lines.set([m.WebcaptureCDX(**line|{"webcapture_id":entity.id}) for line in cdx_lines], clear=True, bulk=False)
+        m.WebcaptureCDX.objects.bulk_create([m.WebcaptureCDX(**line|{"webcapture_id":entity.id})
+                                             for line in cdx_lines])
 
     return v2api.create_response(request, "webcapture replaced with new content", status=code)
 

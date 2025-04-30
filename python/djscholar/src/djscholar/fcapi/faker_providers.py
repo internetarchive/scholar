@@ -77,7 +77,7 @@ class ExtIDProvider(BaseProvider):
         # Generate a random number with the specified number of digits
         # Make sure the first digit isn't 0 to maintain consistent length
         first_digit = self.random_int(1, 9)
-        rest_digits = "".join(self.random_digit() for _ in range(digit_length - 1))
+        rest_digits = "".join(str(self.random_digit()) for _ in range(digit_length - 1))
 
         return f"PMC{first_digit}{rest_digits}"
 
@@ -189,7 +189,7 @@ class ExtIDProvider(BaseProvider):
 
         return f"{subject_area}/{date_part}{number_part}"
 
-    def dblp_id(self) -> str:
+    def dblp(self) -> str:
         """
         Generate a random DBLP identifier.
 
@@ -218,9 +218,7 @@ class ExtIDProvider(BaseProvider):
         author = author.capitalize()
 
         # Generate year (typically 2 digits)
-        # Use years between 80 (1980) and current year's last 2 digits
-        current_year = datetime.now().year % 100
-        year = str(self.random_int(80, current_year)).zfill(2)
+        year = str(self.random_int(25)).zfill(2)
 
         # Sometimes an additional letter is added for disambiguation
         add_letter = self.random_element([True, False])
@@ -228,7 +226,7 @@ class ExtIDProvider(BaseProvider):
 
         return f"{pub_type}/{venue}/{author}{year}{letter_suffix}"
 
-    def doaj_id(self) -> str:
+    def doaj(self) -> str:
         """
         Generate a random DOAJ (Directory of Open Access Journals) identifier.
         """

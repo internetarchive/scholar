@@ -1,6 +1,7 @@
 from datetime import datetime
 from http import HTTPStatus
 from typing import Callable
+from uuid import uuid4
 import zoneinfo
 
 import factory
@@ -142,7 +143,64 @@ class APIKeyFactory(DjangoModelFactory):
 
 # TODO test that authed routes are in fact enforcing auth
 
-class APITest(TestCase):
+
+class EntityCRUDTestCase(TestCase):
+    base = "" # e.g. /release
+
+    # NB I wanted to ensure auth on the CUD endpoints and thought it would be
+    # nice to have that in a parent class. pytest, of course, finds the parent
+    # class's tests. I'm being gross and just letting the parent functions run
+    # as tests which is not what I want at all but I'm punting on it for now.
+
+    @property
+    def lookup(self):
+        return f"{self.base}/lookup"
+
+    @property
+    def create(self):
+        return self.base
+
+    @property
+    def bulk_create(self):
+        # NB I hate this
+        return self.base + "s"
+
+    @property
+    def get(self):
+        return self.base
+
+    @property
+    def update(self):
+        return self.base
+
+    @property
+    def delete(self):
+        return self.base
+
+    def test_create_auth(self):
+        if self.base == "":
+            return
+        response = client.post(self.create)
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
+    def test_bulk_create_auth(self):
+        if self.base == "":
+            return
+        response = client.post(self.bulk_create)
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
+    def test_update_auth(self):
+        if self.base == "":
+            return
+        response = client.put(self.update)
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
+    def test_delete_auth(self):
+        if self.base == "":
+            return
+        response = client.delete(f"{self.delete}/{uuid4()}")
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
     def setUp(self):
         user = User.objects.create_user(username="test", password="test")
         prefix = "prefix"
@@ -152,7 +210,9 @@ class APITest(TestCase):
         self.auth_headers = {"X-API-Key": f"{prefix}.{key}"}
 
 
-class TestReleaseRoutes(APITest):
+class TestReleaseRoutes(EntityCRUDTestCase):
+    base = "/release"
+
     def setUp(self):
         super().setUp()
         self.entity = ReleaseFactory.create()
@@ -162,22 +222,22 @@ class TestReleaseRoutes(APITest):
 
     def test_lookup(self):
         doi = "10.1111/xxxxxx.111.1111"
-        response = client.get(f"/release/lookup?id_type=doi&id_value={doi}")
+        response = client.get(f"{self.lookup}?id_type=doi&id_value={doi}")
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
         for rei in self.reis:
             response = client.get(
-                    f"/release/lookup?id_type={rei.id_type}&id_value={rei.id_value}")
+                    f"{self.lookup}?id_type={rei.id_type}&id_value={rei.id_value}")
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.data["id"], str(self.entity.id))
 
         legacy_ident = uuid2fcid(self.entity.id)
-        response = client.get(f"/release/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        response = client.get(f"{self.lookup}?id_type=legacy_ident&id_value={legacy_ident}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get(self):
-        response = client.get(f"/release/{self.entity.id}")
+        response = client.get(f"{self.get}/{self.entity.id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
@@ -186,15 +246,15 @@ class TestReleaseRoutes(APITest):
         no_container.container = None
         no_container.work.save()
         no_container.save()
-        response = client.get(f"/release/{no_container.id}/container")
+        response = client.get(f"{self.get}/{no_container.id}/container")
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-        response = client.get(f"/release/{self.entity.id}/container")
+        response = client.get(f"{self.get}/{self.entity.id}/container")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.container.id))
 
     def test_get_work(self):
-        response = client.get(f"/release/{self.entity.id}/container")
+        response = client.get(f"{self.get}/{self.entity.id}/container")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.container.id))
 
@@ -205,7 +265,7 @@ class TestReleaseRoutes(APITest):
             e.releases.set([self.entity])
             es.append(e)
 
-        response = client.get(f"/release/{self.entity.id}/files")
+        response = client.get(f"{self.get}/{self.entity.id}/files")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], len(es))
         self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(e.id) for e in es]))
@@ -220,7 +280,7 @@ class TestReleaseRoutes(APITest):
             c.save()
             contribs.append(c)
 
-        response = client.get(f"/release/{self.entity.id}/contribs")
+        response = client.get(f"{self.get}/{self.entity.id}/contribs")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], len(contribs))
         self.assertSetEqual(set([d['raw_name'] for d in response.data["items"]]),
@@ -234,7 +294,7 @@ class TestReleaseRoutes(APITest):
             wc.cdx_lines = WebcaptureCDXFactory.create_batch(4, webcapture_id=wc.id)
             webcaptures.append(wc)
 
-        response = client.get(f"/release/{self.entity.id}/webcaptures")
+        response = client.get(f"{self.get}/{self.entity.id}/webcaptures")
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         self.assertEqual(response.data["count"], 4)
@@ -247,10 +307,8 @@ class TestReleaseRoutes(APITest):
         entity.work.save()
 
         data = v.ReleaseSchema.from_orm(entity).model_dump_json()
-        response = client.post("/release", data=data)
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
-        response = client.post("/release", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         es = m.Release.objects.filter(id=entity.id)
@@ -294,7 +352,7 @@ class TestReleaseRoutes(APITest):
             rin.append(v.ReleaseSchema.from_orm(r))
         data = "["+",".join([r.model_dump_json() for r in rin])+"]"
 
-        response = client.post("/releases", data=data, headers=self.auth_headers)
+        response = client.post(self.bulk_create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         for r in rin:
@@ -306,7 +364,7 @@ class TestReleaseRoutes(APITest):
         entity.work.save()
         entity.container.save()
         data = v.ReleaseSchema.from_orm(entity).model_dump_json()
-        response = client.put("/release", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
         es = m.Release.objects.filter(id=entity.id)
         self.assertEqual(len(es), 1)
@@ -314,7 +372,7 @@ class TestReleaseRoutes(APITest):
         new_title = "updated title"
         self.entity.title = new_title
         data = v.ReleaseSchema.from_orm(self.entity).model_dump_json()
-        response = client.put("/release", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         es = m.Release.objects.filter(id=self.entity.id)
@@ -323,33 +381,33 @@ class TestReleaseRoutes(APITest):
 
     def test_delete(self):
         unsaved = ReleaseFactory.build()
-        response = client.delete(f"/release/{unsaved.id}")
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
-        response = client.delete(f"/release/{unsaved.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{unsaved.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-        response = client.delete(f"/release/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
-        response = client.delete(f"/release/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
 
-class TestContainerRoutes(APITest):
+class TestContainerRoutes(EntityCRUDTestCase):
+    base = "/container"
+
     def setUp(self):
         super().setUp()
         self.entity = ContainerFactory.create()
 
     def test_get(self):
-        response = client.get(f"/container/{self.entity.id}")
+        response = client.get(f"{self.get}/{self.entity.id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_lookup(self):
         issnl = "1111-2222"
-        response = client.get(f"/container/lookup?id_type=issnl&id_value={issnl}")
+        response = client.get(f"{self.lookup}?id_type=issnl&id_value={issnl}")
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
         keys = [("wikidata_qid", self.entity.wikidata_qid),
@@ -359,18 +417,20 @@ class TestContainerRoutes(APITest):
                 ]
 
         for id_type, id_value in keys:
-            response = client.get(f"/container/lookup?id_type={id_type}&id_value={id_value}")
+            response = client.get(
+                    f"{self.lookup}?id_type={id_type}&id_value={id_value}")
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.data['id'], str(self.entity.id))
 
         legacy_ident = uuid2fcid(self.entity.id)
-        response = client.get(f"/container/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        response = client.get(
+                f"{self.lookup}?id_type=legacy_ident&id_value={legacy_ident}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get_releases(self):
         c = ContainerFactory.create()
-        response = client.get(f"/container/{c.id}/releases")
+        response = client.get(f"{self.get}/{c.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], 0)
 
@@ -382,7 +442,7 @@ class TestContainerRoutes(APITest):
             r.save()
             rs.append(r)
 
-        response = client.get(f"/container/{self.entity.id}/releases")
+        response = client.get(f"{self.get}/{self.entity.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], len(rs))
         self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
@@ -390,20 +450,20 @@ class TestContainerRoutes(APITest):
     def test_create(self):
         c = ContainerFactory.build()
         data = v.ContainerSchema.from_orm(c).model_dump_json()
-        response = client.post("/container", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         cs = m.Container.objects.filter(id=c.id)
         self.assertEqual(len(cs), 1)
 
-        response = client.post("/container", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_bulk_create(self):
         cs = [v.ContainerSchema.from_orm(ContainerFactory.build()) for _ in range(100)]
         data = "["+",".join([c.model_dump_json() for c in cs])+"]"
 
-        response = client.post("/containers", data=data, headers=self.auth_headers)
+        response = client.post(self.bulk_create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         for c in cs:
@@ -413,7 +473,7 @@ class TestContainerRoutes(APITest):
     def test_update(self):
         entity = ContainerFactory.build()
         data = v.ContainerSchema.from_orm(entity).model_dump_json()
-        response = client.put("/container", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
         cs = m.Container.objects.filter(id=entity.id)
         self.assertEqual(len(cs), 1)
@@ -421,7 +481,7 @@ class TestContainerRoutes(APITest):
         new_name = "updated name"
         self.entity.name = new_name
         data = v.ContainerSchema.from_orm(self.entity).model_dump_json()
-        response = client.put("/container", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         cs = m.Container.objects.filter(id=self.entity.id)
@@ -431,33 +491,42 @@ class TestContainerRoutes(APITest):
 
     def test_delete(self):
         unsaved = ContainerFactory.build()
-        response = client.delete(f"/container/{unsaved.id}")
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
-        response = client.delete(f"/container/{unsaved.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{unsaved.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-        response = client.delete(f"/container/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
-        response = client.delete(f"/container/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
 
-class TestWorkRoutes(APITest):
+class TestWorkRoutes(EntityCRUDTestCase):
+    base = "/work"
+
     def setUp(self):
         super().setUp()
         self.entity = WorkFactory.create()
 
+    def test_create_auth(self):
+        # works can only be created via release creation so there's no route for this
+        pass
+
+    def test_bulk_create_auth(self):
+        # works can only be created via release creation so there's no route for this
+        pass
+
     def test_get(self):
-        response = client.get(f"/work/{self.entity.id}")
+        response = client.get(f"{self.get}/{self.entity.id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_lookup(self):
         legacy_ident = uuid2fcid(self.entity.id)
-        response = client.get(f"/work/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        response = client.get(
+                f"{self.lookup}?id_type=legacy_ident&id_value={legacy_ident}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
@@ -470,34 +539,29 @@ class TestWorkRoutes(APITest):
             r.save()
             rs.append(r)
 
-        response = client.get(f"/work/{self.entity.id}/releases")
+        response = client.get(f"{self.get}/{self.entity.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertSetEqual(set([r['id'] for r in response.data["items"]]),
                             set([str(r.id) for r in rs]))
 
     def test_delete(self):
         unsaved = WorkFactory.build()
-        response = client.delete(f"/work/{unsaved.id}")
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
-        response = client.delete(f"/work/{unsaved.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{unsaved.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-        response = client.delete(f"/work/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
-        response = client.delete(f"/work/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
     def test_update(self):
         entity = WorkFactory.build()
         data = v.WorkSchema.from_orm(entity).model_dump_json()
 
-        response = client.put("/work", data=data)
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
-
-        response = client.put("/work", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
         es = m.Work.objects.filter(id=entity.id)
         self.assertEqual(len(es), 1)
@@ -507,7 +571,7 @@ class TestWorkRoutes(APITest):
         hidden_when = datetime.now(zoneinfo.ZoneInfo("UTC"))
         self.entity.hidden_when = hidden_when
         data = v.WorkSchema.from_orm(self.entity).model_dump_json()
-        response = client.put("/work", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         es = m.Work.objects.filter(id=self.entity.id)
@@ -516,19 +580,21 @@ class TestWorkRoutes(APITest):
         self.assertEqual(es[0].hidden_when, hidden_when)
 
 
-class TestCreatorRoutes(APITest):
+class TestCreatorRoutes(EntityCRUDTestCase):
+    base = "/creator"
+
     def setUp(self):
         super().setUp()
         self.entity = CreatorFactory.create()
 
     def test_get(self):
-        response = client.get(f"/creator/{self.entity.id}")
+        response = client.get(f"{self.get}/{self.entity.id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_lookup(self):
         orcid = "abc123"
-        response = client.get(f"/creator/lookup?id_type=orcid&id_value={orcid}")
+        response = client.get(f"{self.lookup}?id_type=orcid&id_value={orcid}")
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
         self.entity.orcid = "TODO make an orcid generator"
@@ -538,18 +604,20 @@ class TestCreatorRoutes(APITest):
                 ]
 
         for id_type, id_value in keys:
-            response = client.get(f"/creator/lookup?id_type={id_type}&id_value={id_value}")
+            response = client.get(
+                    f"{self.lookup}?id_type={id_type}&id_value={id_value}")
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.data['id'], str(self.entity.id))
 
         legacy_ident = uuid2fcid(self.entity.id)
-        response = client.get(f"/creator/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        response = client.get(
+                f"{self.lookup}?id_type=legacy_ident&id_value={legacy_ident}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get_releases(self):
         c = CreatorFactory.create()
-        response = client.get(f"/creator/{c.id}/releases")
+        response = client.get(f"{self.get}/{c.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], 0)
 
@@ -565,7 +633,7 @@ class TestCreatorRoutes(APITest):
             rc.save()
             rs.append(r)
 
-        response = client.get(f"/creator/{self.entity.id}/releases")
+        response = client.get(f"{self.get}/{self.entity.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], len(rs))
         self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
@@ -574,23 +642,20 @@ class TestCreatorRoutes(APITest):
         c = CreatorFactory.build()
         data = v.CreatorSchema.from_orm(c).model_dump_json()
 
-        response = client.post("/creator", data=data)
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
-
-        response = client.post("/creator", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         cs = m.Creator.objects.filter(id=c.id)
         self.assertEqual(len(cs), 1)
 
-        response = client.post("/creator", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_bulk_create(self):
         cs = [v.CreatorSchema.from_orm(CreatorFactory.build()) for _ in range(100)]
         data = "["+",".join([c.model_dump_json() for c in cs])+"]"
 
-        response = client.post("/creators", data=data, headers=self.auth_headers)
+        response = client.post(self.bulk_create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         for c in cs:
@@ -601,10 +666,7 @@ class TestCreatorRoutes(APITest):
         entity = CreatorFactory.build()
         data = v.CreatorSchema.from_orm(entity).model_dump_json()
 
-        response = client.put("/creator", data=data)
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
-
-        response = client.put("/creator", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
         cs = m.Creator.objects.filter(id=entity.id)
         self.assertEqual(len(cs), 1)
@@ -612,7 +674,7 @@ class TestCreatorRoutes(APITest):
         new_surname = "updated name"
         self.entity.surname = new_surname
         data = v.CreatorSchema.from_orm(self.entity).model_dump_json()
-        response = client.put("/creator", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         cs = m.Creator.objects.filter(id=self.entity.id)
@@ -621,32 +683,32 @@ class TestCreatorRoutes(APITest):
 
     def test_delete(self):
         unsaved = CreatorFactory.build()
-        response = client.delete(f"/creator/{unsaved.id}")
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
-        response = client.delete(f"/creator/{unsaved.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{unsaved.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-        response = client.delete(f"/creator/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
-        response = client.delete(f"/creator/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-class TestFileRoutes(APITest):
+class TestFileRoutes(EntityCRUDTestCase):
+    base = "/file"
+
     def setUp(self):
         super().setUp()
         self.entity = FileFactory.create()
 
     def test_get(self):
-        response = client.get(f"/file/{self.entity.id}")
+        response = client.get(f"{self.get}/{self.entity.id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_lookup(self):
         sha1 = "abc123"
-        response = client.get(f"/file/lookup?id_type=sha1&id_value={sha1}")
+        response = client.get(f"{self.lookup}?id_type=sha1&id_value={sha1}")
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
         keys = [("sha1", self.entity.sha1),
@@ -655,18 +717,20 @@ class TestFileRoutes(APITest):
                 ]
 
         for id_type, id_value in keys:
-            response = client.get(f"/file/lookup?id_type={id_type}&id_value={id_value}")
+            response = client.get(
+                    f"{self.lookup}?id_type={id_type}&id_value={id_value}")
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.data['id'], str(self.entity.id))
 
         legacy_ident = uuid2fcid(self.entity.id)
-        response = client.get(f"/file/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        response = client.get(
+                f"/file/lookup?id_type=legacy_ident&id_value={legacy_ident}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get_releases(self):
         f = FileFactory.create()
-        response = client.get(f"/file/{f.id}/releases")
+        response = client.get(f"{self.get}/{f.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], 0)
 
@@ -680,7 +744,7 @@ class TestFileRoutes(APITest):
             rs.append(r)
 
         self.entity.releases.set(rs)
-        response = client.get(f"/file/{self.entity.id}/releases")
+        response = client.get(f"{self.get}/{self.entity.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], len(rs))
         self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
@@ -689,23 +753,20 @@ class TestFileRoutes(APITest):
         c = FileFactory.build()
         data = v.FileSchema.from_orm(c).model_dump_json()
 
-        response = client.post("/file", data=data)
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
-
-        response = client.post("/file", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         cs = m.File.objects.filter(id=c.id)
         self.assertEqual(len(cs), 1)
 
-        response = client.post("/file", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_bulk_create(self):
         es = [v.FileSchema.from_orm(FileFactory.build()) for _ in range(100)]
         data = "["+",".join([e.model_dump_json() for e in es])+"]"
 
-        response = client.post("/files", data=data, headers=self.auth_headers)
+        response = client.post(self.bulk_create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         for f in es:
@@ -715,10 +776,7 @@ class TestFileRoutes(APITest):
         entity = FileFactory.build()
         data = v.FileSchema.from_orm(entity).model_dump_json()
 
-        response = client.put("/file", data=data)
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
-
-        response = client.put("/file", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         self.assertEqual(m.File.objects.filter(id=entity.id).count(), 1)
@@ -726,7 +784,7 @@ class TestFileRoutes(APITest):
         new_size = 100
         self.entity.size_bytes = new_size
         data = v.FileSchema.from_orm(self.entity).model_dump_json()
-        response = client.put("/file", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         es = m.File.objects.filter(id=self.entity.id)
@@ -735,20 +793,23 @@ class TestFileRoutes(APITest):
 
     def test_delete(self):
         unsaved = FileFactory.build()
-        response = client.delete(f"/file/{unsaved.id}")
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
 
-        response = client.delete(f"/file/{unsaved.id}", headers=self.auth_headers)
+        response = client.delete(
+                f"{self.delete}/{unsaved.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-        response = client.delete(f"/file/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(
+                f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
-        response = client.delete(f"/file/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(
+                f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
-class TestWebcaptureRoutes(APITest):
+class TestWebcaptureRoutes(EntityCRUDTestCase):
+    base = "/webcapture"
+
     def setUp(self):
         super().setUp()
         self.entity = WebcaptureFactory.create()
@@ -756,7 +817,7 @@ class TestWebcaptureRoutes(APITest):
         WebcaptureURLFactory.create_batch(4, webcapture_id=self.entity.id)
 
     def test_get(self):
-        response = client.get(f"/webcapture/{self.entity.id}")
+        response = client.get(f"{self.get}/{self.entity.id}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
         self.assertEqual(len(response.data["urls"]), 4)
@@ -770,10 +831,7 @@ class TestWebcaptureRoutes(APITest):
 
         data = wcs.model_dump_json(by_alias=True)
 
-        response = client.post("/webcapture", data=data)
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
-
-        response = client.post("/webcapture", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         es = m.Webcapture.objects.filter(id=wc.id)
@@ -782,7 +840,7 @@ class TestWebcaptureRoutes(APITest):
         self.assertEqual(len(es[0].urls.all()), len(wcs.urls))
         self.assertEqual(len(es[0].cdx_lines.all()), len(wcs.cdx_lines))
 
-        response = client.post("/webcapture", data=data, headers=self.auth_headers)
+        response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_bulk_create(self):
@@ -794,7 +852,7 @@ class TestWebcaptureRoutes(APITest):
             webcaptures.append(wc)
         data = "["+",".join([wc.model_dump_json() for wc in webcaptures])+"]"
 
-        response = client.post("/webcaptures", data=data, headers=self.auth_headers)
+        response = client.post(self.bulk_create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         for wc in webcaptures:
@@ -802,12 +860,13 @@ class TestWebcaptureRoutes(APITest):
 
     def test_lookup(self):
         legacy_ident = uuid2fcid(self.entity.id)
-        response = client.get(f"/webcapture/lookup?id_type=legacy_ident&id_value={legacy_ident}")
+        response = client.get(
+                f"{self.lookup}?id_type=legacy_ident&id_value={legacy_ident}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 
     def test_get_release(self):
-        response = client.get(f"/webcapture/{self.entity.id}/release")
+        response = client.get(f"{self.get}/{self.entity.id}/release")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.release_id))
 
@@ -819,10 +878,7 @@ class TestWebcaptureRoutes(APITest):
 
         data = wcs.model_dump_json()
 
-        response = client.put("/webcapture", data=data)
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
-
-        response = client.put("/webcapture", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
         self.assertEqual(m.Webcapture.objects.filter(id=wc.id).count(), 1)
@@ -838,7 +894,7 @@ class TestWebcaptureRoutes(APITest):
         data = wcs.model_dump_json()
         cdx_line_count = m.WebcaptureCDX.objects.all().count()
         url_count = m.WebcaptureURL.objects.all().count()
-        response = client.put("/webcapture", data=data, headers=self.auth_headers)
+        response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
 
@@ -851,10 +907,7 @@ class TestWebcaptureRoutes(APITest):
         self.assertEqual(url_count-2, m.WebcaptureURL.objects.all().count())
 
     def test_delete(self):
-        response = client.delete(f"/webcapture/{self.entity.id}")
-        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
-
-        response = client.delete(f"/webcapture/{self.entity.id}", headers=self.auth_headers)
+        response = client.delete(f"{self.delete}/{self.entity.id}", headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["id"], str(self.entity.id))
 

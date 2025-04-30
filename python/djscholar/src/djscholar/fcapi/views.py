@@ -595,6 +595,7 @@ def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
         entity.save()
         entity.urls.all().delete()
         entity.urls.set([m.WebcaptureURL(**url|{"webcapture_id": entity.id}) for url in urls], clear=True, bulk=False)
+        entity.cdx_lines.all().delete()
         entity.cdx_lines.set([m.WebcaptureCDX(**line|{"webcapture_id":entity.id}) for line in cdx_lines], clear=True, bulk=False)
 
     return v2api.create_response(request, "webcapture replaced with new content", status=code)

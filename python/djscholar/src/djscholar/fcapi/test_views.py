@@ -803,14 +803,23 @@ class TestWebcaptureRoutes(APITest):
 
         wcs = v.WebcaptureSchema.from_orm(self.entity)
         wcs.urls = [v.WebcaptureURLSchema.from_orm(url) for url in WebcaptureURLFactory.build_batch(2)]
+        wcs.cdx_lines = [v.WebcaptureCDXSchema.from_orm(line)
+                         for line in WebcaptureCDXFactory.build_batch(2)]
+
         data = wcs.model_dump_json()
+        cdx_line_count = m.WebcaptureCDX.objects.all().count()
+        url_count = m.WebcaptureURL.objects.all().count()
         response = client.put("/webcapture", data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
+
 
         es = m.Webcapture.objects.filter(id=self.entity.id)
         self.assertEqual(len(es), 1)
         self.assertEqual(es[0].hidden_reason, new_reason)
         self.assertEqual(len(es[0].urls.all()), len(wcs.urls))
+        self.assertEqual(len(es[0].urls.all()), len(wcs.cdx_lines))
+        self.assertEqual(cdx_line_count-8, m.WebcaptureCDX.objects.all().count())
+        self.assertEqual(url_count-2, m.WebcaptureURL.objects.all().count())
 
     def test_delete(self):
         response = client.delete(f"/webcapture/{self.entity.id}")

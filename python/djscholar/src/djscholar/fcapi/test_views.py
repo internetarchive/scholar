@@ -1,5 +1,6 @@
 from datetime import datetime
 from http import HTTPStatus
+from urllib.parse import quote_plus
 from uuid import uuid4
 import random
 import zoneinfo
@@ -246,8 +247,9 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
 
         for rei in self.reis:
+            v = quote_plus(rei.id_value)
             response = client.get(
-                    f"{self.lookup}?id_type={rei.id_type}&id_value={rei.id_value}")
+                    f"{self.lookup}?id_type={rei.id_type}&id_value={v}")
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.data["id"], str(self.entity.id))
 

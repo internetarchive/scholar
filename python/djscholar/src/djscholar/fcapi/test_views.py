@@ -421,19 +421,54 @@ class TestReleaseRoutes(EntityCRUDTestCase):
                 set([a.sha1 for a in abstracts]))
 
     def test_create_with_children(self):
-        # TODO
-        # ext ids, contribs, abstracts, citations
         r = ReleaseFactory.build()
         r.work.save()
         r.container.save()
 
-        #ReleaseExtIdFactory.create(release=r, id_type="doi")
-        #ReleaseExtIdFactory.create(release=r, id_type="pmcid")
-        #ReleaseContribFactory.create_batch(4, release=r)
-        #ReleaseAbstractFactory.create_batch(4, release=r)
-        #for _ in range(4):
-        #    tr = ReleaseFactory.create()
-        #    ReleaseRefFactory.create(release=r, target_release=tr)
+        extids = []
+        extids.append(ReleaseExtIdFactory.build(id_type="doi"))
+        extids.append(ReleaseExtIdFactory.build(id_type="pmcid"))
+        contribs = ReleaseContribFactory.build_batch(4)
+        abstracts = ReleaseAbstractFactory.build_batch(4)
+        citations = []
+        for _ in range(4):
+            tr = ReleaseFactory.create()
+            citations.append(ReleaseRefFactory.build(target_release=tr))
+
+        rschema = v.ReleaseSchema.from_orm(r)
+
+        rschema.extids = [v.ReleaseExtIdSchema.from_orm(e) for e in extids]
+        rschema.contribs = [v.ReleaseContribSchema.from_orm(c) for c in contribs]
+        rschema.abstracts = [v.ReleaseAbstractSchema.from_orm(a) for a in abstracts]
+        rschema.citations = [v.ReleaseRefSchema.from_orm(c) for c in citations]
+
+        data = rschema.model_dump_json()
+
+        response = client.post(self.create, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+
+        response = client.get(f"{self.get}/{r.id}")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+        self.assertEqual(len(response.data["extids"]), len(extids))
+        self.assertSetEqual(
+                set([(e["id_type"], e["id_value"]) for e in response.data["extids"]]),
+                set([(e.id_type, e.id_value) for e in extids]))
+
+        self.assertEqual(len(response.data["contribs"]), len(contribs))
+        self.assertSetEqual(
+                set([c["raw_name"] for c in response.data["contribs"]]),
+                set([c.raw_name for c in contribs]))
+
+        self.assertEqual(len(response.data["citations"]), len(citations))
+        self.assertSetEqual(
+                set([c["target_release_id"] for c in response.data["citations"]]),
+                set([str(c.target_release_id) for c in citations]))
+
+        self.assertEqual(len(response.data["abstracts"]), len(abstracts))
+        self.assertSetEqual(
+                set([a["sha1"] for a in response.data["abstracts"]]),
+                set([a.sha1 for a in abstracts]))
 
     def test_bulk_create_with_children(self):
         # TODO

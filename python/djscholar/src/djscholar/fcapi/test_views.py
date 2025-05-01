@@ -406,8 +406,19 @@ class TestReleaseRoutes(EntityCRUDTestCase):
                 set([(e.id_type, e.id_value) for e in extids]))
 
         self.assertEqual(len(response.data["contribs"]), len(contribs))
+        self.assertSetEqual(
+                set([c["raw_name"] for c in response.data["contribs"]]),
+                set([c.raw_name for c in contribs]))
+
         self.assertEqual(len(response.data["citations"]), len(citations))
+        self.assertSetEqual(
+                set([c["target_release_id"] for c in response.data["citations"]]),
+                set([str(c.target_release_id) for c in citations]))
+
         self.assertEqual(len(response.data["abstracts"]), len(abstracts))
+        self.assertSetEqual(
+                set([a["sha1"] for a in response.data["abstracts"]]),
+                set([a.sha1 for a in abstracts]))
 
     def test_create_with_children(self):
         # TODO

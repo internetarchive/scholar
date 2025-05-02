@@ -162,9 +162,6 @@ class APIKeyFactory(DjangoModelFactory):
         model = APIKey
 
 
-# TODO test that authed routes are in fact enforcing auth
-
-
 class EntityCRUDTestCase(TestCase):
     base = "" # e.g. /release
 
@@ -352,16 +349,32 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         self.assertTrue(r.work is not None)
 
     def test_update_without_work(self):
-        entity = ReleaseFactory.create()
+        entity = ReleaseFactory.build()
         entity.container.save()
         entity.work.save()
+        entity.save()
 
+        rschema = v.ReleaseSchema.from_orm(entity)
+        rschema.work_id = None
+
+        data = rschema.model_dump_json()
+
+        response = client.put(self.update, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_CONTENT)
+
+    def test_upsert_without_work(self):
+        entity = ReleaseFactory.build()
+        entity.container.save()
         entity.work = None
 
         data = v.ReleaseSchema.from_orm(entity).model_dump_json()
 
         response = client.put(self.update, data=data, headers=self.auth_headers)
-        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_CONTENT)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+
+        r = m.Release.objects.filter(id=entity.id)[0]
+        self.assertTrue(r.work is not None)
+
 
     def test_bulk_create_without_work(self):
         rin = []
@@ -422,7 +435,7 @@ class TestReleaseRoutes(EntityCRUDTestCase):
 
     def test_create_with_children(self):
         r = ReleaseFactory.build()
-        r.work.save()
+        r.work = None
         r.container.save()
 
         extids = []
@@ -471,12 +484,163 @@ class TestReleaseRoutes(EntityCRUDTestCase):
                 set([a.sha1 for a in abstracts]))
 
     def test_bulk_create_with_children(self):
-        # TODO
-        pass
+        rschemas = []
+        for _ in range(10):
+            r = ReleaseFactory.build()
+            r.work.save()
+            r.container.save()
+
+            extids = []
+            extids.append(ReleaseExtIdFactory.build(id_type="doi"))
+            extids.append(ReleaseExtIdFactory.build(id_type="pmcid"))
+            contribs = ReleaseContribFactory.build_batch(4)
+            abstracts = ReleaseAbstractFactory.build_batch(4)
+            citations = []
+            for _ in range(4):
+                tr = ReleaseFactory.create()
+                citations.append(ReleaseRefFactory.build(target_release=tr))
+
+            rschema = v.ReleaseSchema.from_orm(r)
+
+            rschema.extids = [v.ReleaseExtIdSchema.from_orm(e) for e in extids]
+            rschema.contribs = [v.ReleaseContribSchema.from_orm(c) for c in contribs]
+            rschema.abstracts = [v.ReleaseAbstractSchema.from_orm(a) for a in abstracts]
+            rschema.citations = [v.ReleaseRefSchema.from_orm(c) for c in citations]
+
+        rschemas.append(rschema)
+        data = "["+",".join([r.model_dump_json() for r in rschemas])+"]"
+
+        response = client.post(self.bulk_create, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+
+        for r in rschemas:
+            response = client.get(f"{self.get}/{r.id}")
+            self.assertEqual(response.status_code, HTTPStatus.OK)
+
+            self.assertEqual(len(response.data["extids"]), len(r.extids))
+            self.assertSetEqual(
+                    set([(e["id_type"], e["id_value"]) for e in response.data["extids"]]),
+                    set([(e.id_type, e.id_value) for e in r.extids]))
+
+            self.assertEqual(len(response.data["contribs"]), len(r.contribs))
+            self.assertSetEqual(
+                    set([c["raw_name"] for c in response.data["contribs"]]),
+                    set([c.raw_name for c in r.contribs]))
+
+            self.assertEqual(len(response.data["citations"]), len(r.citations))
+            self.assertSetEqual(
+                    set([c["target_release_id"] for c in response.data["citations"]]),
+                    set([str(c.target_release_id) for c in r.citations]))
+
+            self.assertEqual(len(response.data["abstracts"]), len(r.abstracts))
+            self.assertSetEqual(
+                    set([a["sha1"] for a in response.data["abstracts"]]),
+                    set([a.sha1 for a in r.abstracts]))
 
     def test_update_with_children(self):
-        # TODO
-        pass
+        r = ReleaseFactory.create()
+
+        extids = []
+        extids.append(ReleaseExtIdFactory.create(release=r, id_type="doi"))
+        extids.append(ReleaseExtIdFactory.create(release=r, id_type="pmcid"))
+        contribs = ReleaseContribFactory.create_batch(4, release=r)
+        abstracts = ReleaseAbstractFactory.create_batch(4, release=r)
+        citations = []
+        for _ in range(4):
+            citations.append(ReleaseRefFactory.build(
+                target_release=ReleaseFactory.create()))
+
+        r.title = "new title"
+        extids[0] = ReleaseExtIdFactory.build(id_type="dblp")
+        contribs[0] = ReleaseContribFactory.build()
+        abstracts[0] = ReleaseAbstractFactory.build()
+        citations[0] = ReleaseRefFactory.build(target_release=ReleaseFactory.create())
+
+        rschema = v.ReleaseSchema.from_orm(r)
+        rschema.extids = extids
+        rschema.contribs = contribs
+        rschema.abstracts = abstracts
+        rschema.citations = citations
+
+        data = rschema.model_dump_json()
+
+        response = client.put(self.update, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+        response = client.get(f"{self.get}/{r.id}")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+        self.assertEqual(response.data["title"], r.title)
+
+        self.assertEqual(len(response.data["extids"]), len(extids))
+        self.assertSetEqual(
+                set([(e["id_type"], e["id_value"]) for e in response.data["extids"]]),
+                set([(e.id_type, e.id_value) for e in extids]))
+
+        self.assertEqual(len(response.data["contribs"]), len(contribs))
+        self.assertSetEqual(
+                set([c["raw_name"] for c in response.data["contribs"]]),
+                set([c.raw_name for c in contribs]))
+
+        self.assertEqual(len(response.data["citations"]), len(citations))
+        self.assertSetEqual(
+                set([c["target_release_id"] for c in response.data["citations"]]),
+                set([str(c.target_release_id) for c in citations]))
+
+        self.assertEqual(len(response.data["abstracts"]), len(abstracts))
+        self.assertSetEqual(
+                set([a["sha1"] for a in response.data["abstracts"]]),
+                set([a.sha1 for a in abstracts]))
+
+    def test_upsert_with_children(self):
+        r = ReleaseFactory.build()
+        r.work = None
+        r.container.save()
+
+        extids = []
+        extids.append(ReleaseExtIdFactory.build(id_type="doi"))
+        extids.append(ReleaseExtIdFactory.build(id_type="pmcid"))
+        contribs = ReleaseContribFactory.build_batch(4)
+        abstracts = ReleaseAbstractFactory.build_batch(4)
+        citations = []
+        for _ in range(4):
+            tr = ReleaseFactory.create()
+            citations.append(ReleaseRefFactory.build(target_release=tr))
+
+        rschema = v.ReleaseSchema.from_orm(r)
+
+        rschema.extids = [v.ReleaseExtIdSchema.from_orm(e) for e in extids]
+        rschema.contribs = [v.ReleaseContribSchema.from_orm(c) for c in contribs]
+        rschema.abstracts = [v.ReleaseAbstractSchema.from_orm(a) for a in abstracts]
+        rschema.citations = [v.ReleaseRefSchema.from_orm(c) for c in citations]
+
+        data = rschema.model_dump_json()
+
+        response = client.put(self.update, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+
+        response = client.get(f"{self.get}/{r.id}")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+
+        self.assertEqual(len(response.data["extids"]), len(extids))
+        self.assertSetEqual(
+                set([(e["id_type"], e["id_value"]) for e in response.data["extids"]]),
+                set([(e.id_type, e.id_value) for e in extids]))
+
+        self.assertEqual(len(response.data["contribs"]), len(contribs))
+        self.assertSetEqual(
+                set([c["raw_name"] for c in response.data["contribs"]]),
+                set([c.raw_name for c in contribs]))
+
+        self.assertEqual(len(response.data["citations"]), len(citations))
+        self.assertSetEqual(
+                set([c["target_release_id"] for c in response.data["citations"]]),
+                set([str(c.target_release_id) for c in citations]))
+
+        self.assertEqual(len(response.data["abstracts"]), len(abstracts))
+        self.assertSetEqual(
+                set([a["sha1"] for a in response.data["abstracts"]]),
+                set([a.sha1 for a in abstracts]))
 
     def test_bulk_create(self):
         rin = []
@@ -498,21 +662,28 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         entity = ReleaseFactory.build()
         entity.work.save()
         entity.container.save()
+
         data = v.ReleaseSchema.from_orm(entity).model_dump_json()
         response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
         es = m.Release.objects.filter(id=entity.id)
         self.assertEqual(len(es), 1)
 
-        new_title = "updated title"
-        self.entity.title = new_title
-        data = v.ReleaseSchema.from_orm(self.entity).model_dump_json()
+        new_work = m.Work()
+        new_work.save()
+
+        rschema = v.ReleaseSchema.from_orm(self.entity)
+        rschema.title = "updated title"
+        rschema.work_id = new_work.id
+
+        data = rschema.model_dump_json()
         response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
 
         es = m.Release.objects.filter(id=self.entity.id)
         self.assertEqual(len(es), 1)
-        self.assertEqual(es[0].title, new_title)
+        self.assertEqual(es[0].title, rschema.title)
+        self.assertEqual(es[0].work.id, new_work.id)
 
     def test_delete(self):
         unsaved = ReleaseFactory.build()

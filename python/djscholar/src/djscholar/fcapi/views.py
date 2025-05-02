@@ -143,9 +143,6 @@ class ReleaseSchema(ModelSchema):
                                        "publisher", "language", "license_slug",
                                        "withdrawn_status", "refs",]
 
-class ReleaseUpdateSchema(ReleaseSchema):
-    work_id: UUID
-
 # TODO annoying name thing
 class WebcaptureCDXSchema(ModelSchema):
     webcapture_id: Optional[UUID]
@@ -362,15 +359,18 @@ def delete_release(request, ident: UUID) -> ReleaseSchema:
     return out
 
 @v2api.put("/release", auth=api_auth)
-def update_release(request, release_in: ReleaseUpdateSchema) -> HttpResponse:
+def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """
     Replace a release entity wholesale. Must specify entire content of
     entity; not a patch operation. Creates the entity if it doesn't yet exist.
     201 if a new release was created; 200 otherwise.
+
+    If no work_id is specified for a release that does not yet exist, one will be created.
+
+    If no work_id is specified for a release that does exist, 422 is returned.
     """
     code = HTTPStatus.OK
     es = m.Release.objects.filter(id=release_in.id)
-    entity = None
     data = release_in.dict()
     extids = data.pop("extids")
     contribs = data.pop("contribs")
@@ -378,20 +378,24 @@ def update_release(request, release_in: ReleaseUpdateSchema) -> HttpResponse:
     citations = data.pop("citations")
 
     with transaction.atomic():
-        entity = None
         if len(es) == 0:
-            code = HTTPStatus.CREATED
-            entity = m.Release(**data)
-        else:
-            entity = es[0]
-            for attr, value in data.items():
-                setattr(entity, attr, value)
+            return create_release(request, release_in)
+
+        if data.get("work_id") is None:
+            return v2api.create_response(request,
+                                         "cannot unset a release's work",
+                                         status=HTTPStatus.UNPROCESSABLE_CONTENT)
+
+        entity = es[0]
+        for attr, value in data.items():
+            setattr(entity, attr, value)
+
         entity.save()
         entity.extids.all().delete()
         m.ReleaseExtId.objects.bulk_create([m.ReleaseExtId(**extid|{"release_id":entity.id})
                                             for extid in extids])
         entity.contribs.all().delete()
-        m.ReleaseContrib.objects.bulk_create([m.ReleaseExtId(**contrib|{"release_id":entity.id})
+        m.ReleaseContrib.objects.bulk_create([m.ReleaseContrib(**contrib|{"release_id":entity.id})
                                               for contrib in contribs])
 
         entity.abstracts.all().delete()
@@ -432,8 +436,6 @@ def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpRespo
         m.ReleaseAbstract.objects.bulk_create([m.ReleaseAbstract(**a) for a in abstracts])
         m.ReleaseRef.objects.bulk_create([m.ReleaseRef(**c) for c in citations])
 
-    return v2api.create_response(request, "webcaptures created", status=HTTPStatus.CREATED)
-    m.Release.objects.bulk_create([m.Release(**rin.dict()) for rin in releases_in])
     return v2api.create_response(request, "releases created", status=HTTPStatus.CREATED)
 
 

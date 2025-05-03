@@ -20,7 +20,6 @@ api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 
 # crawl MVP
 # TODO touch update column whenever an update route called
-# TODO nest abstract(s) in release
 # TODO sort entities by updated or created time
 # TODO query for releases that do not have associated files -- wantlist
 # TODO use response= in all the decorators so the docs work
@@ -74,8 +73,6 @@ class LegacyLookup(Schema):
 # upstream the option to just explicitly name things when using the class based
 # definition via the meta class.
 
-# TODO support a map of external IDs to use when creating/updating
-# TODO support a map of contribs to use when creating/updating
 class ReleaseExtIdSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.

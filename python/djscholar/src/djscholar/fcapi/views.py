@@ -65,9 +65,8 @@ class LegacyLookup(Schema):
 # docs. we want that. I could not figure out a way to get things into that list
 # otherwise. Frustratingly, the only way I can figure out how to control the
 # name of the schema in that list is via the "name" parameter in create_schema
-# -- otherwise it uses class name. Thus, I've tried as much as possible to use
-# the create_schema helper so I can have schemas called "<Model>Schema" in this
-# namespace.
+# -- otherwise it uses class name. However, create_schema is very clunky and
+# harder to scan than the class based schema definitions.
 # I do not like how implicit this is; it's especially confusing to not have
 # using a schema in a return type register it in the API. I'd like to submit
 # upstream the option to just explicitly name things when using the class based

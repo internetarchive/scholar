@@ -1,6 +1,6 @@
 from http import HTTPStatus
 from uuid import UUID
-from typing import List, Literal, Optional
+from typing import Literal
 
 from django.db import transaction
 from django.http import HttpResponse, Http404
@@ -76,7 +76,7 @@ class LegacyLookup(Schema):
 class ReleaseExtIdSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.
-    release_id: Optional[UUID]
+    release_id: UUID|None
 
     class Meta:
         model = m.ReleaseExtId
@@ -86,8 +86,8 @@ class ReleaseExtIdSchema(ModelSchema):
 class ReleaseContribSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.
-    release_id: Optional[UUID]
-    creator_id: Optional[UUID]
+    release_id: UUID|None
+    creator_id: UUID|None
 
     class Meta:
         model = m.ReleaseContrib
@@ -98,7 +98,7 @@ class ReleaseContribSchema(ModelSchema):
 class ReleaseAbstractSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.
-    release_id: Optional[UUID]
+    release_id: UUID|None
 
     class Meta:
         model = m.ReleaseAbstract
@@ -107,7 +107,7 @@ class ReleaseAbstractSchema(ModelSchema):
 class ReleaseRefSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.
-    release_id: Optional[UUID]
+    release_id: UUID|None
     target_release_id: UUID
 
     class Meta:
@@ -117,11 +117,11 @@ class ReleaseRefSchema(ModelSchema):
 
 class ReleaseSchema(ModelSchema):
     # will be created automatically if none
-    work_id: Optional[UUID]
-    container_id: Optional[UUID]
-    extids: List[ReleaseExtIdSchema] = []
-    contribs: List[ReleaseContribSchema] = []
-    abstracts: List[ReleaseAbstractSchema] = []
+    work_id: UUID|None
+    container_id: UUID|None
+    extids: list[ReleaseExtIdSchema] = []
+    contribs: list[ReleaseContribSchema] = []
+    abstracts: list[ReleaseAbstractSchema] = []
 
     # NB the discrepancy between ReleaseRef and the citations field is due to
     # the 'refs' column on the release table. In old fatcat refs were derived
@@ -130,7 +130,7 @@ class ReleaseSchema(ModelSchema):
     # data migration and inlined the raw blobs while also preserving the table
     # of parsed references. I may rename the refs column to reflect its more
     # "raw" nature but even so, I kind of prefer exposing refs as citations.
-    citations: List[ReleaseRefSchema] = []
+    citations: list[ReleaseRefSchema] = []
 
     class Meta:
         model = m.Release
@@ -142,7 +142,7 @@ class ReleaseSchema(ModelSchema):
 
 # TODO annoying name thing
 class WebcaptureCDXSchema(ModelSchema):
-    webcapture_id: Optional[UUID]
+    webcapture_id: UUID|None
 
     class Meta:
         model = m.WebcaptureCDX
@@ -151,7 +151,7 @@ class WebcaptureCDXSchema(ModelSchema):
 
 # TODO annoying name thing
 class WebcaptureURLSchema(ModelSchema):
-    webcapture_id: Optional[UUID]
+    webcapture_id: UUID|None
 
     class Meta:
         model = m.WebcaptureURL
@@ -160,8 +160,8 @@ class WebcaptureURLSchema(ModelSchema):
 # TODO annoying name thing
 class WebcaptureSchema(ModelSchema):
     release_id: UUID
-    urls: List[WebcaptureURLSchema] = []
-    cdx_lines: List[WebcaptureCDXSchema] = []
+    urls: list[WebcaptureURLSchema] = []
+    cdx_lines: list[WebcaptureCDXSchema] = []
 
     class Meta:
         model = m.Webcapture
@@ -201,9 +201,9 @@ def get_container(request, ident: UUID) -> ContainerSchema:
     """Get a single container by its ID."""
     return ContainerSchema.from_orm(get_object_or_404(m.Container, id=ident))
 
-@v2api.get("/container/{ident}/releases", response=List[ReleaseSchema])
+@v2api.get("/container/{ident}/releases", response=list[ReleaseSchema])
 @paginate
-def get_container_releases(request, ident: UUID) -> List[ReleaseSchema]:
+def get_container_releases(request, ident: UUID) -> list[ReleaseSchema]:
     """Get all releases for a given container ID."""
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(container__id=ident)]
 
@@ -220,7 +220,7 @@ def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     return v2api.create_response(request, "container created", status=HTTPStatus.CREATED)
 
 @v2api.post("/containers", auth=api_auth)
-def bulk_create_containers(request, containers_in: List[ContainerSchema]) -> HttpResponse:
+def bulk_create_containers(request, containers_in: list[ContainerSchema]) -> HttpResponse:
     """Bulk create a list of containers. Functionally equivalent to calling
     POST /container repeatedly."""
     m.Container.objects.bulk_create([m.Container(**cin.dict()) for cin in containers_in])
@@ -327,14 +327,14 @@ def get_release_work(request, ident: UUID) -> WorkSchema:
     # do not need to check length; work_id is required in schema
     return WorkSchema.from_orm(ws[0])
 
-@v2api.get("/release/{ident}/files", response=List[FileSchema])
+@v2api.get("/release/{ident}/files", response=list[FileSchema])
 @paginate
-def get_release_files(request, ident: UUID) -> List[FileSchema]:
+def get_release_files(request, ident: UUID) -> list[FileSchema]:
     return [FileSchema.from_orm(e) for e in m.File.objects.filter(releasefile__release_id=ident)]
 
-@v2api.get("/release/{ident}/contribs", response=List[ReleaseContribSchema])
+@v2api.get("/release/{ident}/contribs", response=list[ReleaseContribSchema])
 @paginate
-def get_release_contribs(request, ident: UUID) -> List[ReleaseContribSchema]:
+def get_release_contribs(request, ident: UUID) -> list[ReleaseContribSchema]:
     """Get a list of contributions to a given release; for example, authors.
     Some contributions will feature a creator_id that can be used to select
     richer information about a contribution (eg, orcid); many contributions
@@ -342,9 +342,9 @@ def get_release_contribs(request, ident: UUID) -> List[ReleaseContribSchema]:
     return [ReleaseContribSchema.from_orm(rc)
             for rc in m.ReleaseContrib.objects.filter(release_id=ident)]
 
-@v2api.get("/release/{ident}/webcaptures", response=List[WebcaptureSchema])
+@v2api.get("/release/{ident}/webcaptures", response=list[WebcaptureSchema])
 @paginate
-def get_release_webcaptures(request, ident: UUID) -> List[WebcaptureSchema]:
+def get_release_webcaptures(request, ident: UUID) -> list[WebcaptureSchema]:
     return [WebcaptureSchema.from_orm(wc) for wc in m.Webcapture.objects.filter(release_id=ident)]
 
 @v2api.delete("/release/{ident}", auth=api_auth)
@@ -405,7 +405,7 @@ def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
     return v2api.create_response(request, "release replaced with new content", status=code)
 
 @v2api.post("/releases", auth=api_auth)
-def bulk_create_releases(request, releases_in: List[ReleaseSchema]) -> HttpResponse:
+def bulk_create_releases(request, releases_in: list[ReleaseSchema]) -> HttpResponse:
     """Bulk create a list of releases. Functionally equivalent to calling
     POST /release repeatedly."""
 
@@ -452,9 +452,9 @@ def get_work(request, ident: UUID) -> WorkSchema:
     """Get a work (collection of releases) by its ID"""
     return WorkSchema.from_orm(get_object_or_404(m.Work, id=ident))
 
-@v2api.get("/work/{ident}/releases", response=List[ReleaseSchema])
+@v2api.get("/work/{ident}/releases", response=list[ReleaseSchema])
 @paginate
-def get_work_releases(request, ident: UUID) -> List[ReleaseSchema]:
+def get_work_releases(request, ident: UUID) -> list[ReleaseSchema]:
     """Get all releases associated with a work's ID"""
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(work_id=ident)]
 
@@ -509,9 +509,9 @@ def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
         raise Http404(f"no creator found with {lookup.id_type} of {lookup.id_value}")
     return CreatorSchema.from_orm(es[0])
 
-@v2api.get("/creator/{ident}/releases", response=List[ReleaseSchema])
+@v2api.get("/creator/{ident}/releases", response=list[ReleaseSchema])
 @paginate
-def get_creator_releases(request, ident: UUID) -> List[ReleaseSchema]:
+def get_creator_releases(request, ident: UUID) -> list[ReleaseSchema]:
     """Get all the releases associated with a given creator. Note that for many
     releases, their authors exist only as raw contribs and do not have creator
     records."""
@@ -553,7 +553,7 @@ def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
     return v2api.create_response(request, "creator replaced with new content", status=code)
 
 @v2api.post("/creators", auth=api_auth)
-def bulk_create_creators(request, creators_in: List[CreatorSchema]) -> HttpResponse:
+def bulk_create_creators(request, creators_in: list[CreatorSchema]) -> HttpResponse:
     m.Creator.objects.bulk_create([m.Creator(**cin.dict()) for cin in creators_in])
     return v2api.create_response(request, "creators created", status=HTTPStatus.CREATED)
 
@@ -581,9 +581,9 @@ def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
         raise Http404(f"no file found with {lookup.id_type} of {lookup.id_value}")
     return FileSchema.from_orm(es[0])
 
-@v2api.get("/file/{ident}/releases", response=List[ReleaseSchema])
+@v2api.get("/file/{ident}/releases", response=list[ReleaseSchema])
 @paginate
-def get_file_releases(request, ident: UUID) -> List[ReleaseSchema]:
+def get_file_releases(request, ident: UUID) -> list[ReleaseSchema]:
     """Get all the releases associated with a given file."""
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
         releasefile__file_id=ident)]
@@ -625,7 +625,7 @@ def update_file(request, file_in: FileSchema) -> HttpResponse:
     return v2api.create_response(request, "file replaced with new content", status=code)
 
 @v2api.post("/files", auth=api_auth)
-def bulk_create_files(request, files_in: List[FileSchema]) -> HttpResponse:
+def bulk_create_files(request, files_in: list[FileSchema]) -> HttpResponse:
     m.File.objects.bulk_create([m.File(**cin.dict()) for cin in files_in])
     return v2api.create_response(request, "files created", status=HTTPStatus.CREATED)
 
@@ -677,7 +677,7 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
     return v2api.create_response(request, "webcapture created", status=HTTPStatus.CREATED)
 
 @v2api.post("/webcaptures", auth=api_auth)
-def bulk_create_webcaptures(request, webcaptures_in: List[WebcaptureSchema]) -> HttpResponse:
+def bulk_create_webcaptures(request, webcaptures_in: list[WebcaptureSchema]) -> HttpResponse:
     webcapture_kwargs = []
     urls = []
     cdx_lines = []

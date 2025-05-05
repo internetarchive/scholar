@@ -730,9 +730,38 @@ def delete_webcapture(request, ident: UUID) -> WebcaptureSchema:
 
 # Changelog routes
 
-# Instead of a single /changelog, I am considering the ability to query for created or updated entities based on a time range (ie, "last 24 hours" or some other interval). I think this will end up being more useful than the current changelog system.
+# TODO paginate
+# TODO query args for start date and window
 
-# TODO
+@v2api.get("/changelog/releases", response=list[ReleaseSchema])
+def release_changelog(request) -> list[ReleaseSchema]:
+    # TODO
+    return []
+
+@v2api.get("/changelog/creators", response=list[CreatorSchema])
+def creator_changelog(request) -> list[CreatorSchema]:
+    # TODO
+    return []
+
+@v2api.get("/changelog/containers", response=list[ContainerSchema])
+def container_changelog(request) -> list[ContainerSchema]:
+    # TODO
+    return []
+
+@v2api.get("/changelog/works", response=list[WorkSchema])
+def work_changelog(request) -> list[WorkSchema]:
+    # TODO
+    return []
+
+@v2api.get("/changelog/files", response=list[FileSchema])
+def file_changelog(request) -> list[FileSchema]:
+    # TODO
+    return []
+
+@v2api.get("/changelog/webcaptures", response=list[WebcaptureSchema])
+def webcapture_changelog(request) -> list[WebcaptureSchema]:
+    # TODO
+    return []
 
 
 # Fileset routes

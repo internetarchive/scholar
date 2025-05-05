@@ -458,6 +458,14 @@ def get_work_releases(request, ident: UUID) -> List[ReleaseSchema]:
     """Get all releases associated with a work's ID"""
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(work_id=ident)]
 
+@v2api.post("/work", auth=api_auth, include_in_schema=False)
+def create_work(request) -> HttpResponse:
+    return v2api.create_response(request, "create not supported for works; works are created via releases", status=HTTPStatus.METHOD_NOT_ALLOWED)
+
+@v2api.post("/works", auth=api_auth, include_in_schema=False)
+def bulk_create_works(request) -> HttpResponse:
+    return v2api.create_response(request, "bulk create not supported for works; works are created via releases", status=HTTPStatus.METHOD_NOT_ALLOWED)
+
 @v2api.delete("/work/{ident}", auth=api_auth)
 def delete_work(request, ident: UUID) -> WorkSchema:
     """Delete a work by its ID"""

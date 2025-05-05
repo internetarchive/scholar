@@ -818,11 +818,14 @@ class TestWorkRoutes(EntityCRUDTestCase):
 
     def test_create_auth(self):
         # works can only be created via release creation so there's no route for this
+        response = client.post(self.create, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.METHOD_NOT_ALLOWED)
         pass
 
     def test_bulk_create_auth(self):
         # works can only be created via release creation so there's no route for this
-        pass
+        response = client.post(self.bulk_create, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.METHOD_NOT_ALLOWED)
 
     def test_get(self):
         response = client.get(f"{self.get}/{self.entity.id}")

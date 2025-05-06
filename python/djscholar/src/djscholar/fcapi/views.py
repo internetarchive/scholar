@@ -2,6 +2,7 @@ import datetime
 from http import HTTPStatus
 from uuid import UUID
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 import pydantic
 from django.db import transaction
@@ -181,6 +182,8 @@ CreatorSchema = create_schema(m.Creator, fields=COMMON_ENTITY_FIELDS+["display_n
 FileSchema = create_schema(m.File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256",
                                                                 "md5", "mimetype"])
 
+
+type EntitySchema = ReleaseSchema|CreatorSchema|ContainerSchema|WorkSchema|FileSchema|WebcaptureSchema
 
 # Container routes
 
@@ -743,14 +746,18 @@ class ChangelogQuery(pydantic.BaseModel):
             raise ValueError("max window size is 30d")
         return value
 
-type EntitySchema = ReleaseSchema|CreatorSchema
+
 
 def changelog(cq: ChangelogQuery, model: m.Entity, es: EntitySchema) -> list[EntitySchema]:
+    start_dt = datetime.datetime.combine(
+            cq.start,
+            datetime.time(tzinfo=ZoneInfo("UTC")))
+
     return [es.from_orm(r)
             for r in model.objects.filter(
                 updated__range=[
-                    cq.start-cq.window,
-                    cq.start+datetime.timedelta(days=1)]).order_by("-updated")]
+                    start_dt-cq.window,
+                    start_dt+datetime.timedelta(days=1)]).order_by("-updated")]
 
 @v2api.get("/changelog/releases", response=list[ReleaseSchema])
 @paginate
@@ -765,6 +772,8 @@ def release_changelog(request, cq: Query[ChangelogQuery]) -> list[ReleaseSchema]
     For example, to see releases from the month of April: ?start=2025-05-01&window=30d
 
     The maximum value for window is 30d.
+
+    NB: all date handling assumes UTC.
     """
     return changelog(cq, m.Release, ReleaseSchema)
 
@@ -781,6 +790,8 @@ def creator_changelog(request, cq: Query[ChangelogQuery]) -> list[CreatorSchema]
     For example, to see creators from the month of April: ?start=2025-05-01&window=30d
 
     The maximum value for window is 30d.
+
+    NB: all date handling assumes UTC.
     """
     return changelog(cq, m.Creator, CreatorSchema)
 
@@ -797,6 +808,8 @@ def container_changelog(request, cq: Query[ChangelogQuery]) -> list[ContainerSch
     For example, to see containers from the month of April: ?start=2025-05-01&window=30d
 
     The maximum value for window is 30d.
+
+    NB: all date handling assumes UTC.
     """
     return changelog(cq, m.Container, ContainerSchema)
 
@@ -813,6 +826,8 @@ def work_changelog(request, cq: Query[ChangelogQuery]) -> list[WorkSchema]:
     For example, to see works from the month of April: ?start=2025-05-01&window=30d
 
     The maximum value for window is 30d.
+
+    NB: all date handling assumes UTC.
     """
     return changelog(cq, m.Work, WorkSchema)
 
@@ -829,6 +844,8 @@ def file_changelog(request, cq: Query[ChangelogQuery]) -> list[FileSchema]:
     For example, to see files from the month of April: ?start=2025-05-01&window=30d
 
     The maximum value for window is 30d.
+
+    NB: all date handling assumes UTC.
     """
     return changelog(cq, m.File, FileSchema)
 
@@ -845,6 +862,8 @@ def webcapture_changelog(request, cq: Query[ChangelogQuery]) -> list[WebcaptureS
     For example, to see webcaptures from the month of April: ?start=2025-05-01&window=30d
 
     The maximum value for window is 30d.
+
+    NB: all date handling assumes UTC.
     """
     return changelog(cq, m.Webcapture, WebcaptureSchema)
 
@@ -852,27 +871,3 @@ def webcapture_changelog(request, cq: Query[ChangelogQuery]) -> list[WebcaptureS
 # Fileset routes
 
 # TODO I'm punting on these.
-
-#### routes outline:
-
-### reads
-
-# lookup entity
-# get entity
-# get entity's children (ie, work releases)
-# get entity's parent  (ie release container)
-
-# child relationships:
-# - works have releases
-# - containers have releases
-# - releases have files
-
-# changelog
-# changelog/{index}
-
-### writes
-
-# create entity
-# bulk create entity
-# update entity (replace)
-# delete entity

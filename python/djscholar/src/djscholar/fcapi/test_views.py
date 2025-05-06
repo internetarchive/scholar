@@ -1,23 +1,26 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from http import HTTPStatus
 from urllib.parse import quote_plus
 from uuid import uuid4
 import random
 import zoneinfo
 
+import dateutil
 import factory
+import surt
+import time
 from faker import Faker
 from faker.providers import file, internet, misc, person, lorem
 from django.contrib.auth.hashers import (
     make_password,
 )
 from django.contrib.auth.models import User
+from django.db import connection
 from django.test import TestCase
 from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
 
-import surt
 from djscholar.fcapi.fcid import uuid2fcid
 import djscholar.fcapi.models as m
 import djscholar.fcapi.views as v
@@ -1221,3 +1224,73 @@ class TestWebcaptureRoutes(EntityCRUDTestCase):
         self.assertEqual(response.data["id"], str(self.entity.id))
 
         self.assertEqual(m.Webcapture.objects.filter(id=self.entity.id).count(), 0)
+
+class ChangelogTests(TestCase):
+    def test_release_changelog(self):
+        today = []
+        for _ in range(3):
+            today.append(ReleaseFactory.create())
+            # i'm sorry
+            time.sleep(0.1)
+
+        past = ReleaseFactory.create_batch(3)
+        past_ts = datetime.now() - timedelta(days=10)
+
+        # this sucks
+        with connection.cursor() as cursor:
+            for x in range(len(past)):
+                past_ts = datetime.now() - timedelta(days=10, seconds=x)
+                cursor.execute("UPDATE fcapi_release SET updated = %s WHERE id = %t",
+                               [past_ts - timedelta(seconds=x), past[x].id])
+
+        response = client.get("/changelog/releases")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertSetEqual(
+                set([e["id"] for e in response.data["items"]]),
+                set([str(e.id) for e in today]))
+
+        prev = response.data["items"][0]
+        for x in range(1, len(response.data["items"])):
+            e = response.data["items"][x]
+            p = dateutil.parser.isoparse(prev["updated"])
+            d = dateutil.parser.isoparse(e["updated"])
+            self.assertTrue(p > d)
+            prev = e
+
+        start = str(datetime.today()).split(' ')[0]
+
+        response = client.get(f"/changelog/releases?start={start}")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertSetEqual(
+                set([e["id"] for e in response.data["items"]]),
+                set([str(e.id) for e in today]))
+
+        response = client.get(f"/changelog/releases?start={start}&window=1d")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertSetEqual(
+                set([e["id"] for e in response.data["items"]]),
+                set([str(e.id) for e in today]))
+
+        response = client.get("/changelog/releases?start=1906-06-06&window=1d")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(response.data["count"], 0)
+
+        past_start = str(past_ts).split(" ")[0]
+        response = client.get(f"/changelog/releases?start={past_start}")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertSetEqual(
+                set([e["id"] for e in response.data["items"]]),
+                set([str(e.id) for e in past]))
+
+        past_start = str(past_ts).split(" ")[0]
+        response = client.get(f"/changelog/releases?start={past_start}&window=1d")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertSetEqual(
+                set([e["id"] for e in response.data["items"]]),
+                set([str(e.id) for e in past]))
+
+        response = client.get("/changelog/releases?window=30d")
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertSetEqual(
+                set([e["id"] for e in response.data["items"]]),
+                set([str(e.id) for e in past])|set([str(e.id) for e in today]))

@@ -1,7 +1,9 @@
+import datetime
 from http import HTTPStatus
 from uuid import UUID
-from typing import Literal
+from typing import Annotated, Literal
 
+import pydantic
 from django.db import transaction
 from django.http import HttpResponse, Http404
 from ninja.pagination import paginate
@@ -730,35 +732,46 @@ def delete_webcapture(request, ident: UUID) -> WebcaptureSchema:
 
 # Changelog routes
 
-# TODO paginate
-# TODO query args for start date and window
+class ChangelogQuery(pydantic.BaseModel):
+    start: Annotated[datetime.date, pydantic.Field(default_factory=datetime.date.today)]
+    window: datetime.timedelta|None = datetime.timedelta(days=1)
+
 
 @v2api.get("/changelog/releases", response=list[ReleaseSchema])
-def release_changelog(request) -> list[ReleaseSchema]:
-    # TODO
-    return []
+@paginate
+def release_changelog(request, cq: Query[ChangelogQuery]) -> list[ReleaseSchema]:
+    return [ReleaseSchema.from_orm(r)
+            for r in m.Release.objects.filter(
+                updated__range=[
+                    cq.start-cq.window,
+                    cq.start+datetime.timedelta(days=1)]).order_by("-updated")]
 
 @v2api.get("/changelog/creators", response=list[CreatorSchema])
+@paginate
 def creator_changelog(request) -> list[CreatorSchema]:
     # TODO
     return []
 
 @v2api.get("/changelog/containers", response=list[ContainerSchema])
+@paginate
 def container_changelog(request) -> list[ContainerSchema]:
     # TODO
     return []
 
 @v2api.get("/changelog/works", response=list[WorkSchema])
+@paginate
 def work_changelog(request) -> list[WorkSchema]:
     # TODO
     return []
 
 @v2api.get("/changelog/files", response=list[FileSchema])
+@paginate
 def file_changelog(request) -> list[FileSchema]:
     # TODO
     return []
 
 @v2api.get("/changelog/webcaptures", response=list[WebcaptureSchema])
+@paginate
 def webcapture_changelog(request) -> list[WebcaptureSchema]:
     # TODO
     return []

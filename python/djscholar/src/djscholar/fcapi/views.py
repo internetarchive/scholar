@@ -147,7 +147,7 @@ class WebcaptureCDXSchema(ModelSchema):
 
     class Meta:
         model = m.WebcaptureCDX
-        fields=["surt", "captured", "url", "mimetype", "status_code", 
+        fields=["surt", "captured", "url", "mimetype", "status_code",
                 "sha1", "sha256", "size_bytes"]
 
 # TODO annoying name thing
@@ -736,45 +736,117 @@ class ChangelogQuery(pydantic.BaseModel):
     start: Annotated[datetime.date, pydantic.Field(default_factory=datetime.date.today)]
     window: datetime.timedelta|None = datetime.timedelta(days=1)
 
+    @pydantic.field_validator("window", mode="after")
+    @classmethod
+    def max_window(cls, value: datetime.timedelta) -> datetime.timedelta:
+        if value > datetime.timedelta(days=30):
+            raise ValueError("max window size is 30d")
+        return value
 
-@v2api.get("/changelog/releases", response=list[ReleaseSchema])
-@paginate
-def release_changelog(request, cq: Query[ChangelogQuery]) -> list[ReleaseSchema]:
-    return [ReleaseSchema.from_orm(r)
-            for r in m.Release.objects.filter(
+type EntitySchema = ReleaseSchema|CreatorSchema
+
+def changelog(cq: ChangelogQuery, model: m.Entity, es: EntitySchema) -> list[EntitySchema]:
+    return [es.from_orm(r)
+            for r in model.objects.filter(
                 updated__range=[
                     cq.start-cq.window,
                     cq.start+datetime.timedelta(days=1)]).order_by("-updated")]
 
+@v2api.get("/changelog/releases", response=list[ReleaseSchema])
+@paginate
+def release_changelog(request, cq: Query[ChangelogQuery]) -> list[ReleaseSchema]:
+    """
+    Get a list of releases sorted by updated date. By default, returns releases
+    updated on the current day. the start argument moves the query's window to
+    the specified day (eg, 2025-04-01). The window argument specifices the
+    number of days to query updates for in the format "1d" and is subtracted
+    from the start day.
+
+    For example, to see releases from the month of April: ?start=2025-05-01&window=30d
+
+    The maximum value for window is 30d.
+    """
+    return changelog(cq, m.Release, ReleaseSchema)
+
 @v2api.get("/changelog/creators", response=list[CreatorSchema])
 @paginate
-def creator_changelog(request) -> list[CreatorSchema]:
-    # TODO
-    return []
+def creator_changelog(request, cq: Query[ChangelogQuery]) -> list[CreatorSchema]:
+    """
+    Get a list of creators sorted by updated date. By default, returns creators
+    updated on the current day. the start argument moves the query's window to
+    the specified day (eg, 2025-04-01). The window argument specifices the
+    number of days to query updates for in the format "1d" and is subtracted
+    from the start day.
+
+    For example, to see creators from the month of April: ?start=2025-05-01&window=30d
+
+    The maximum value for window is 30d.
+    """
+    return changelog(cq, m.Creator, CreatorSchema)
 
 @v2api.get("/changelog/containers", response=list[ContainerSchema])
 @paginate
-def container_changelog(request) -> list[ContainerSchema]:
-    # TODO
-    return []
+def container_changelog(request, cq: Query[ChangelogQuery]) -> list[ContainerSchema]:
+    """
+    Get a list of containers sorted by updated date. By default, returns containers
+    updated on the current day. the start argument moves the query's window to
+    the specified day (eg, 2025-04-01). The window argument specifices the
+    number of days to query updates for in the format "1d" and is subtracted
+    from the start day.
+
+    For example, to see containers from the month of April: ?start=2025-05-01&window=30d
+
+    The maximum value for window is 30d.
+    """
+    return changelog(cq, m.Container, ContainerSchema)
 
 @v2api.get("/changelog/works", response=list[WorkSchema])
 @paginate
-def work_changelog(request) -> list[WorkSchema]:
-    # TODO
-    return []
+def work_changelog(request, cq: Query[ChangelogQuery]) -> list[WorkSchema]:
+    """
+    Get a list of works sorted by updated date. By default, returns works
+    updated on the current day. the start argument moves the query's window to
+    the specified day (eg, 2025-04-01). The window argument specifices the
+    number of days to query updates for in the format "1d" and is subtracted
+    from the start day.
+
+    For example, to see works from the month of April: ?start=2025-05-01&window=30d
+
+    The maximum value for window is 30d.
+    """
+    return changelog(cq, m.Work, WorkSchema)
 
 @v2api.get("/changelog/files", response=list[FileSchema])
 @paginate
-def file_changelog(request) -> list[FileSchema]:
-    # TODO
-    return []
+def file_changelog(request, cq: Query[ChangelogQuery]) -> list[FileSchema]:
+    """
+    Get a list of files sorted by updated date. By default, returns files
+    updated on the current day. the start argument moves the query's window to
+    the specified day (eg, 2025-04-01). The window argument specifices the
+    number of days to query updates for in the format "1d" and is subtracted
+    from the start day.
+
+    For example, to see files from the month of April: ?start=2025-05-01&window=30d
+
+    The maximum value for window is 30d.
+    """
+    return changelog(cq, m.File, FileSchema)
 
 @v2api.get("/changelog/webcaptures", response=list[WebcaptureSchema])
 @paginate
-def webcapture_changelog(request) -> list[WebcaptureSchema]:
-    # TODO
-    return []
+def webcapture_changelog(request, cq: Query[ChangelogQuery]) -> list[WebcaptureSchema]:
+    """
+    Get a list of webcaptures sorted by updated date. By default, returns webcaptures
+    updated on the current day. the start argument moves the query's window to
+    the specified day (eg, 2025-04-01). The window argument specifices the
+    number of days to query updates for in the format "1d" and is subtracted
+    from the start day.
+
+    For example, to see webcaptures from the month of April: ?start=2025-05-01&window=30d
+
+    The maximum value for window is 30d.
+    """
+    return changelog(cq, m.Webcapture, WebcaptureSchema)
 
 
 # Fileset routes

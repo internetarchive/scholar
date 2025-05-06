@@ -1226,24 +1226,26 @@ class TestWebcaptureRoutes(EntityCRUDTestCase):
         self.assertEqual(m.Webcapture.objects.filter(id=self.entity.id).count(), 0)
 
 class ChangelogTests(TestCase):
-    def test_release_changelog(self):
+    def _run(self, model_name: str, model_factory: DjangoModelFactory) -> None:
         today = []
         for _ in range(3):
-            today.append(ReleaseFactory.create())
+            today.append(model_factory.create())
             # i'm sorry
             time.sleep(0.1)
 
-        past = ReleaseFactory.create_batch(3)
+        past = model_factory.create_batch(3)
         past_ts = datetime.now() - timedelta(days=10)
+
+        endpoint = f"/changelog/{model_name}s"
 
         # this sucks
         with connection.cursor() as cursor:
             for x in range(len(past)):
                 past_ts = datetime.now() - timedelta(days=10, seconds=x)
-                cursor.execute("UPDATE fcapi_release SET updated = %s WHERE id = %t",
+                cursor.execute(f"UPDATE fcapi_{model_name} SET updated = %s WHERE id = %t",
                                [past_ts - timedelta(seconds=x), past[x].id])
 
-        response = client.get("/changelog/releases")
+        response = client.get(endpoint)
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertSetEqual(
                 set([e["id"] for e in response.data["items"]]),
@@ -1259,38 +1261,56 @@ class ChangelogTests(TestCase):
 
         start = str(datetime.today()).split(' ')[0]
 
-        response = client.get(f"/changelog/releases?start={start}")
+        response = client.get(f"{endpoint}?start={start}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertSetEqual(
                 set([e["id"] for e in response.data["items"]]),
                 set([str(e.id) for e in today]))
 
-        response = client.get(f"/changelog/releases?start={start}&window=1d")
+        response = client.get(f"{endpoint}?start={start}&window=1d")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertSetEqual(
                 set([e["id"] for e in response.data["items"]]),
                 set([str(e.id) for e in today]))
 
-        response = client.get("/changelog/releases?start=1906-06-06&window=1d")
+        response = client.get(f"{endpoint}?start=1906-06-06&window=1d")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], 0)
 
         past_start = str(past_ts).split(" ")[0]
-        response = client.get(f"/changelog/releases?start={past_start}")
+        response = client.get(f"{endpoint}?start={past_start}")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertSetEqual(
                 set([e["id"] for e in response.data["items"]]),
                 set([str(e.id) for e in past]))
 
         past_start = str(past_ts).split(" ")[0]
-        response = client.get(f"/changelog/releases?start={past_start}&window=1d")
+        response = client.get(f"{endpoint}?start={past_start}&window=1d")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertSetEqual(
                 set([e["id"] for e in response.data["items"]]),
                 set([str(e.id) for e in past]))
 
-        response = client.get("/changelog/releases?window=30d")
+        response = client.get(f"{endpoint}?window=30d")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertSetEqual(
                 set([e["id"] for e in response.data["items"]]),
                 set([str(e.id) for e in past])|set([str(e.id) for e in today]))
+
+    def test_release_changelog(self):
+        self._run("release", ReleaseFactory)
+
+    def test_creator_changelog(self):
+        self._run("creator", CreatorFactory)
+
+    def test_container_changelog(self):
+        self._run("container", ContainerFactory)
+
+    def test_work_changelog(self):
+        self._run("work", WorkFactory)
+
+    def test_file_changelog(self):
+        self._run("file", FileFactory)
+
+    def test_webcapture_changelog(self):
+        self._run("webcapture", WebcaptureFactory)

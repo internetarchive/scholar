@@ -12,6 +12,7 @@ dependencies = [
     "django-ninja==1.4.0",
     "ninja-api-key==1.0.2",
     "psycopg[binary]==3.2.4",
+    "python-dateutil==2.9.*",
     "surt==0.3.1",
 ]
 

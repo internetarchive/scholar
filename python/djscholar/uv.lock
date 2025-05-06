@@ -129,6 +129,7 @@ dependencies = [
     { name = "django-ninja" },
     { name = "ninja-api-key" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "python-dateutil" },
     { name = "surt" },
 ]
 
@@ -147,6 +148,7 @@ requires-dist = [
     { name = "django-ninja", specifier = "==1.4.0" },
     { name = "ninja-api-key", specifier = "==1.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.4" },
+    { name = "python-dateutil", specifier = "==2.9.*" },
     { name = "surt", specifier = "==0.3.1" },
 ]
 
@@ -368,6 +370,18 @@ dependencies = [
 sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pytest-django/4.11.0/pytest_django-4.11.0.tar.gz", hash = "sha256:35b339b9a231a99de226789c3e45d4d19d6c09ca9f3c236b3b5024afbf1f68b5" }
 wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pytest-django/4.11.0/pytest_django-4.11.0-py3-none-any.whl", hash = "sha256:ab969cc86585a1763fd4a2fa1bc0f3015abbbcb823667af48320f1a1d2053291" },
+]
+
+[[package]]
+name = "python-dateutil"
+version = "2.9.0.post0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/python-dateutil/2.9.0.post0/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/python-dateutil/2.9.0.post0/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427" },
 ]
 
 [[package]]

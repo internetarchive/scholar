@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>scholar daily reports</title>
+  </head>
+  <body>
+    <h1>scholar daily reporting</h1>
+    <p>
+    this report is generated once daily via TODO git.archive.org link
+    </p>
+    <h2>totals</h2>
+    <table>
+      <tr>
+        <td>fulltext PDFs</td>
+        <td>{{ .FulltextPDFCount }}</td>
+      </tr>
+      <tr>
+        <td>papers in fatcat</td>
+        <td>{{ .FatcatPaperCount }}</td>
+      </tr>
+      <tr>
+        <td>containers in fatcat</td>
+        <td>{{ .FatcatContainerCount }}</td>
+      </tr>
+    </table>
+    <h2>crawl stats</h2>
+    <p>
+    A PDF hit means we learned about a paper from an upstream source, sought it on the web, and used SPN to put it in the wayback machine. A PDF miss means we failed to succeed at getting a file into wayback. Misses can happen for a variety of reasons (can't find PDF link, SPN throttling us, etc).
+    </p>
+    <table>
+      <tr>
+        <td>PDF hits in last 24h</td>
+        <td>{{ .PDFHitCount }}</td>
+      </tr>
+      <tr>
+        <td>PDF misses in last 24h</td>
+        <td>{{ .PDFMissCount }}</td>
+      </tr>
+    </table>
+
+    <h3>PDF miss reasons (last 24h)</h3>
+    <table>
+      {{range .PDFMissReasons}}
+      <tr>
+        <td>{{ .Reason }}</td>
+        <td>{{ .Count }}</td>
+      </tr>
+      {{end}}
+    </table>
+  </body>
+</html>

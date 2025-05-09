@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 )
 
 const (
@@ -45,6 +46,7 @@ type reportCtx struct {
 	PDFHitCount          int
 	PDFMissCount         int
 	PDFMissReasons       []PDFMissReason
+	Date                 string
 }
 
 type fatcatStats struct {
@@ -252,6 +254,7 @@ func _main() error {
 		PDFHitCount:          scStats.PDFHit,
 		PDFMissCount:         scStats.PDFMiss,
 		PDFMissReasons:       scStats.PDFMissReasons,
+		Date:                 time.Now().Format("2006 Jan 2"),
 	}
 
 	err = tmpl.Execute(os.Stdout, tmplCtx)

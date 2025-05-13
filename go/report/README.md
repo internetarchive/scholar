@@ -2,7 +2,7 @@
 
 ## sandcrawler stats 
 
-we get stats about our SPN crawling via postgresqt; we use it to call functions that run basic queries.
+we get stats about our SPN crawling via postgrest; we use it to call functions that run basic queries.
 
 The needed functions:
 

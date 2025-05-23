@@ -31,7 +31,7 @@ NEW_DB_URL="postgresql:///fatcat2?host=/home/vilmibm/src/fatcat-scholar/devdb/pg
 PKTABLES = ["release", "work", "file", "creator"]
 FKTABLES = [
         "release",
-        "releasefile"
+        "releasefile",
         "releaseextid",
         "releaseabstract",
         "releasecontrib",

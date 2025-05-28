@@ -402,7 +402,7 @@ def dump_legacy_release_extid() -> int:
         """
         logger.info("dumping legacy extids")
         with psycopg.connect(conninfo=OLD_DB_URL) as conn:
-            with conn.cursor() as cur, open(f"legacy_{col}_extid.tsv", 'wb') as f:
+            with conn.cursor() as cur, open(outfile(f"legacy_{col}_extid"), 'wb') as f:
                with cur.copy(legacy_extid_sql) as copy:
                    for row in copy:
                        f.write(row)

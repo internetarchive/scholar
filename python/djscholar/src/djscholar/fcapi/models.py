@@ -350,7 +350,7 @@ class ReleaseAbstract(models.Model):
     """The text of a release's abstract"""
     release = models.ForeignKey(Release, on_delete=models.CASCADE, db_index=False,
                                 related_name="abstracts")
-    mimetype = models.CharField(default="text/plain")
+    mimetype = models.CharField(default="text/plain", null=True)
     language = models.TextField(
             help_text="Primary language of abstract. Two-letter RFC1766/ISO639-1 language code.",
             null=True, blank=True)

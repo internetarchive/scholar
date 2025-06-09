@@ -497,6 +497,10 @@ RESTORE_SQL = {
                 sha256, mimetype, extra)
             FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '', FORCE_NULL (extra));
         """,
+        "fileseturl": """
+            COPY fcapi_fileseturl (fileset_id, rel, url)
+            FROM STDIN WITH (FORMAT CSV, DELIMITER E'\t', HEADER, NULL '');
+        """,
         "webcapture": """
             COPY fcapi_webcapture (legacy_rev, id, source, extra, original_url, captured,
                 release_id)

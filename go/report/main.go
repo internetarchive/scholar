@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -150,17 +151,24 @@ func getSandcrawlerStats(c *http.Client) (sandcrawlerStats, error) {
 		return scStats, fmt.Errorf("could not read sandcrawler response: %w", err)
 	}
 
-	type failed struct {
-		Count int `json:"stat_failed_pdf"`
-	}
-	fparsed := []failed{}
-	err = json.Unmarshal(rbody, &fparsed)
+	// NB after we came back from power outage this was no longer returning json
+	// but just a bare number. I am not sure why.
+	//type failed struct {
+	//	Count int `json:"stat_failed_pdf"`
+	//}
+	//fparsed := []failed{}
+	//err = json.Unmarshal(rbody, &fparsed)
+	//if err != nil {
+	//	return scStats, fmt.Errorf("could not parse stat_failed_pdf response: %w", err)
+	//}
+	//if len(fparsed) > 0 {
+	//	scStats.PDFMiss = fparsed[0].Count
+	//}
+	missCount, err := strconv.Atoi(string(rbody))
 	if err != nil {
-		return scStats, fmt.Errorf("could not parse sandcrawler response: %w", err)
+		return scStats, fmt.Errorf("could not parse stat_failed_pdf response: %w", err)
 	}
-	if len(fparsed) > 0 {
-		scStats.PDFMiss = fparsed[0].Count
-	}
+	scStats.PDFMiss = missCount
 
 	req, err = http.NewRequest(http.MethodGet, scURL+"/stat_got_pdf", nil)
 	if err != nil {
@@ -181,17 +189,24 @@ func getSandcrawlerStats(c *http.Client) (sandcrawlerStats, error) {
 		return scStats, fmt.Errorf("could not read sandcrawler response: %w", err)
 	}
 
-	type got struct {
-		Count int `json:"stat_got_pdf"`
-	}
-	gparsed := []got{}
-	err = json.Unmarshal(rbody, &gparsed)
+	// NB after we came back from power outage this was no longer returning json
+	// but just a bare number. I am not sure why.
+	//type got struct {
+	//	Count int `json:"stat_got_pdf"`
+	//}
+	//gparsed := []got{}
+	//err = json.Unmarshal(rbody, &gparsed)
+	//if err != nil {
+	//	return scStats, fmt.Errorf("could not parse stat_got_pdf response: %w", err)
+	//}
+	//if len(gparsed) > 0 {
+	//	scStats.PDFHit = gparsed[0].Count
+	//}
+	hitCount, err := strconv.Atoi(string(rbody))
 	if err != nil {
-		return scStats, fmt.Errorf("could not parse sandcrawler response: %w", err)
+		return scStats, fmt.Errorf("could not parse stat_got_pdf response: %w", err)
 	}
-	if len(gparsed) > 0 {
-		scStats.PDFHit = gparsed[0].Count
-	}
+	scStats.PDFHit = hitCount
 
 	req, err = http.NewRequest(http.MethodGet, scURL+"/stat_error_counts", nil)
 	if err != nil {
@@ -215,7 +230,7 @@ func getSandcrawlerStats(c *http.Client) (sandcrawlerStats, error) {
 	rparsed := []PDFMissReason{}
 	err = json.Unmarshal(rbody, &rparsed)
 	if err != nil {
-		return scStats, fmt.Errorf("could not parse sandcrawler response: %w", err)
+		return scStats, fmt.Errorf("could not parse stat_error_counts response: %w", err)
 	}
 
 	scStats.PDFMissReasons = rparsed

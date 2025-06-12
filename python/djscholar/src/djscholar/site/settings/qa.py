@@ -26,7 +26,7 @@ DATABASES = {
 sentry_sdk.init(
     dsn="https://a24be9d783154fd88ce7c386e7165d2b@sentry.archive-it.org/28",
     integrations=[DjangoIntegration()],
-    envionrment="qa",
+    environment="qa",
 
     # Set traces_sample_rate to 1.0 to capture 100%
     # of transactions for performance monitoring.

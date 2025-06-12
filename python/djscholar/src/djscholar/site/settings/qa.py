@@ -1,4 +1,3 @@
-
 import os
 
 import sentry_sdk
@@ -8,7 +7,7 @@ from .base import *
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 DEBUG = False
-ALLOWED_HOSTS = [".scholar.archive.org"]
+ALLOWED_HOSTS = [".scholar-qa.archive.org"]
 
 DATABASES = {
     # NB at this time we have no plans for scholar's web frontend to need
@@ -27,7 +26,7 @@ DATABASES = {
 sentry_sdk.init(
     dsn="https://a24be9d783154fd88ce7c386e7165d2b@sentry.archive-it.org/28",
     integrations=[DjangoIntegration()],
-    envionrment="production",
+    envionrment="qa",
 
     # Set traces_sample_rate to 1.0 to capture 100%
     # of transactions for performance monitoring.

@@ -1,4 +1,10 @@
+
 import os
+
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
+
+from .base import *
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 DEBUG = False
@@ -17,3 +23,17 @@ DATABASES = {
         'HOST': 'pg.scholar.archive.org',
     }
 }
+
+sentry_sdk.init(
+    dsn="https://a24be9d783154fd88ce7c386e7165d2b@sentry.archive-it.org/28",
+    integrations=[DjangoIntegration()],
+
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for performance monitoring.
+    # We recommend adjusting this value in production.
+    traces_sample_rate=1.0,
+
+    # If you wish to associate users to errors (assuming you are using
+    # django.contrib.auth) you may enable sending PII data.
+    send_default_pii=True
+)

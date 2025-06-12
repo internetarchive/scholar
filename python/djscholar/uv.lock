@@ -130,6 +130,7 @@ dependencies = [
     { name = "ninja-api-key" },
     { name = "psycopg", extra = ["binary"] },
     { name = "python-dateutil" },
+    { name = "sentry-sdk" },
     { name = "surt" },
 ]
 
@@ -149,6 +150,7 @@ requires-dist = [
     { name = "ninja-api-key", specifier = "==1.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.4" },
     { name = "python-dateutil", specifier = "==2.9.*" },
+    { name = "sentry-sdk", specifier = ">=2.29" },
     { name = "surt", specifier = "==0.3.1" },
 ]
 
@@ -434,6 +436,19 @@ wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-win32.whl", hash = "sha256:aca01ccd0eb5eb7156b324cfaa088586f06a86d9e5314b0eb330cb48415097cc" },
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-win_amd64.whl", hash = "sha256:3170150172a8f994136c0c66f494edf199a0bbea7a409f649e4bc8f4d7084080" },
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/ruff/0.11.2/ruff-0.11.2-py3-none-win_arm64.whl", hash = "sha256:52933095158ff328f4c77af3d74f0379e34fd52f175144cefc1b192e7ccd32b4" },
+]
+
+[[package]]
+name = "sentry-sdk"
+version = "2.30.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "urllib3" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/sentry-sdk/2.30.0/sentry_sdk-2.30.0.tar.gz", hash = "sha256:436369b02afef7430efb10300a344fb61a11fe6db41c2b11f41ee037d2dd7f45" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/sentry-sdk/2.30.0/sentry_sdk-2.30.0-py2.py3-none-any.whl", hash = "sha256:59391db1550662f746ea09b483806a631c3ae38d6340804a1a4c0605044f6877" },
 ]
 
 [[package]]

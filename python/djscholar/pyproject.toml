@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "django==5.1.5",
     "django-ninja==1.4.0",
+    "gunicorn>=23.0",
     "ninja-api-key==1.0.2",
     "psycopg[binary]==3.2.4",
     "python-dateutil==2.9.*",

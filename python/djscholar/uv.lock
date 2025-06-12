@@ -127,6 +127,7 @@ source = { editable = "." }
 dependencies = [
     { name = "django" },
     { name = "django-ninja" },
+    { name = "gunicorn" },
     { name = "ninja-api-key" },
     { name = "psycopg", extra = ["binary"] },
     { name = "python-dateutil" },
@@ -147,6 +148,7 @@ dev = [
 requires-dist = [
     { name = "django", specifier = "==5.1.5" },
     { name = "django-ninja", specifier = "==1.4.0" },
+    { name = "gunicorn", specifier = ">=23.0" },
     { name = "ninja-api-key", specifier = "==1.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.4" },
     { name = "python-dateutil", specifier = "==2.9.*" },
@@ -194,6 +196,18 @@ source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple"
 sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/filelock/3.18.0/filelock-3.18.0.tar.gz", hash = "sha256:adbc88eabb99d2fec8c9c1b229b171f18afa655400173ddc653d5d01501fb9f2" }
 wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/filelock/3.18.0/filelock-3.18.0-py3-none-any.whl", hash = "sha256:c401f4f8377c4464e6db25fff06205fd89bdd83b65eb0488ed1b160f780e21de" },
+]
+
+[[package]]
+name = "gunicorn"
+version = "23.0.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gunicorn/23.0.0/gunicorn-23.0.0.tar.gz", hash = "sha256:f014447a0101dc57e294f6c18ca6b40227a4c90e9bdb586042628030cba004ec" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gunicorn/23.0.0/gunicorn-23.0.0-py3-none-any.whl", hash = "sha256:ec400d38950de4dfd418cff8328b2c8faed0edb0d517d3394e457c317908ca4d" },
 ]
 
 [[package]]

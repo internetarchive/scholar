@@ -19,7 +19,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'USER': 'fatcat',
         'PASSWORD': os.environ["FATCAT_DB_PASSWORD"],
-        'NAME': 'fatcat',
+        'NAME': 'fatcat2',
         'HOST': 'pg.scholar.archive.org',
     }
 }

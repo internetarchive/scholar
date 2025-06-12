@@ -29,6 +29,19 @@ wheels = [
 ]
 
 [[package]]
+name = "cffi"
+version = "1.17.1"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "pycparser" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/cffi/1.17.1/cffi-1.17.1.tar.gz", hash = "sha256:1c39c6016c32bc48dd54561950ebd6836e1670f2ae46128f67cf49e789c52824" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/cffi/1.17.1/cffi-1.17.1-cp313-cp313-win32.whl", hash = "sha256:e03eab0a8677fa80d646b5ddece1cbeaf556c313dcfac435ba11f107ba117b5d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/cffi/1.17.1/cffi-1.17.1-cp313-cp313-win_amd64.whl", hash = "sha256:f6a16c31041f09ead72d69f583767292f750d24913dadacf5756b966aacb3f1a" },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.1"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -127,6 +140,7 @@ source = { editable = "." }
 dependencies = [
     { name = "django" },
     { name = "django-ninja" },
+    { name = "gevent" },
     { name = "gunicorn" },
     { name = "ninja-api-key" },
     { name = "psycopg", extra = ["binary"] },
@@ -148,6 +162,7 @@ dev = [
 requires-dist = [
     { name = "django", specifier = "==5.1.5" },
     { name = "django-ninja", specifier = "==1.4.0" },
+    { name = "gevent", specifier = ">=24.11" },
     { name = "gunicorn", specifier = ">=23.0" },
     { name = "ninja-api-key", specifier = "==1.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.4" },
@@ -196,6 +211,53 @@ source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple"
 sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/filelock/3.18.0/filelock-3.18.0.tar.gz", hash = "sha256:adbc88eabb99d2fec8c9c1b229b171f18afa655400173ddc653d5d01501fb9f2" }
 wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/filelock/3.18.0/filelock-3.18.0-py3-none-any.whl", hash = "sha256:c401f4f8377c4464e6db25fff06205fd89bdd83b65eb0488ed1b160f780e21de" },
+]
+
+[[package]]
+name = "gevent"
+version = "25.5.1"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "cffi", marker = "platform_python_implementation == 'CPython' and sys_platform == 'win32'" },
+    { name = "greenlet", marker = "platform_python_implementation == 'CPython'" },
+    { name = "zope-event" },
+    { name = "zope-interface" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1.tar.gz", hash = "sha256:582c948fa9a23188b890d0bc130734a506d039a2e5ad87dae276a456cc683e61" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp313-cp313-macosx_11_0_universal2.whl", hash = "sha256:a022a9de9275ce0b390b7315595454258c525dc8287a03f1a6cacc5878ab7cbc" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3fae8533f9d0ef3348a1f503edcfb531ef7a0236b57da1e24339aceb0ce52922" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp313-cp313-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:c7b32d9c3b5294b39ea9060e20c582e49e1ec81edbfeae6cf05f8ad0829cb13d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp313-cp313-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:7b95815fe44f318ebbfd733b6428b4cb18cc5e68f1c40e8501dd69cc1f42a83d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2d316529b70d325b183b2f3f5cde958911ff7be12eb2b532b5c301f915dbbf1e" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:f6ba33c13db91ffdbb489a4f3d177a261ea1843923e1d68a5636c53fe98fa5ce" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:37ee34b77c7553777c0b8379915f75934c3f9c8cd32f7cd098ea43c9323c2276" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp313-cp313-win_amd64.whl", hash = "sha256:9fa6aa0da224ed807d3b76cdb4ee8b54d4d4d5e018aed2478098e685baae7896" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/gevent/25.5.1/gevent-25.5.1-cp314-cp314-macosx_11_0_universal2.whl", hash = "sha256:0bacf89a65489d26c7087669af89938d5bfd9f7afb12a07b57855b9fad6ccbd0" },
+]
+
+[[package]]
+name = "greenlet"
+version = "3.2.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3.tar.gz", hash = "sha256:8b0dd8ae4c0d6f5e54ee55ba935eeb3d735a9b58a8a1e5b5cbab64e01a39f365" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-macosx_11_0_universal2.whl", hash = "sha256:500b8689aa9dd1ab26872a34084503aeddefcb438e2e7317b89b11eaea1901ad" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:a07d3472c2a93117af3b0136f246b2833fdc0b542d4a9799ae5f41c28323faef" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:8704b3768d2f51150626962f4b9a9e4a17d2e37c8a8d9867bbd9fa4eb938d3b3" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:5035d77a27b7c62db6cf41cf786cfe2242644a7a337a0e155c80960598baab95" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:2d8aa5423cd4a396792f6d4580f88bdc6efcb9205891c9d40d20f6e670992efb" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2c724620a101f8170065d7dded3f962a2aea7a7dae133a009cada42847e04a7b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-musllinux_1_1_aarch64.whl", hash = "sha256:873abe55f134c48e1f2a6f53f7d1419192a3d1a4e873bace00499a4e45ea6af0" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:024571bbce5f2c1cfff08bf3fbaa43bbc7444f580ae13b0099e95d0e6e67ed36" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp313-cp313-win_amd64.whl", hash = "sha256:5195fb1e75e592dd04ce79881c8a22becdfa3e6f500e7feb059b1e6fdd54d3e3" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp314-cp314-macosx_11_0_universal2.whl", hash = "sha256:3d04332dddb10b4a211b68111dabaee2e1a073663d117dc10247b5b1642bac86" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:8186162dffde068a465deab08fc72c767196895c39db26ab1c17c0b77a6d8b97" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp314-cp314-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:f4bfbaa6096b1b7a200024784217defedf46a07c2eee1a498e94a1b5f8ec5728" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp314-cp314-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:ed6cfa9200484d234d8394c70f5492f144b20d4533f69262d530a1a082f6ee9a" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:02b0df6f63cd15012bed5401b47829cfd2e97052dc89da3cfaf2c779124eb892" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:86c2d68e87107c1792e2e8d5399acec2487a4e993ab76c792408e59394d52141" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/greenlet/3.2.3/greenlet-3.2.3-cp314-cp314-win_amd64.whl", hash = "sha256:8c47aae8fbbfcf82cc13327ae802ba13c9c36753b67e760023fd116bc124a62a" },
 ]
 
 [[package]]
@@ -320,6 +382,15 @@ wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.4/psycopg_binary-3.2.4-cp313-cp313-musllinux_1_2_ppc64le.whl", hash = "sha256:fa4acea9ca20a567c3872a5afab2084751530bb57b8fb6b52820d5c54e7c8c3b" },
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.4/psycopg_binary-3.2.4-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:5c487f35a1905bb15da927c1fc05f70f3d29f0e21fb4ba21d360a0da9c755f20" },
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.2.4/psycopg_binary-3.2.4-cp313-cp313-win_amd64.whl", hash = "sha256:80297c3a9f7b5a6afdb0d8f220661ccd796e5c9128c44b32c41267f7daefd37f" },
+]
+
+[[package]]
+name = "pycparser"
+version = "2.22"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pycparser/2.22/pycparser-2.22.tar.gz", hash = "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pycparser/2.22/pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc" },
 ]
 
 [[package]]
@@ -466,6 +537,15 @@ wheels = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "80.9.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/setuptools/80.9.0/setuptools-80.9.0.tar.gz", hash = "sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/setuptools/80.9.0/setuptools-80.9.0-py3-none-any.whl", hash = "sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922" },
+]
+
+[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -542,4 +622,33 @@ source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple"
 sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/urllib3/2.4.0/urllib3-2.4.0.tar.gz", hash = "sha256:414bc6535b787febd7567804cc015fee39daab8ad86268f1310a9250697de466" }
 wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/urllib3/2.4.0/urllib3-2.4.0-py3-none-any.whl", hash = "sha256:4e16665048960a0900c702d4a66415956a584919c03361cac9f1df5c5dd7e813" },
+]
+
+[[package]]
+name = "zope-event"
+version = "5.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "setuptools" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-event/5.0/zope.event-5.0.tar.gz", hash = "sha256:bac440d8d9891b4068e2b5a2c5e2c9765a9df762944bda6955f96bb9b91e67cd" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-event/5.0/zope.event-5.0-py3-none-any.whl", hash = "sha256:2832e95014f4db26c47a13fdaef84cef2f4df37e66b59d8f1f4a8f319a632c26" },
+]
+
+[[package]]
+name = "zope-interface"
+version = "7.2"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "setuptools" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-interface/7.2/zope.interface-7.2.tar.gz", hash = "sha256:8b49f1a3d1ee4cdaf5b32d2e738362c7f5e40ac8b46dd7d1a65e82a4872728fe" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-interface/7.2/zope.interface-7.2-cp313-cp313-macosx_10_9_x86_64.whl", hash = "sha256:3e0350b51e88658d5ad126c6a57502b19d5f559f6cb0a628e3dc90442b53dd98" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-interface/7.2/zope.interface-7.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:15398c000c094b8855d7d74f4fdc9e73aa02d4d0d5c775acdef98cdb1119768d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-interface/7.2/zope.interface-7.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:802176a9f99bd8cc276dcd3b8512808716492f6f557c11196d42e26c01a69a4c" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-interface/7.2/zope.interface-7.2-cp313-cp313-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:eb23f58a446a7f09db85eda09521a498e109f137b85fb278edb2e34841055398" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-interface/7.2/zope.interface-7.2-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a71a5b541078d0ebe373a81a3b7e71432c61d12e660f1d67896ca62d9628045b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/zope-interface/7.2/zope.interface-7.2-cp313-cp313-win_amd64.whl", hash = "sha256:4893395d5dd2ba655c38ceb13014fd65667740f09fa5bb01caa1e6284e48c0cd" },
 ]

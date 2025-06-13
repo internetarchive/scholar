@@ -9,7 +9,7 @@ from django.db import transaction
 from django.http import HttpResponse, Http404
 from ninja.pagination import paginate
 from django.shortcuts import get_object_or_404
-from ninja import NinjaAPI, Query, Schema, ModelSchema, Swagger
+from ninja import NinjaAPI, Query, Schema, ModelSchema
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
@@ -18,12 +18,7 @@ from djscholar.fcapi.fcid import fcid2uuid
 
 COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra", "hidden_reason", "hidden_when"]
 
-class PrefixedSwagger(Swagger):
-     def get_openapi_url(self, *a, **kw):
-          return '/_sd/api/fatcat/v2/openapi.json'
-
-
-v2api = NinjaAPI(docs=PrefixedSwagger())
+v2api = NinjaAPI()
 api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 
 # crawl MVP

@@ -185,7 +185,7 @@ FileSchema = create_schema(m.File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", 
 
 type EntitySchema = ReleaseSchema|CreatorSchema|ContainerSchema|WorkSchema|FileSchema|WebcaptureSchema
 
-@v2api.head("/health")
+@v2api.api_operations(["HEAD", "GET"], "/health")
 def status(request) -> HttpResponse:
     # ensure db connection is ok, return 200
     # test id 855c8fa7-3b78-4652-88b9-f37d226c3139

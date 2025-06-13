@@ -7,7 +7,7 @@ from .base import *
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 DEBUG = False
-ALLOWED_HOSTS = [".scholar-qa.archive.org"]
+ALLOWED_HOSTS = ["localhost", ".scholar.archive.org"]
 
 DATABASES = {
     # NB at this time we have no plans for scholar's web frontend to need

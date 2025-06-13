@@ -189,8 +189,11 @@ type EntitySchema = ReleaseSchema|CreatorSchema|ContainerSchema|WorkSchema|FileS
 def status(request) -> HttpResponse:
     # ensure db connection is ok, return 200
     # test id 855c8fa7-3b78-4652-88b9-f37d226c3139
-    m.Release.objects.get(id="855c8fa7-3b78-4652-88b9-f37d226c3139")
-    return HttpResponse(status_code=HTTPStatus.OK)
+    try:
+        m.Release.objects.get(id="855c8fa7-3b78-4652-88b9-f37d226c3139")
+    except m.Release.DoesNotExist:
+        pass
+    return HttpResponse(status=HTTPStatus.OK)
 
 # Container routes
 

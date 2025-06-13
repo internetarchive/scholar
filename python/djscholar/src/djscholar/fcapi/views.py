@@ -185,6 +185,13 @@ FileSchema = create_schema(m.File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", 
 
 type EntitySchema = ReleaseSchema|CreatorSchema|ContainerSchema|WorkSchema|FileSchema|WebcaptureSchema
 
+@v2api.head("/health")
+def status(request) -> HttpResponse:
+    # ensure db connection is ok, return 200
+    # test id 855c8fa7-3b78-4652-88b9-f37d226c3139
+    m.Release.objects.get(id="855c8fa7-3b78-4652-88b9-f37d226c3139")
+    return HttpResponse(status_code=HTTPStatus.OK)
+
 # Container routes
 
 @v2api.get("/container/lookup")

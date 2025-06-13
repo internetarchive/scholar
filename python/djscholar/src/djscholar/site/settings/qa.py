@@ -68,3 +68,5 @@ LOGGING = {
         },
     }
 }
+
+STATIC_ROOT = "/var/www/djscholar/static"

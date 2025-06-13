@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'ninja_apikey',
+    'ninja',
 ]
 
 MIDDLEWARE = [
@@ -131,4 +132,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # we target postgresql which has a index name length limit of 63, not 30
 SILENCED_SYSTEM_CHECKS = ["models.E034"]
 
-STATIC_ROOT = "/var/www/djscholar/static"
+STATIC_ROOT = BASE_DIR / "static"

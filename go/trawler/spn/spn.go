@@ -125,6 +125,7 @@ type SaveRequest struct {
 	TargetPassword string
 }
 
+// type Client describes an SPN client.
 type Client interface {
 	StatusSystem() (SystemStatus, error)
 	StatusUser() (UserStatus, error)
@@ -132,6 +133,7 @@ type Client interface {
 	Save(SaveRequest) SaveResult
 }
 
+// type DefaultClient is the basic, concrete implementation for an SPN client.
 type DefaultClient struct {
 	Config SPNConfig
 	client *http.Client
@@ -224,6 +226,8 @@ type TestClient struct {
 	// TODO
 }
 
+// NewDefaultClient creates an SPN DefaultClient. It accepts configuration that
+// must include an access key and an access secret; endpoint is optional.
 func NewDefaultClient(cfg SPNConfig) (Client, error) {
 	if cfg.endpoint == "" {
 		cfg.endpoint = "web.archive.org/save"

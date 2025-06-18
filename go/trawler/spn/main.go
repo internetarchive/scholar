@@ -16,6 +16,9 @@ var client spnclient.Client = nil
 var jobID string
 var debug bool
 
+// for holding save flags
+var saveReq = spnclient.SaveRequest{}
+
 var rootCmd = &cobra.Command{
 	Use:   "spn",
 	Short: "Use the WaybackMachine's SavePageNow API",
@@ -120,10 +123,27 @@ func init() {
 	viper.AddConfigPath("$HOME/.config/")
 	viper.SetEnvPrefix("SPNCLIENT")
 	viper.AutomaticEnv()
+
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "debug mode")
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(saveCmd)
+
 	statusCmd.Flags().StringVarP(&jobID, "job", "j", "", "job ID")
+
+	saveCmd.Flags().BoolVar(&saveReq.CaptureAll, "capture-all", false, "Capture non-200 responses")
+	saveCmd.Flags().BoolVar(&saveReq.CaptureScreenshot, "capture-screenshot", false, "Capture a screenshot")
+	saveCmd.Flags().BoolVar(&saveReq.CaptureOutlinks, "capture-outlinks", false, "Capture all outlinks, too")
+	saveCmd.Flags().BoolVar(&saveReq.DelayWBAvailability, "delay-wb", false, "Delay appearance of capture in WaybackMachine")
+	saveCmd.Flags().BoolVar(&saveReq.ForceGet, "force-get", false, "Use simple GET instead of headless browser")
+	saveCmd.Flags().BoolVar(&saveReq.SkipFirstArchive, "skip-first-archive", false, "Skip check for whether or not this is the first capture for a URL")
+	saveCmd.Flags().BoolVar(&saveReq.OutlinksAvailability, "outlinks-availability", false, "Include details about outlink captures")
+	saveCmd.Flags().BoolVar(&saveReq.EmailResult, "email", false, "Send email with results")
+	saveCmd.Flags().StringVar(&saveReq.CaptureCookie, "cookie", "", "Cookie to use when capturing")
+	saveCmd.Flags().StringVar(&saveReq.UserAgent, "user-agent", "", "User-Agent to use when capturing")
+	saveCmd.Flags().StringVar(&saveReq.TargetUsername, "target-username", "", "Login username to use when capturing")
+	saveCmd.Flags().StringVar(&saveReq.TargetPassword, "target-password", "", "Login password to use when capturing")
+	saveCmd.Flags().BoolVar(&saveReq.DelayForJavascript, "js-delay", false, "Wait for javascript to settle during a capture")
+	saveCmd.Flags().IntVar(&saveReq.JavascriptTimeout, "js-timeout", 5, "How long to wait for javascript to settle")
 }
 
 func main() {

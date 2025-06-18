@@ -130,7 +130,7 @@ type Client interface {
 	StatusSystem() (SystemStatus, error)
 	StatusUser() (UserStatus, error)
 	StatusJob(string) (JobStatus, error)
-	Save(SaveRequest) SaveResult
+	Save(SaveRequest) (SaveResult, error)
 }
 
 // type DefaultClient is the basic, concrete implementation for an SPN client.
@@ -217,9 +217,60 @@ func (c *DefaultClient) StatusJob(jobID string) (JobStatus, error) {
 	return out, nil
 }
 
-func (c *DefaultClient) Save(req SaveRequest) SaveResult {
+func toIntBoolArg(v bool) string {
+	if v {
+		return "1"
+	}
+	return "0"
+}
+
+// Save POSTSs a URL to the /save endpoint. See the documentation
+// for SaveRequest to see how to form the call's arguments.
+func (c *DefaultClient) Save(req SaveRequest) (SaveResult, error) {
+	out := SaveResult{}
+
+	if req.URL == "" {
+		return out, errors.New("URL is required")
+	}
+
+	values := url.Values{}
+	values.Add("url", req.URL)
+	values.Add("capture_all", toIntBoolArg(req.CaptureAll))
+	values.Add("capture_outlinks", toIntBoolArg(req.CaptureOutlinks))
+	values.Add("capture_screenshot", toIntBoolArg(req.CaptureScreenshot))
+	values.Add("delay_wb_availability", toIntBoolArg(req.DelayWBAvailability))
+	values.Add("force_get", toIntBoolArg(req.ForceGet))
+	values.Add("skip_first_archive", toIntBoolArg(req.SkipFirstArchive))
+	values.Add("outlinks_availability", toIntBoolArg(req.OutlinksAvailability))
+	values.Add("email_result", toIntBoolArg(req.EmailResult))
+
+	if req.CaptureCookie != "" {
+		values.Add("capture_cookie", req.CaptureCookie)
+	}
+
+	if req.UserAgent != "" {
+		values.Add("use_user_agent", req.UserAgent)
+	}
+
+	if req.TargetUsername != "" {
+		values.Add("target_username", req.TargetUsername)
+	}
+
+	if req.TargetPassword != "" {
+		values.Add("target_password", req.TargetPassword)
+	}
+
+	if req.IfNotArchivedWithinSecs > 0 {
+		values.Add("if_not_archived_within",
+			fmt.Sprintf("%d", req.IfNotArchivedWithinSecs))
+	}
+
+	if req.DelayForJavascript && req.JavascriptTimeout > 0 {
+		values.Add("js_behavior_timeout", fmt.Sprintf("%d", req.JavascriptTimeout))
+	}
+
 	// TODO
-	return SaveResult{}
+	return out, nil
 }
 
 type TestClient struct {

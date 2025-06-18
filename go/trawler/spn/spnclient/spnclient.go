@@ -140,7 +140,7 @@ type DefaultClient struct {
 }
 
 func (c *DefaultClient) newRequest(method string, path string, body io.Reader) (*http.Request, error) {
-	p, err := url.JoinPath(c.Config.Endpoint, path)
+	p, err := url.JoinPath("http://"+c.Config.Endpoint, path)
 	if err != nil {
 		return nil, fmt.Errorf("could not join: %w", err)
 	}

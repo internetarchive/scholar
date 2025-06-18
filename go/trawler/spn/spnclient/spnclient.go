@@ -1,7 +1,7 @@
-// package spn implements a thin wrapper around the Wayback team's
+// package spnclient implements a thin wrapper around the Wayback team's
 // SavePageNow API. It does not implement 100% of what the API can do but
 // covers most of it.
-package spn
+package spnclient
 
 import (
 	"encoding/json"
@@ -45,9 +45,9 @@ type SaveResult struct {
 // type SPNConfig describes the configuration needed for the SPN API to
 // function.
 type SPNConfig struct {
-	accessKey string
-	secretKey string
-	endpoint  string
+	AccessKey string
+	SecretKey string
+	Endpoint  string
 }
 
 // type SaveRequest describes the arguments both required and optional for a
@@ -140,7 +140,7 @@ type DefaultClient struct {
 }
 
 func (c *DefaultClient) newRequest(method string, path string, body io.Reader) (*http.Request, error) {
-	p, err := url.JoinPath(c.Config.endpoint, path)
+	p, err := url.JoinPath(c.Config.Endpoint, path)
 	if err != nil {
 		return nil, fmt.Errorf("could not join: %w", err)
 	}
@@ -153,7 +153,7 @@ func (c *DefaultClient) newRequest(method string, path string, body io.Reader) (
 	req.Header.Add("User-Agent", "Mozilla/5.0 scholar-go-spn-client")
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization",
-		fmt.Sprintf("LOW %s:%s", c.Config.accessKey, c.Config.secretKey))
+		fmt.Sprintf("LOW %s:%s", c.Config.AccessKey, c.Config.SecretKey))
 
 	return req, nil
 }
@@ -229,13 +229,13 @@ type TestClient struct {
 // NewDefaultClient creates an SPN DefaultClient. It accepts configuration that
 // must include an access key and an access secret; endpoint is optional.
 func NewDefaultClient(cfg SPNConfig) (Client, error) {
-	if cfg.endpoint == "" {
-		cfg.endpoint = "web.archive.org/save"
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = "web.archive.org/save"
 	}
-	if cfg.accessKey == "" {
+	if cfg.AccessKey == "" {
 		return nil, errors.New("cannot create spn client without access key")
 	}
-	if cfg.secretKey == "" {
+	if cfg.SecretKey == "" {
 		return nil, errors.New("cannot create spn client without secret key")
 	}
 	return &DefaultClient{

@@ -14,32 +14,32 @@ import (
 
 // type SystemStatus describes the result of the /status/system endpoint
 type SystemStatus struct {
-	Status string
+	Status string `json:"status"`
 }
 
 // type UserStatus describes the result of the /status/user endpoint
 type UserStatus struct {
-	Available  int
-	Processing int
+	Available  int `json:"available"`
+	Processing int `json:"processing"`
 	// TODO i swear there is more (slots?)
 }
 
 // type JobStatus describes the result of the /status/<job id> endpoint
 type JobStatus struct {
-	Status      string
-	JobID       string
-	OriginalURL string `json:"original_url"`
-	Screenshot  string
-	Timestamp   string
-	Duration    float64
-	Resources   []string
-	Outlinks    map[string]string
+	Status      string            `json:"status"`
+	JobID       string            `json:"job_id"`
+	OriginalURL string            `json:"original_url"`
+	Screenshot  string            `json:"screenshot"`
+	Timestamp   string            `json:"timestamp"`
+	Duration    float64           `json:"duration"`
+	Resources   []string          `json:"resources"`
+	Outlinks    map[string]string `json:"outlinks"`
 }
 
 // type SaveResult describes the result of requesting a page save via "POST /save"
 type SaveResult struct {
-	URL   string
-	JobID string
+	URL   string `json:"url"`
+	JobID string `json:"job_id"`
 }
 
 // type SPNConfig describes the configuration needed for the SPN API to

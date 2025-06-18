@@ -28,15 +28,22 @@ type UserStatus struct {
 
 // type JobStatus describes the result of the /status/<job id> endpoint
 type JobStatus struct {
-	Status      string            `json:"status"`
-	JobID       string            `json:"job_id"`
-	OriginalURL string            `json:"original_url"`
-	Screenshot  string            `json:"screenshot"`
-	Timestamp   string            `json:"timestamp"`
-	Duration    float64           `json:"duration"`
-	Resources   []string          `json:"resources"`
-	Outlinks    map[string]string `json:"outlinks"`
-	Message     string            `json:"message,omitempty"`
+	Status      string   `json:"status"`
+	JobID       string   `json:"job_id"`
+	OriginalURL string   `json:"original_url"`
+	Screenshot  string   `json:"screenshot"`
+	Timestamp   string   `json:"timestamp"`
+	Duration    float64  `json:"duration_sec"`
+	Resources   []string `json:"resources"`
+	// NB using interface because depending on value of outlinks-avaiability used
+	// when the capture was requested the map can either contain strings or maps
+	Outlinks   map[string]interface{} `json:"outlinks"`
+	Message    string                 `json:"message,omitempty"`
+	HTTPStatus int                    `json:"http_status"`
+	Counters   struct {
+		Embeds   int `json:"embeds"`
+		Outlinks int `json:"outlinks"`
+	} `json:"counters"`
 }
 
 // type SaveResult describes the result of requesting a page save via "POST /save"

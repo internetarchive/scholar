@@ -41,11 +41,8 @@ var saveCmd = &cobra.Command{
 	Short: "Request a capture from SPN",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		sreq := spnclient.SaveRequest{
-			URL: args[0],
-			// TODO bind flags
-		}
-		res, err := client.Save(sreq)
+		saveReq.URL = args[0]
+		res, err := client.Save(saveReq)
 		if err != nil {
 			return err
 		}

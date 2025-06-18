@@ -87,8 +87,9 @@ var statusCmd = &cobra.Command{
 }
 
 func init() {
-	viper.SetConfigFile("spn.toml")
-	viper.AddConfigPath("$HOME/.config")
+	viper.SetConfigName("spn")
+	viper.SetConfigType("toml")
+	viper.AddConfigPath("$HOME/.config/")
 	viper.SetEnvPrefix("SPNCLIENT")
 	viper.AutomaticEnv()
 	rootCmd.AddCommand(statusCmd)
@@ -97,7 +98,7 @@ func init() {
 
 func main() {
 	if err := viper.ReadInConfig(); err != nil {
-		fmt.Fprintf(os.Stderr, "expected to find a config file ~/.config/spn.toml, but: %s\n", err.Error())
+		fmt.Fprintf(os.Stderr, "could not read config: %s", err.Error())
 		os.Exit(2)
 	}
 	if err := rootCmd.Execute(); err != nil {

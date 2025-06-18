@@ -4,6 +4,7 @@
 package spnclient
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,6 @@ type SystemStatus struct {
 type UserStatus struct {
 	Available  int `json:"available"`
 	Processing int `json:"processing"`
-	// TODO i swear there is more (slots?)
 }
 
 // type JobStatus describes the result of the /status/<job id> endpoint
@@ -38,8 +38,9 @@ type JobStatus struct {
 
 // type SaveResult describes the result of requesting a page save via "POST /save"
 type SaveResult struct {
-	URL   string `json:"url"`
-	JobID string `json:"job_id"`
+	URL     string `json:"url"`
+	JobID   string `json:"job_id"`
+	Message string `json:"message"`
 }
 
 // type SPNConfig describes the configuration needed for the SPN API to
@@ -48,6 +49,7 @@ type SPNConfig struct {
 	AccessKey string
 	SecretKey string
 	Endpoint  string
+	Debug     bool
 }
 
 // type SaveRequest describes the arguments both required and optional for a
@@ -137,23 +139,27 @@ type Client interface {
 type DefaultClient struct {
 	Config SPNConfig
 	client *http.Client
+	Debug  bool
 }
 
 func (c *DefaultClient) newRequest(method string, path string, body io.Reader) (*http.Request, error) {
-	p, err := url.JoinPath("http://"+c.Config.Endpoint, path)
+	p, err := url.JoinPath("https://"+c.Config.Endpoint, path)
 	if err != nil {
 		return nil, fmt.Errorf("could not join: %w", err)
 	}
 
-	req, err := http.NewRequest(method, p, nil)
+	req, err := http.NewRequest(method, p, body)
 	if err != nil {
 		return nil, fmt.Errorf("could not create req: %w", err)
 	}
 
 	req.Header.Add("User-Agent", "Mozilla/5.0 scholar-go-spn-client")
 	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Authorization",
-		fmt.Sprintf("LOW %s:%s", c.Config.AccessKey, c.Config.SecretKey))
+	req.Header.Add("Authorization", fmt.Sprintf("LOW %s:%s", c.Config.AccessKey, c.Config.SecretKey))
+
+	if method == "POST" {
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	}
 
 	return req, nil
 }
@@ -164,14 +170,32 @@ func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) erro
 		return err
 	}
 
+	if c.Debug {
+		fmt.Printf("-> %s %s\n", method, req.URL)
+		for k, v := range req.Header {
+			if k == "Authorization" {
+				v = []string{"***:***"}
+			}
+			fmt.Printf("-> %s: %s\n", k, v)
+		}
+	}
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("SPN call failed: %w", err)
 	}
 
+	if c.Debug {
+		fmt.Printf("<- %d\n", resp.StatusCode)
+	}
+
 	rbody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read SPN response: %w", err)
+	}
+
+	if c.Debug {
+		fmt.Println(string(rbody))
 	}
 
 	err = json.Unmarshal(rbody, parsed)
@@ -269,7 +293,17 @@ func (c *DefaultClient) Save(req SaveRequest) (SaveResult, error) {
 		values.Add("js_behavior_timeout", fmt.Sprintf("%d", req.JavascriptTimeout))
 	}
 
-	// TODO
+	params := values.Encode()
+
+	if c.Debug {
+		fmt.Printf("-> %s\n", params)
+	}
+
+	err := c.do("POST", "", bytes.NewBufferString(params), &out)
+	if err != nil {
+		return out, fmt.Errorf("capture request failed: %w", err)
+	}
+
 	return out, nil
 }
 
@@ -292,5 +326,6 @@ func NewDefaultClient(cfg SPNConfig) (Client, error) {
 	return &DefaultClient{
 		Config: cfg,
 		client: &http.Client{},
+		Debug:  cfg.Debug,
 	}, nil
 }

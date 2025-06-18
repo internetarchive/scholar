@@ -12,23 +12,56 @@ import (
 )
 
 var spncfg *spnclient.SPNConfig = nil
+var client spnclient.Client = nil
 var jobID string
+var debug bool
 
 var rootCmd = &cobra.Command{
 	Use:   "spn",
 	Short: "Use the WaybackMachine's SavePageNow API",
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) (err error) {
 		spncfg = &spnclient.SPNConfig{
 			AccessKey: viper.GetString("access_key"),
 			SecretKey: viper.GetString("secret_key"),
 			Endpoint:  viper.GetString("endpoint"),
+			Debug:     debug,
 		}
+
+		client, err = spnclient.NewDefaultClient(*spncfg)
+
+		return
+	},
+}
+
+var saveCmd = &cobra.Command{
+	Use:   "save [options] <url>",
+	Short: "Request a capture from SPN",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sreq := spnclient.SaveRequest{
+			URL: args[0],
+			// TODO bind flags
+		}
+		res, err := client.Save(sreq)
+		if err != nil {
+			return err
+		}
+
+		out, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			return fmt.Errorf("could not marshal capture result: %w", err)
+		}
+
+		fmt.Println(string(out))
+
+		return nil
 	},
 }
 
 var statusCmd = &cobra.Command{
 	Use:   "status <user|system|job>",
 	Short: "Call the various /status endpoints",
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		statusType := "system"
 		if len(args) > 0 {
@@ -38,15 +71,10 @@ var statusCmd = &cobra.Command{
 			statusType = args[0]
 		}
 
-		c, err := spnclient.NewDefaultClient(*spncfg)
-		if err != nil {
-			return err
-		}
-
 		var out []byte
 
 		if statusType == "system" {
-			res, err := c.StatusSystem()
+			res, err := client.StatusSystem()
 			if err != nil {
 				return err
 			}
@@ -56,7 +84,7 @@ var statusCmd = &cobra.Command{
 				return fmt.Errorf("could not marshal system status: %w", err)
 			}
 		} else if statusType == "user" {
-			res, err := c.StatusUser()
+			res, err := client.StatusUser()
 			if err != nil {
 				return err
 			}
@@ -68,7 +96,7 @@ var statusCmd = &cobra.Command{
 			if jobID == "" {
 				return errors.New("--job required")
 			}
-			res, err := c.StatusJob(jobID)
+			res, err := client.StatusJob(jobID)
 			if err != nil {
 				return err
 			}
@@ -92,7 +120,9 @@ func init() {
 	viper.AddConfigPath("$HOME/.config/")
 	viper.SetEnvPrefix("SPNCLIENT")
 	viper.AutomaticEnv()
+	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "debug mode")
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(saveCmd)
 	statusCmd.Flags().StringVarP(&jobID, "job", "j", "", "job ID")
 }
 

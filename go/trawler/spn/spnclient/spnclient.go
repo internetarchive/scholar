@@ -205,7 +205,7 @@ func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) erro
 	}
 
 	if c.Debug {
-		fmt.Println(string(rbody))
+		fmt.Printf("<- %s\n", string(rbody))
 	}
 
 	err = json.Unmarshal(rbody, parsed)
@@ -266,6 +266,9 @@ func (c *DefaultClient) Save(req SaveRequest) (SaveResult, error) {
 	if req.URL == "" {
 		return out, errors.New("URL is required")
 	}
+
+	// TODO write an integration test script
+	// TODO write unit tests
 
 	values := url.Values{}
 	values.Add("url", req.URL)

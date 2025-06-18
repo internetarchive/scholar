@@ -15,13 +15,15 @@ import (
 
 // type SystemStatus describes the result of the /status/system endpoint
 type SystemStatus struct {
-	Status string `json:"status"`
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
 }
 
 // type UserStatus describes the result of the /status/user endpoint
 type UserStatus struct {
-	Available  int `json:"available"`
-	Processing int `json:"processing"`
+	Available  int    `json:"available"`
+	Processing int    `json:"processing"`
+	Message    string `json:"message,omitempty"`
 }
 
 // type JobStatus describes the result of the /status/<job id> endpoint
@@ -34,13 +36,14 @@ type JobStatus struct {
 	Duration    float64           `json:"duration"`
 	Resources   []string          `json:"resources"`
 	Outlinks    map[string]string `json:"outlinks"`
+	Message     string            `json:"message,omitempty"`
 }
 
 // type SaveResult describes the result of requesting a page save via "POST /save"
 type SaveResult struct {
 	URL     string `json:"url"`
 	JobID   string `json:"job_id"`
-	Message string `json:"message"`
+	Message string `json:"message,omitempty"`
 }
 
 // type SPNConfig describes the configuration needed for the SPN API to

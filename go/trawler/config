@@ -1,0 +1,11 @@
+# This is an example config file. For actual deployments of trawler, a path of
+# /etc/trawler/config is recommended for this file. However, the following
+# paths are checked:
+# - /etc/trawler/config
+# - $HOME/.config/trawler/config
+# - .
+
+[crossref]
+cron_task_queue = "crossref_cron"
+#cron = "0 0 * * *"
+cron = "* * * * *"

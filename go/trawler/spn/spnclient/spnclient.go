@@ -1,6 +1,13 @@
 // package spnclient implements a thin wrapper around the Wayback team's
 // SavePageNow API. It does not implement 100% of what the API can do but
 // covers most of it.
+//
+// This implementation is largely based on the docs at
+// https://ia800508.us.archive.org/10/items/spn-2-public-api-page-docs-2023-01-22/SPN2%20public%20API%20page%20docs.pdf
+// . They do not capture all the possible output keys so I filled those in via
+// experimentation.
+//
+// This implementation is also based in part by the SPN client in sandcrawler.
 package spnclient
 
 import (

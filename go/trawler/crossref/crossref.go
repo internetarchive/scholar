@@ -8,18 +8,16 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
-	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/types/known/durationpb"
-	"storj.io/common/uuid"
 )
 
 // TODO temporal connection details in config file
+// TODO defaults in config file
 
 func ensureNamespace(ctx context.Context, namespace string) error {
 	log.Printf("ensuring '%s' namespace (will create if it does not exist)...", namespace)
@@ -52,150 +50,61 @@ func ensureNamespace(ctx context.Context, namespace string) error {
 	return nil
 }
 
-func RunStarter() error {
-	ctx := context.Background()
-
-	every := viper.GetString("crossref.every")
-	if every == "" {
-		return errors.New("crossref.every needs to be set in config")
-	}
-	duration, err := time.ParseDuration(every)
-	if err != nil {
-		return fmt.Errorf("could not parse crossref.every: %w", err)
-	}
-
-	namespace := viper.GetString("crossref.temporal_namespace")
-	if namespace != "" {
-		err := ensureNamespace(ctx, namespace)
-		if err != nil {
-			return fmt.Errorf("could not ensure namesapce: %w", err)
-		}
-	} else {
-		namespace = "default"
-	}
-
-	c, err := client.Dial(client.Options{
-		HostPort:  client.DefaultHostPort,
-		Namespace: namespace,
-	})
-	if err != nil {
-		log.Fatalln("Unable to create client", err)
-	}
-	defer c.Close()
-
-	id, err := uuid.New()
-	if err != nil {
-		return fmt.Errorf("could not make a workflowID: %w")
-	}
-	sid, err := uuid.New()
-	if err != nil {
-		return fmt.Errorf("could not make a workflowID: %w")
-	}
-	scheduleID := "crossref_schedule_" + sid.String()
-	workflowID := "crossref_" + id.String()
-
-	scheduleHandle, err := c.ScheduleClient().Create(ctx, client.ScheduleOptions{
-		ID: scheduleID,
-		Spec: client.ScheduleSpec{
-			Intervals: []client.ScheduleIntervalSpec{
-				{Every: duration},
-			},
-		},
-		Action: &client.ScheduleWorkflowAction{
-			ID:        workflowID,
-			Workflow:  CrossrefCrawlWorkflow,
-			TaskQueue: viper.GetString("crossref.task_queue"),
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("could not create workflow: %w", err)
-	}
-
-	log.Printf("triggering schedule %s", scheduleID)
-	err = scheduleHandle.Trigger(ctx, client.ScheduleTriggerOptions{
-		// just guessing on this
-		Overlap: enums.SCHEDULE_OVERLAP_POLICY_CANCEL_OTHER,
-	})
-
-	if err != nil {
-		return fmt.Errorf("could not trigger schedule:%w", err)
-	}
-
-	return nil
-}
-
 type CrossrefCrawlResult struct {
-	RunTime time.Time
+	FoundCounts struct {
+		Releases   int
+		Containers int
+		Creators   int
+	}
+	CreatedCounts struct {
+		Releases   int
+		Containers int
+		Creators   int
+	}
+	PDFCount      int
+	IngestedCount int
 }
 
 func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
-	workflow.GetLogger(ctx).Info("Cron workflow started.", "StartTime", workflow.Now(ctx))
+	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
 
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout: 100 * time.Second,
 	}
 	ctx1 := workflow.WithActivityOptions(ctx, ao)
 
-	// Start from 0 for first cron job
-	lastRunTime := time.Time{}
-	// Check to see if there was a previous cron job
-	if workflow.HasLastCompletionResult(ctx) {
-		var lastResult CrossrefCrawlResult
-		if err := workflow.GetLastCompletionResult(ctx, &lastResult); err == nil {
-			lastRunTime = lastResult.RunTime
-		}
-	}
-	thisRunTime := workflow.Now(ctx)
+	out := CrossrefCrawlResult{}
 
-	err := workflow.ExecuteActivity(ctx1, DoSomething, lastRunTime, thisRunTime).Get(ctx, nil)
+	var s3Key string
+	err := workflow.ExecuteActivity(ctx1, APIToS3).Get(ctx, &s3Key)
 	if err != nil {
-		// Cron job failed
-		// Next cron will still be scheduled by the Server
-		workflow.GetLogger(ctx).Error("Cron job failed.", "Error", err)
+		workflow.GetLogger(ctx).Error("APIToS3 failed:", err)
 		return nil, err
 	}
 
-	return &CrossrefCrawlResult{RunTime: thisRunTime}, nil
+	// TODO activity: read results from s3 and create in fatcat, returning fatcat IDs for paper acquisition
+	// TODO activity: for eatch fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
+	// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
+	// TODO activity: bulk ingestion into ES of parsed stuff
+
+	return &out, nil
 }
 
-// TODO rename, lol
-func DoSomething(ctx context.Context, lastRunTime, thisRunTime time.Time) error {
-	activity.GetLogger(ctx).Info("Cron job running.", "lastRunTime_exclude", lastRunTime, "thisRunTime_include", thisRunTime)
-	time.Sleep(time.Second * 3)
-	// TODO Query database, call external API, or do any other non-deterministic action.
-	return nil
+type APIToS3Result struct {
+	// TODO what exactly should this be? scholkit will be getting 1 day of metadata
 }
 
-func RunWorker() error {
-	ctx := context.Background()
-	namespace := viper.GetString("crossref.temporal_namespace")
-	if namespace != "" {
-		err := ensureNamespace(ctx, namespace)
-		if err != nil {
-			return fmt.Errorf("could not ensure namesapce: %w", err)
-		}
-	} else {
-		namespace = "default"
-	}
-	c, err := client.Dial(client.Options{
-		HostPort:  client.DefaultHostPort,
-		Namespace: namespace,
-	})
-	if err != nil {
-		log.Fatalln("Unable to create client", err)
-	}
-	defer c.Close()
+func APIToS3(ctx context.Context) (string, error) {
+	activity.GetLogger(ctx).Info("APIToS3 job running")
+	// TODO scholkit
+	return "", nil
+}
 
-	w := worker.New(c, viper.GetString("crossref.task_queue"), worker.Options{})
+type S3ToFatcatResult struct {
+	// TODO
+}
 
-	w.RegisterWorkflow(CrossrefCrawlWorkflow)
-	w.RegisterActivity(DoSomething)
-
-	log.Printf("starting worker")
-	err = w.Run(worker.InterruptCh())
-	if err != nil {
-		log.Fatalln("Unable to start worker", err)
-	}
-
-	return nil
+func S3ToFatcat(ctx context.Context) (S3ToFatcatResult, error) {
+	out := S3ToFatcatResult{}
+	return out, nil
 }

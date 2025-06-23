@@ -2,21 +2,82 @@ package crossref
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/spf13/viper"
+	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"storj.io/common/uuid"
 )
 
-func RunStarter() error {
-	c, err := client.Dial(client.Options{
+// TODO temporal connection details in config file
+
+func ensureNamespace(ctx context.Context, namespace string) error {
+	log.Printf("ensuring '%s' namespace (will create if it does not exist)...", namespace)
+	client, err := client.NewNamespaceClient(client.Options{
 		HostPort: client.DefaultHostPort,
+	})
+	if err != nil {
+		return fmt.Errorf("could not create namespace client: %w", err)
+	}
+
+	// TODO is this really necessary? I see code on GitHub just passing a time.Duration instead of this durationpb.
+	duration, err := time.ParseDuration(viper.GetString("crossref.temporal_namespace_retention"))
+	if err != nil {
+		return fmt.Errorf("could not parse crossref.temporal_namespace_retention: %w", err)
+	}
+
+	dpb := &durationpb.Duration{
+		Seconds: int64(duration.Seconds()),
+	}
+
+	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
+		Namespace:                        namespace,
+		WorkflowExecutionRetentionPeriod: dpb,
+	})
+	if err != nil {
+		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
+			return fmt.Errorf("could not register namespace '%s': %w", namespace, err)
+		}
+	}
+
+	return nil
+}
+
+func RunStarter() error {
+	ctx := context.Background()
+
+	every := viper.GetString("crossref.every")
+	if every == "" {
+		return errors.New("crossref.every needs to be set in config")
+	}
+	duration, err := time.ParseDuration(every)
+	if err != nil {
+		return fmt.Errorf("could not parse crossref.every: %w", err)
+	}
+
+	namespace := viper.GetString("crossref.temporal_namespace")
+	if namespace != "" {
+		err := ensureNamespace(ctx, namespace)
+		if err != nil {
+			return fmt.Errorf("could not ensure namesapce: %w", err)
+		}
+	} else {
+		namespace = "default"
+	}
+
+	c, err := client.Dial(client.Options{
+		HostPort:  client.DefaultHostPort,
+		Namespace: namespace,
 	})
 	if err != nil {
 		log.Fatalln("Unable to create client", err)
@@ -27,27 +88,48 @@ func RunStarter() error {
 	if err != nil {
 		return fmt.Errorf("could not make a workflowID: %w")
 	}
-	workflowID := "cron_" + id.String()
-
-	workflowOptions := client.StartWorkflowOptions{
-		ID:           workflowID,
-		TaskQueue:    viper.GetString("crossref.cron_task_queue"),
-		CronSchedule: viper.GetString("crossref.cron"),
-	}
-
-	we, err := c.ExecuteWorkflow(context.Background(), workflowOptions, CronWorkflow)
+	sid, err := uuid.New()
 	if err != nil {
-		log.Fatalln("Unable to execute workflow", err)
+		return fmt.Errorf("could not make a workflowID: %w")
 	}
-	log.Println("Started workflow", "WorkflowID", we.GetID(), "RunID", we.GetRunID())
+	scheduleID := "crossref_schedule_" + sid.String()
+	workflowID := "crossref_" + id.String()
+
+	scheduleHandle, err := c.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID: scheduleID,
+		Spec: client.ScheduleSpec{
+			Intervals: []client.ScheduleIntervalSpec{
+				{Every: duration},
+			},
+		},
+		Action: &client.ScheduleWorkflowAction{
+			ID:        workflowID,
+			Workflow:  CrossrefCrawlWorkflow,
+			TaskQueue: viper.GetString("crossref.task_queue"),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("could not create workflow: %w", err)
+	}
+
+	log.Printf("triggering schedule %s", scheduleID)
+	err = scheduleHandle.Trigger(ctx, client.ScheduleTriggerOptions{
+		// just guessing on this
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_CANCEL_OTHER,
+	})
+
+	if err != nil {
+		return fmt.Errorf("could not trigger schedule:%w", err)
+	}
+
 	return nil
 }
 
-type CronResult struct {
+type CrossrefCrawlResult struct {
 	RunTime time.Time
 }
 
-func CronWorkflow(ctx workflow.Context) (*CronResult, error) {
+func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	workflow.GetLogger(ctx).Info("Cron workflow started.", "StartTime", workflow.Now(ctx))
 
 	ao := workflow.ActivityOptions{
@@ -59,7 +141,7 @@ func CronWorkflow(ctx workflow.Context) (*CronResult, error) {
 	lastRunTime := time.Time{}
 	// Check to see if there was a previous cron job
 	if workflow.HasLastCompletionResult(ctx) {
-		var lastResult CronResult
+		var lastResult CrossrefCrawlResult
 		if err := workflow.GetLastCompletionResult(ctx, &lastResult); err == nil {
 			lastRunTime = lastResult.RunTime
 		}
@@ -74,7 +156,7 @@ func CronWorkflow(ctx workflow.Context) (*CronResult, error) {
 		return nil, err
 	}
 
-	return &CronResult{RunTime: thisRunTime}, nil
+	return &CrossrefCrawlResult{RunTime: thisRunTime}, nil
 }
 
 // TODO rename, lol
@@ -86,19 +168,31 @@ func DoSomething(ctx context.Context, lastRunTime, thisRunTime time.Time) error 
 }
 
 func RunWorker() error {
+	ctx := context.Background()
+	namespace := viper.GetString("crossref.temporal_namespace")
+	if namespace != "" {
+		err := ensureNamespace(ctx, namespace)
+		if err != nil {
+			return fmt.Errorf("could not ensure namesapce: %w", err)
+		}
+	} else {
+		namespace = "default"
+	}
 	c, err := client.Dial(client.Options{
-		HostPort: client.DefaultHostPort,
+		HostPort:  client.DefaultHostPort,
+		Namespace: namespace,
 	})
 	if err != nil {
 		log.Fatalln("Unable to create client", err)
 	}
 	defer c.Close()
 
-	w := worker.New(c, viper.GetString("crossref.cron_task_queue"), worker.Options{})
+	w := worker.New(c, viper.GetString("crossref.task_queue"), worker.Options{})
 
-	w.RegisterWorkflow(CronWorkflow)
+	w.RegisterWorkflow(CrossrefCrawlWorkflow)
 	w.RegisterActivity(DoSomething)
 
+	log.Printf("starting worker")
 	err = w.Run(worker.InterruptCh())
 	if err != nil {
 		log.Fatalln("Unable to start worker", err)

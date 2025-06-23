@@ -37,15 +37,12 @@ var startCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Printf("starting a %s process lol\n", processType)
 		if processType == "starter" {
-			crossref.RunStarter()
+			return crossref.RunStarter()
 		} else if processType == "worker" {
-			crossref.RunWorker()
+			return crossref.RunWorker()
 		} else {
 			panic("unreachable")
 		}
-
-		return nil
 	},
 }

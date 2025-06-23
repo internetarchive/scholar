@@ -6,6 +6,8 @@
 # - .
 
 [crossref]
-cron_task_queue = "crossref_cron"
-#cron = "0 0 * * *"
-cron = "* * * * *"
+temporal_namespace = "dev.crossref"
+temporal_namespace_retention = "8760h"
+task_queue = "crossref_crawl"
+#every = "24h"
+every = "60s"

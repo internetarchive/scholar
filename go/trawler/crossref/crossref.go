@@ -44,10 +44,9 @@ func ensureNamespace(ctx context.Context, namespace string) error {
 		Namespace:                        namespace,
 		WorkflowExecutionRetentionPeriod: dpb,
 	})
-	if err != nil {
-		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
-			return fmt.Errorf("could not register namespace '%s': %w", namespace, err)
-		}
+	var namespaceExistsError *serviceerror.NamespaceAlreadyExists
+	if err != nil && !errors.As(err, &namespaceExistsError) {
+		return fmt.Errorf("could not register namespace '%s': %w", namespace, err)
 	}
 
 	return nil

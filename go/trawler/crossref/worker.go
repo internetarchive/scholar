@@ -34,6 +34,7 @@ func RunWorker() error {
 
 	w.RegisterWorkflow(CrossrefCrawlWorkflow)
 	w.RegisterActivity(APIToS3)
+	w.RegisterActivity(S3ToFatcat)
 
 	log.Printf("starting worker")
 	err = w.Run(worker.InterruptCh())

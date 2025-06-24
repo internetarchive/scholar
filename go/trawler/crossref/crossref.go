@@ -82,16 +82,32 @@ func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 		return nil, err
 	}
 
+	result := S3ToFatcatResult{}
+
+	// TODO what if there is one activity to read the s3 file and emit a single jsonl as input to an activity? that, in parallel, is really what I want.
+
+	// so trying to map out how to structure the s3 read -> fatcat writes.
+	// ideally, we:
+	// - stream the s3 value
+	// - decompress a chunk into N lines
+	// - for each line, make a future for a "maybe create in fatcat" activity
+	// this is evidently possible if i use the Range feature in an s3 request to
+	// get a file chunk at a time. so an activity takes a byte range and an s3
+	// key and returns chunks until there are none left; for each chunk we start
+	// another activity for uploading the chunks to fatcat. should be good to go.
+	// just need to get going with minio.
+	err = workflow.ExecuteActivity(ctx1, S3ToFatcat, s3Key).Get(ctx, &result)
+	if err != nil {
+		workflow.GetLogger(ctx).Error("S3ToFatcat failed:", err)
+		return nil, err
+	}
+
 	// TODO activity: read results from s3 and create in fatcat, returning fatcat IDs for paper acquisition
 	// TODO activity: for eatch fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
 	// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
 	// TODO activity: bulk ingestion into ES of parsed stuff
 
 	return &out, nil
-}
-
-type APIToS3Result struct {
-	// TODO what exactly should this be? scholkit will be getting 1 day of metadata
 }
 
 func APIToS3(ctx context.Context) (string, error) {
@@ -101,10 +117,14 @@ func APIToS3(ctx context.Context) (string, error) {
 }
 
 type S3ToFatcatResult struct {
-	// TODO
+	Releases   []string
+	Containers []string
+	Creators   []string
+	// TODO what else
 }
 
-func S3ToFatcat(ctx context.Context) (S3ToFatcatResult, error) {
+func S3ToFatcat(ctx context.Context, s3key string) (S3ToFatcatResult, error) {
 	out := S3ToFatcatResult{}
+	// TODO open handle for streaming in s3key's value via zst decoder
 	return out, nil
 }

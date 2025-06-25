@@ -20,6 +20,14 @@ import (
 // TODO temporal connection details in config file
 // TODO defaults in config file
 
+// notes from mike meeting:
+
+// long running activity that marks small amount of state: like byte offset or line offset
+// this makes activity resumable
+// will likely need to use continueasnew to avoid history limits; invoke continueasnew once some threshold of iterations is hit
+// 30k a day activity is probably fine
+// can set up throughput tuning on a taskqueue -- could align this to SPN slots
+
 func ensureNamespace(ctx context.Context, namespace string) error {
 	log.Printf("ensuring '%s' namespace (will create if it does not exist)...", namespace)
 	client, err := client.NewNamespaceClient(client.Options{
@@ -66,24 +74,84 @@ type CrossrefCrawlResult struct {
 	IngestedCount int
 }
 
+type entity struct {
+	ID     uuid.UUID
+	flavor string
+}
+
 func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
 
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 100 * time.Second,
 	}
-	ctx1 := workflow.WithActivityOptions(ctx, ao)
+	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	out := CrossrefCrawlResult{}
 
 	var s3Key string
-	err := workflow.ExecuteActivity(ctx1, APIToS3).Get(ctx, &s3Key)
+	err := workflow.ExecuteActivity(ctx, APIToS3).Get(ctx, &s3Key)
 	if err != nil {
 		workflow.GetLogger(ctx).Error("APIToS3 failed:", err)
 		return nil, err
 	}
 
-	result := S3ToFatcatResult{}
+	bstart := 0
+	chunkSelector := workflow.NewSelector(ctx)
+
+	var chunkErr error
+	entities := []entity{}
+	fCount := 0
+	for {
+		result := chunkedS3Result{}
+		err = workflow.ExecuteActivity(ctx, chunkedS3ReadLines, s3Key, bstart).Get(ctx, &result)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("chunkedS3ReadLines failed:", err)
+			return nil, err
+		}
+		// TODO process result.Lines
+		if len(result.Lines) == 0 {
+			break
+		}
+		future := workflow.ExecuteActivity(ctx, s3ChunkToFatcat, result.Lines)
+		chunkSelector.AddFuture(future, func(f workflow.Future) {
+			var chunkEntities []entity
+			chunkErr = f.Get(ctx, &chunkEntities)
+			if chunkErr != nil {
+				return
+			}
+			for _, v := range chunkEntities {
+				entities = append(entities, v)
+			}
+		})
+		fCount++
+		bstart = result.NextReadIx
+	}
+
+	crawlSelector := workflow.NewSelector(ctx)
+
+	for x := 0; x < fCount; x++ {
+		chunkSelector.Select(ctx)
+		if chunkErr != nil {
+			workflow.GetLogger(ctx).Error("chunk upload to fatcat failed:", chunkErr)
+			return nil, err
+		}
+		for _, e := range entities {
+			switch e.flavor {
+			case "release":
+				future := workflow.ExecuteActivity(ctx, crawlForEntity, e.ID)
+				crawlSelector.AddFuture(future, func(f workflow.Future) {
+					// TODO
+					return
+				})
+			default:
+				// TODO anything? possibly nothing if we switch to PG FTS
+			}
+		}
+		entities = []entity{}
+	}
+
+	// TODO handle the outcome of a crawl
 
 	// TODO what if there is one activity to read the s3 file and emit a single jsonl as input to an activity? that, in parallel, is really what I want.
 
@@ -92,16 +160,6 @@ func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	// - stream the s3 value
 	// - decompress a chunk into N lines
 	// - for each line, make a future for a "maybe create in fatcat" activity
-	// this is evidently possible if i use the Range feature in an s3 request to
-	// get a file chunk at a time. so an activity takes a byte range and an s3
-	// key and returns chunks until there are none left; for each chunk we start
-	// another activity for uploading the chunks to fatcat. should be good to go.
-	// just need to get going with minio.
-	err = workflow.ExecuteActivity(ctx1, S3ToFatcat, s3Key).Get(ctx, &result)
-	if err != nil {
-		workflow.GetLogger(ctx).Error("S3ToFatcat failed:", err)
-		return nil, err
-	}
 
 	// TODO activity: read results from s3 and create in fatcat, returning fatcat IDs for paper acquisition
 	// TODO activity: for eatch fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
@@ -111,21 +169,31 @@ func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	return &out, nil
 }
 
+type crawlResult struct {
+	// TODO
+}
+
+func crawlForEntity(ctx context.Context, entityID uuid.UUID) (crawlResult, error) {
+	out := crawlResult{}
+	return out, nil
+}
+
+type chunkedS3Result struct {
+	NextReadIx int
+	Lines      []string
+}
+
+func chunkedS3ReadLines(ctx context.Context, s3Key string, readStart, readEnd int) (chunkedS3Result, error) {
+	out := chunkedS3Result{}
+	return out, nil
+}
+
 func APIToS3(ctx context.Context) (string, error) {
 	activity.GetLogger(ctx).Info("APIToS3 job running")
 	// TODO scholkit
 	return "", nil
 }
 
-type S3ToFatcatResult struct {
-	Releases   []string
-	Containers []string
-	Creators   []string
-	// TODO what else
-}
-
-func S3ToFatcat(ctx context.Context, s3key string) (S3ToFatcatResult, error) {
-	out := S3ToFatcatResult{}
-	// TODO open handle for streaming in s3key's value via zst decoder
-	return out, nil
+func s3ChunkToFatcat(ctx context.Context, lines []string) ([]entity, error) {
+	return []entity{}, nil
 }

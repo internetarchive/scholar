@@ -6,6 +6,8 @@ require github.com/spf13/cobra v1.9.1 // direct
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/miku/scholkit v0.2.8-0.20250620174232-abafef1c4da1
+	github.com/sethgrid/pester v1.2.0
 	github.com/spf13/viper v1.20.1
 	go.temporal.io/api v1.46.0
 	go.temporal.io/sdk v1.34.0
@@ -14,6 +16,9 @@ require (
 )
 
 require (
+	github.com/PuerkitoBio/goquery v1.10.3 // indirect
+	github.com/adrg/xdg v0.5.3 // indirect
+	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect

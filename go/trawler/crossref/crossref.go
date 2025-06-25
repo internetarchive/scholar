@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/miku/scholkit/feeds"
+	"github.com/sethgrid/pester"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -190,7 +192,25 @@ func chunkedS3ReadLines(ctx context.Context, s3Key string, readStart, readEnd in
 
 func APIToS3(ctx context.Context) (string, error) {
 	activity.GetLogger(ctx).Info("APIToS3 job running")
-	// TODO scholkit
+	client := pester.New()
+	client.Backoff = pester.ExponentialBackoff
+	client.MaxRetries = 3
+	client.RetryOnHTTP429 = true
+	client.Timeout = time.Second * 60 * 60
+
+	ch := feeds.CrossrefHarvester{
+		Client:              client,
+		ApiEndpoint:         "https://api.crossref.org/works",
+		ApiFilter:           "index",
+		ApiEmail:            "scholar@archive.org",
+		Rows:                1000,
+		UserAgent:           "scholar.archive.org trawler",
+		AcceptableMissRatio: 0.1, // TODO what's this
+		MaxRetries:          3,
+	}
+	fmt.Println(ch)
+	// TODO
+
 	return "", nil
 }
 

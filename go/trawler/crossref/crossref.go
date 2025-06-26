@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/miku/scholkit/feeds"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sethgrid/pester"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/serviceerror"
@@ -190,8 +192,30 @@ func chunkedS3ReadLines(ctx context.Context, s3Key string, readStart, readEnd in
 	return out, nil
 }
 
-func APIToS3(ctx context.Context) (string, error) {
-	activity.GetLogger(ctx).Info("APIToS3 job running")
+func APIToS3(ctx context.Context) (out string, err error) {
+	l := activity.GetLogger(ctx)
+	l.Info("APIToS3 job running")
+
+	s3, err := minio.New(viper.GetString("s3_endpoint"), &minio.Options{
+		Creds: credentials.NewStaticV4(
+			viper.GetString("s3_access_key"),
+			viper.GetString("s3_secret_key"),
+			""),
+		Secure: true,
+	})
+	if err != nil {
+		l.Error("failed to make s3 client:", err)
+		return
+	}
+
+	// TODO this is just to test s3 connection for now
+	info, err := s3.ListBuckets(ctx)
+	if err != nil {
+		l.Error("failed to talk to s3:", err)
+		return
+	}
+	l.Debug(fmt.Sprintf("%#v", info))
+
 	client := pester.New()
 	client.Backoff = pester.ExponentialBackoff
 	client.MaxRetries = 3

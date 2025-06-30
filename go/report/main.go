@@ -33,7 +33,7 @@ const (
 //go:embed report.tmpl.html
 var reportTmpl string
 
-type PDFMissReason struct {
+type pdfMissReasons struct {
 	Reason string `json:"status"`
 	Count  int
 }
@@ -46,7 +46,7 @@ type reportCtx struct {
 	FatcatRefCount       int
 	PDFHitCount          int
 	PDFMissCount         int
-	PDFMissReasons       []PDFMissReason
+	PDFMissReasons       []pdfMissReasons
 	Date                 string
 }
 
@@ -62,7 +62,7 @@ type fatcatStats struct {
 type sandcrawlerStats struct {
 	PDFMiss        int
 	PDFHit         int
-	PDFMissReasons []PDFMissReason
+	PDFMissReasons []pdfMissReasons
 }
 
 func getFulltextPDFCount(c *http.Client) (int, error) {
@@ -132,23 +132,33 @@ func getFatcatStats(c *http.Client) (fatcatStats, error) {
 func getSandcrawlerStats(c *http.Client) (sandcrawlerStats, error) {
 	scStats := sandcrawlerStats{}
 
-	req, err := http.NewRequest(http.MethodGet, scURL+"/stat_failed_pdf", nil)
-	if err != nil {
-		return scStats, fmt.Errorf("failed to create request: %w", err)
+	scQuery := func(path string) ([]byte, error) {
+		req, err := http.NewRequest(http.MethodGet, scURL+"/"+path, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		resp, err := c.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to talk to sandcrawler: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("got %d from sandcrawler", resp.StatusCode)
+		}
+
+		rbody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("could not read sandcrawler response: %w", err)
+		}
+
+		return rbody, nil
+
 	}
 
-	resp, err := c.Do(req)
+	rbody, err := scQuery("stat_failed_pdf")
 	if err != nil {
-		return scStats, fmt.Errorf("failed to talk to sandcrawler: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return scStats, fmt.Errorf("got %d from sandcrawler", resp.StatusCode)
-	}
-
-	rbody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return scStats, fmt.Errorf("could not read sandcrawler response: %w", err)
+		return scStats, fmt.Errorf("sc stat_failed_pdf call failed: %w", err)
 	}
 
 	// NB after we came back from power outage this was no longer returning json
@@ -170,23 +180,9 @@ func getSandcrawlerStats(c *http.Client) (sandcrawlerStats, error) {
 	}
 	scStats.PDFMiss = missCount
 
-	req, err = http.NewRequest(http.MethodGet, scURL+"/stat_got_pdf", nil)
+	rbody, err = scQuery("stat_got_pdf")
 	if err != nil {
-		return scStats, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err = c.Do(req)
-	if err != nil {
-		return scStats, fmt.Errorf("failed to talk to sandcrawler: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return scStats, fmt.Errorf("got %d from sandcrawler", resp.StatusCode)
-	}
-
-	rbody, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return scStats, fmt.Errorf("could not read sandcrawler response: %w", err)
+		return scStats, fmt.Errorf("sc stat_got_pdf call failed: %w", err)
 	}
 
 	// NB after we came back from power outage this was no longer returning json
@@ -208,26 +204,12 @@ func getSandcrawlerStats(c *http.Client) (sandcrawlerStats, error) {
 	}
 	scStats.PDFHit = hitCount
 
-	req, err = http.NewRequest(http.MethodGet, scURL+"/stat_error_counts", nil)
+	rbody, err = scQuery("stat_error_counts")
 	if err != nil {
-		return scStats, fmt.Errorf("failed to create request: %w", err)
+		return scStats, fmt.Errorf("sc stat_got_pdf call failed: %w", err)
 	}
 
-	resp, err = c.Do(req)
-	if err != nil {
-		return scStats, fmt.Errorf("failed to talk to sandcrawler: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return scStats, fmt.Errorf("got %d from sandcrawler", resp.StatusCode)
-	}
-
-	rbody, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return scStats, fmt.Errorf("could not read sandcrawler response: %w", err)
-	}
-
-	rparsed := []PDFMissReason{}
+	rparsed := []pdfMissReasons{}
 	err = json.Unmarshal(rbody, &rparsed)
 	if err != nil {
 		return scStats, fmt.Errorf("could not parse stat_error_counts response: %w", err)

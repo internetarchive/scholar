@@ -196,6 +196,8 @@ func APIToS3(ctx context.Context) (out string, err error) {
 	l := activity.GetLogger(ctx)
 	l.Info("APIToS3 job running")
 
+	// TODO write helper for dual writing to both master/replica endpoints
+
 	s3, err := minio.New(viper.GetString("s3_endpoint"), &minio.Options{
 		Creds: credentials.NewStaticV4(
 			viper.GetString("s3_access_key"),

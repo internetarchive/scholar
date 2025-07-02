@@ -558,6 +558,7 @@ class Webcapture(Entity):
     captured = models.DateTimeField(help_text="date and time of capture")
 
     class Meta(Entity.Meta):
+        # TODO doesn't this need indexes set?
         pass
 
 class WebcaptureCDX(models.Model):

@@ -487,7 +487,7 @@ class FileURL(models.Model):
     """
     A URL at which a release's file can be found.
     """
-    file = models.ForeignKey(File, on_delete=models.CASCADE, db_index=False)
+    file = models.ForeignKey(File, on_delete=models.CASCADE, db_index=False, related_name="urls")
     rel = models.CharField(choices=[
         ("web", "general public web site"),
         ("webarchive", "a resource in a long-term web archive"),

@@ -179,8 +179,23 @@ WorkSchema = create_schema(m.Work, fields=COMMON_ENTITY_FIELDS)
 CreatorSchema = create_schema(m.Creator, fields=COMMON_ENTITY_FIELDS+["display_name", "given_name",
                                                                     "surname", "orcid"])
 
-FileSchema = create_schema(m.File, fields=COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256",
-                                                                "md5", "mimetype"])
+
+class FileURLSchema(ModelSchema):
+    file_id: UUID
+
+    class Meta:
+        model = m.FileURL
+        fields = ["rel", "url"]
+
+
+class FileSchema(ModelSchema):
+    releases: list[ReleaseSchema] = []
+    urls: list[FileURLSchema] = []
+
+    class Meta:
+        model = m.File
+        fields = COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256", "md5",
+                                         "mimetype"]
 
 
 type EntitySchema = ReleaseSchema|CreatorSchema|ContainerSchema|WorkSchema|FileSchema|WebcaptureSchema
@@ -610,37 +625,71 @@ def get_file(request, ident: UUID) -> FileSchema:
 def create_file(request, file_in: FileSchema) -> HttpResponse:
     """Create a new file. Note that file contents do not live in this database;
     we only track checksums and metadata here. File contents, if stored at all,
-    live in blob storage elsewhere."""
+    live in blob storage elsewhere.
+
+    Does not create releases in the file payload; those must already exist."""
     es = m.File.objects.filter(id=file_in.id)
     if len(es) != 0:
         return v2api.create_response(request,
                                      f"file with id {file_in.id} already exists",
                                      status=HTTPStatus.BAD_REQUEST)
-    m.File(**file_in.dict()).save()
+    data = file_in.dict()
+    urls = data.pop("urls")
+    releases = data.pop("releases") # TODO chotou...
+    with transaction.atomic():
+        f = m.File(**data)
+        f.save()
+        m.FileURL.objects.bulk_create(
+                [m.FileURL(**url|{"file_id": f.id}) for url in urls])
+        m.ReleaseFile.objects.bulk_create(
+                [m.ReleaseFile(release_id=r["id"], file_id=f.id) for r in releases])
     return v2api.create_response(request, "file created", status=HTTPStatus.CREATED)
+
 
 @v2api.put("/file", auth=api_auth)
 def update_file(request, file_in: FileSchema) -> HttpResponse:
     """Replace a file record wholesale."""
     code = HTTPStatus.OK
     es = m.File.objects.filter(id=file_in.id)
-    entity = None
 
-    if len(es) == 0:
-        code = HTTPStatus.CREATED
-        entity = m.File(**file_in.dict())
-    else:
-        entity = es[0]
-        for attr, value in file_in.dict().items():
-            setattr(entity, attr, value)
+    data = file_in.dict()
+    urls = data.pop("urls")
+    releases = data.pop("releases")
 
-    entity.save()
+    with transaction.atomic():
+        entity = None
+        if len(es) == 0:
+            code = HTTPStatus.CREATED
+            entity = m.File(**data)
+        else:
+            entity = es[0]
+            for attr, value in data.items():
+                setattr(entity, attr, value)
+        entity.save()
+        entity.urls.all().delete()
+        m.FileURL.objects.bulk_create([m.FileURL(**url|{"file_id": entity.id}) for url in urls])
+        m.ReleaseFile.objects.filter(file_id=entity.id).delete()
+        m.ReleaseFile.objects.bulk_create([m.ReleaseFile(file_id=entity.id, release_id=r["id"])
+                                           for r in releases])
 
     return v2api.create_response(request, "file replaced with new content", status=code)
 
 @v2api.post("/files", auth=api_auth)
 def bulk_create_files(request, files_in: list[FileSchema]) -> HttpResponse:
-    m.File.objects.bulk_create([m.File(**cin.dict()) for cin in files_in])
+    file_kwargs = []
+    urls = []
+    rfiles = []
+    for fs in files_in:
+        data = fs.dict()
+        urls += [url|{"file_id":data["id"]} for url in data.pop("urls")]
+        rfiles += [{"release_id": r["id"], "file_id": fs.id} for r in data.pop("releases")]
+        file_kwargs.append(data)
+
+    with transaction.atomic():
+        m.File.objects.bulk_create([m.File(**kw) for kw in file_kwargs])
+        m.FileURL.objects.bulk_create([m.FileURL(**url) for url in urls])
+        m.ReleaseFile.objects.bulk_create(
+                [m.ReleaseFile(**rfile) for rfile in rfiles])
     return v2api.create_response(request, "files created", status=HTTPStatus.CREATED)
 
 @v2api.delete("/file/{ident}", auth=api_auth)

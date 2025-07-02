@@ -105,6 +105,15 @@ class FileFactory(DjangoModelFactory):
         model = m.File
 
 
+class FileURLFactory(DjangoModelFactory):
+    file = factory.SubFactory(FileFactory)
+    rel = "webarchive"
+    url = factory.Faker("uri")
+
+    class Meta:
+        model = m.FileURL
+
+
 class CreatorFactory(DjangoModelFactory):
     updated = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
     created = factory.LazyFunction(lambda: datetime.now(zoneinfo.ZoneInfo("UTC")))
@@ -1012,11 +1021,18 @@ class TestFileRoutes(EntityCRUDTestCase):
     def setUp(self):
         super().setUp()
         self.entity = FileFactory.create()
+        FileURLFactory.build_batch(4, file_id=self.entity.id)
+        m.ReleaseFile(file=self.entity, release=ReleaseFactory.create()).save()
 
     def test_get(self):
         response = client.get(f"{self.get}/{self.entity.id}")
+        fid = self.entity.id
         self.assertEqual(response.status_code, HTTPStatus.OK)
-        self.assertEqual(response.data["id"], str(self.entity.id))
+        self.assertEqual(response.data["id"], str(fid))
+        self.assertSetEqual(set([u["url"] for u in response.data["urls"]]),
+                            set([u.url for u in m.FileURL.objects.filter(file_id=fid)]))
+        self.assertSetEqual(set([r["id"] for r in response.data["releases"]]),
+                            set([str(r.id) for r in self.entity.releases.all()]))
 
     def test_lookup(self):
         sha1 = "abc123"
@@ -1062,27 +1078,43 @@ class TestFileRoutes(EntityCRUDTestCase):
         self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
 
     def test_create(self):
-        c = FileFactory.build()
-        data = v.FileSchema.from_orm(c).model_dump_json()
+        f = FileFactory.build()
+        fs = v.FileSchema.from_orm(f)
+        fs.urls = [v.FileURLSchema.from_orm(url) for url in FileURLFactory.build_batch(4, file_id=f.id)]
+        fs.releases = [v.ReleaseSchema.from_orm(ReleaseFactory.create())]
+
+        data = fs.model_dump_json()
 
         response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
-        cs = m.File.objects.filter(id=c.id)
-        self.assertEqual(len(cs), 1)
+        es = m.File.objects.filter(id=f.id)
+        self.assertEqual(len(es), 1)
+        e = es[0]
+        self.assertEqual(e.releases.all()[0].id, fs.releases[0].id)
+        self.assertSetEqual(set([u.url for u in e.urls.all()]), set([u.url for u in fs.urls]))
 
         response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
     def test_bulk_create(self):
-        es = [v.FileSchema.from_orm(FileFactory.build()) for _ in range(100)]
-        data = "["+",".join([e.model_dump_json() for e in es])+"]"
+        files = []
+        for _ in range(10):
+            fs = v.FileSchema.from_orm(FileFactory.build())
+            fs.urls = FileURLFactory.build_batch(4, file_id=fs.id)
+            fs.releases = [v.ReleaseSchema.from_orm(ReleaseFactory.create())]
+            files.append(fs)
+        data = "["+",".join([fs.model_dump_json() for fs in files])+"]"
 
         response = client.post(self.bulk_create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.CREATED)
 
-        for f in es:
-            self.assertEqual(m.File.objects.filter(id=f.id).count(), 1)
+        for fs in files:
+            es = m.File.objects.filter(id=fs.id)
+            self.assertEqual(len(es), 1)
+            e = es[0]
+            self.assertEqual(e.releases.all()[0].id, fs.releases[0].id)
+            self.assertSetEqual(set([u.url for u in e.urls.all()]), set([u.url for u in fs.urls]))
 
     def test_update(self):
         entity = FileFactory.build()
@@ -1094,7 +1126,10 @@ class TestFileRoutes(EntityCRUDTestCase):
         self.assertEqual(m.File.objects.filter(id=entity.id).count(), 1)
 
         new_size = 100
+
         self.entity.size_bytes = new_size
+        self.entity.releases.set([ReleaseFactory.create()])
+        self.entity.urls.set([FileURLFactory.create()])
         data = v.FileSchema.from_orm(self.entity).model_dump_json()
         response = client.put(self.update, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.OK)
@@ -1102,6 +1137,8 @@ class TestFileRoutes(EntityCRUDTestCase):
         es = m.File.objects.filter(id=self.entity.id)
         self.assertEqual(len(es), 1)
         self.assertEqual(es[0].size_bytes, new_size)
+        self.assertEqual(es[0].releases.all()[0].id, self.entity.releases.all()[0].id)
+        self.assertEqual(es[0].urls.all()[0].url, self.entity.urls.all()[0].url)
 
     def test_delete(self):
         unsaved = FileFactory.build()

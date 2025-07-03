@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pydantic
 from django.db import transaction
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, HttpResponseRedirect, Http404
 from ninja.pagination import paginate
 from django.shortcuts import get_object_or_404
 from ninja import NinjaAPI, Query, Schema, ModelSchema
@@ -302,6 +302,44 @@ def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
     if len(rs) == 0:
         raise Http404(f"no release found with {lookup.id_type} of {lookup.id_value}")
     return ReleaseSchema.from_orm(rs[0])
+
+@v2api.get("/release/lookup/fulltext")
+def fulltext(request, lookup: Query[ReleaseLookup]) -> HttpResponse:
+    if lookup.id_type == "legacy_ident":
+        ident = fcid2uuid(lookup.id_value)
+        return ReleaseSchema.from_orm(get_object_or_404(m.Release, id=ident))
+
+    rs = m.Release.objects.filter(**{
+        "extids__id_type": lookup.id_type,
+        "extids__id_value": lookup.id_value})
+    if len(rs) == 0:
+        raise Http404(f"no release found with {lookup.id_type} of {lookup.id_value}")
+
+    files = m.File.objects.filter(releasefile__release_id=rs[0].id)
+    wayback_url = ""
+    webarchive_url = ""
+    other_url = ""
+    for f in files:
+        for u in f.urls.all():
+            if "web.archive.org" in u.url:
+                wayback_url = u.url
+            elif u.rel == "webarchive":
+                webarchive_url = u.url
+            else:
+                other_url = u.url
+
+    url = ""
+    if wayback_url != "":
+        url = wayback_url
+    elif webarchive_url != "":
+        url = webarchive_url
+    elif other_url != "":
+        url = other_url
+
+    if url == "":
+        raise Http404(f"no fulltext for {lookup.id_type}:{lookup.id_value} known to fatcat")
+
+    return HttpResponseRedirect(url)
 
 @v2api.get("/release/{ident}")
 def get_release(request, ident: UUID) -> ReleaseSchema:

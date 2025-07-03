@@ -250,6 +250,35 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         for id_type, _ in m.RELEASE_EXT_ID_TYPES:
             self.reis.append(ReleaseExtIdFactory.create(release=self.entity, id_type=id_type))
 
+    def test_lookup_fulltext(self):
+        doi = "10.1111/xxxxxx.111.1111"
+        response = client.get(f"{self.lookup}/fulltext?id_type=doi&id_value={doi}")
+        self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+
+        doi = quote_plus([rei for rei in self.reis if rei.id_type == "doi"][0].id_value)
+        file = FileFactory.create()
+        file.releases.set([self.entity])
+        file.urls.set([FileURLFactory.create(rel="whatever")])
+        file_no_urls = FileFactory.create()
+        file_no_urls.releases.set([self.entity])
+
+        # finds the only one
+        response = client.get(f"{self.lookup}/fulltext?id_type=doi&id_value={doi}")
+        self.assertEqual(response.status_code, HTTPStatus.FOUND)
+        self.assertEqual(response.headers["Location"], file.urls.all()[0].url)
+
+        # prefers webarchive
+        file.urls.add(FileURLFactory.create(url="http://tilde.town/lol"))
+        response = client.get(f"{self.lookup}/fulltext?id_type=doi&id_value={doi}")
+        self.assertEqual(response.status_code, HTTPStatus.FOUND)
+        self.assertEqual(response.headers["Location"], "http://tilde.town/lol")
+
+        # prefers WBM
+        file.urls.add(FileURLFactory.create(url="http://web.archive.org/lolfoobar"))
+        response = client.get(f"{self.lookup}/fulltext?id_type=doi&id_value={doi}")
+        self.assertEqual(response.status_code, HTTPStatus.FOUND)
+        self.assertEqual(response.headers["Location"], "http://web.archive.org/lolfoobar")
+
     def test_lookup(self):
         doi = "10.1111/xxxxxx.111.1111"
         response = client.get(f"{self.lookup}?id_type=doi&id_value={doi}")

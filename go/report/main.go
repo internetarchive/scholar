@@ -48,15 +48,12 @@ so I think I want to run daily in order to add a jsonl line. I might split this 
 */
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -75,7 +72,7 @@ type pdfMissReasons struct {
 	Count  int
 }
 
-type stats struct {
+type dailyStats struct {
 	FulltextPDFCount     int
 	FatcatPaperCount     int
 	FatcatContainerCount int
@@ -85,6 +82,10 @@ type stats struct {
 	PDFMissCount         int
 	PDFMissReasons       []pdfMissReasons
 	Date                 string
+}
+
+type stats struct {
+	// TODO
 }
 
 type fatcatStats struct {
@@ -100,160 +101,6 @@ type sandcrawlerStats struct {
 	PDFMiss        int
 	PDFHit         int
 	PDFMissReasons []pdfMissReasons
-}
-
-func getFulltextPDFCount(c *http.Client) (int, error) {
-	body := bytes.NewBufferString(`
-{"query": {
-      "bool": {"must": [{"term": { "access.access_type": "wayback"}},
-			                  {"term": {"access.mimetype": "application/pdf"}}]}}
-}`)
-	req, err := http.NewRequest(http.MethodGet, esURL, body)
-	if err != nil {
-		return -1, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := c.Do(req)
-	if err != nil {
-		return -1, fmt.Errorf("failed to talk to ES: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return -1, fmt.Errorf("got %d from ES", resp.StatusCode)
-	}
-
-	esCount := struct {
-		Count int
-	}{}
-
-	rbody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return -1, fmt.Errorf("could not read ES response: %w", err)
-	}
-
-	if err = json.Unmarshal(rbody, &esCount); err != nil {
-		return -1, fmt.Errorf("could not parse ES response: %w", err)
-	}
-
-	return esCount.Count, nil
-}
-
-func getFatcatStats(c *http.Client) (fatcatStats, error) {
-	fcStats := fatcatStats{}
-	req, err := http.NewRequest(http.MethodGet, fcURL, nil)
-	if err != nil {
-		return fcStats, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := c.Do(req)
-	if err != nil {
-		return fcStats, fmt.Errorf("failed to talk to fatcat: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fcStats, fmt.Errorf("got %d from fatcat", resp.StatusCode)
-	}
-
-	rbody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fcStats, fmt.Errorf("could not read fatcat response: %w", err)
-	}
-
-	if err = json.Unmarshal(rbody, &fcStats); err != nil {
-		return fcStats, fmt.Errorf("could not parse fatcat response: %w", err)
-	}
-
-	return fcStats, nil
-}
-
-func getSandcrawlerStats(c *http.Client) (sandcrawlerStats, error) {
-	scStats := sandcrawlerStats{}
-
-	scQuery := func(path string) ([]byte, error) {
-		req, err := http.NewRequest(http.MethodGet, scURL+"/"+path, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		resp, err := c.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to talk to sandcrawler: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("got %d from sandcrawler", resp.StatusCode)
-		}
-
-		rbody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("could not read sandcrawler response: %w", err)
-		}
-
-		return rbody, nil
-	}
-
-	rbody, err := scQuery("stat_failed_pdf")
-	if err != nil {
-		return scStats, fmt.Errorf("sc stat_failed_pdf call failed: %w", err)
-	}
-
-	// NB after we came back from power outage this was no longer returning json
-	// but just a bare number. I am not sure why.
-	//type failed struct {
-	//	Count int `json:"stat_failed_pdf"`
-	//}
-	//fparsed := []failed{}
-	//err = json.Unmarshal(rbody, &fparsed)
-	//if err != nil {
-	//	return scStats, fmt.Errorf("could not parse stat_failed_pdf response: %w", err)
-	//}
-	//if len(fparsed) > 0 {
-	//	scStats.PDFMiss = fparsed[0].Count
-	//}
-	missCount, err := strconv.Atoi(string(rbody))
-	if err != nil {
-		return scStats, fmt.Errorf("could not parse stat_failed_pdf response: %w", err)
-	}
-	scStats.PDFMiss = missCount
-
-	rbody, err = scQuery("stat_got_pdf")
-	if err != nil {
-		return scStats, fmt.Errorf("sc stat_got_pdf call failed: %w", err)
-	}
-
-	// NB after we came back from power outage this was no longer returning json
-	// but just a bare number. I am not sure why.
-	//type got struct {
-	//	Count int `json:"stat_got_pdf"`
-	//}
-	//gparsed := []got{}
-	//err = json.Unmarshal(rbody, &gparsed)
-	//if err != nil {
-	//	return scStats, fmt.Errorf("could not parse stat_got_pdf response: %w", err)
-	//}
-	//if len(gparsed) > 0 {
-	//	scStats.PDFHit = gparsed[0].Count
-	//}
-	hitCount, err := strconv.Atoi(string(rbody))
-	if err != nil {
-		return scStats, fmt.Errorf("could not parse stat_got_pdf response: %w", err)
-	}
-	scStats.PDFHit = hitCount
-
-	rbody, err = scQuery("stat_error_counts")
-	if err != nil {
-		return scStats, fmt.Errorf("sc stat_got_pdf call failed: %w", err)
-	}
-
-	rparsed := []pdfMissReasons{}
-	err = json.Unmarshal(rbody, &rparsed)
-	if err != nil {
-		return scStats, fmt.Errorf("could not parse stat_error_counts response: %w", err)
-	}
-
-	scStats.PDFMissReasons = rparsed
-
-	return scStats, nil
 }
 
 func _main() error {
@@ -278,7 +125,7 @@ func _main() error {
 		return fmt.Errorf("failed to get crawl stats: %w", err)
 	}
 
-	tmplCtx := stats{
+	tmplCtx := dailyStats{
 		FulltextPDFCount:     esCount,
 		FatcatPaperCount:     fcStats.Papers.Total,
 		FatcatContainerCount: fcStats.Container.Total,
@@ -298,7 +145,7 @@ func _main() error {
 	return nil
 }
 
-func gather() (s stats, err error) {
+func gatherDailyStats() (s dailyStats, err error) {
 	client := &http.Client{}
 	esCount, err := getFulltextPDFCount(client)
 	if err != nil {
@@ -317,7 +164,7 @@ func gather() (s stats, err error) {
 		err = fmt.Errorf("failed to get crawl stats: %w", err)
 		return
 	}
-	s = stats{
+	s = dailyStats{
 		FulltextPDFCount:     esCount,
 		FatcatPaperCount:     fcStats.Papers.Total,
 		FatcatContainerCount: fcStats.Container.Total,
@@ -332,8 +179,8 @@ func gather() (s stats, err error) {
 	return
 }
 
-func writeDay() error {
-	stats, err := gather()
+func writeDailyStats() error {
+	stats, err := gatherDailyStats()
 	if err != nil {
 		return err
 	}
@@ -355,6 +202,10 @@ type tmplCtx struct {
 }
 
 func email(freq string) error {
+	tmpl, err := template.New("report").Parse(reportTmpl)
+	if err != nil {
+		return fmt.Errorf("template parsing failed: %w", err)
+	}
 	bs, err := os.ReadFile(statsPath)
 	if err != nil {
 		return err
@@ -364,11 +215,21 @@ func email(freq string) error {
 	// TODO new computed stats struct
 	// TODO extract stat lines and compute big stats
 
-	// TODO determine to/cc
 	ctx := tmplCtx{}
 
-	// render and print an email
-	// recipient list depends on freq
+	ctx.To = []string{"nsmith@archive.org"}
+	switch freq {
+	case "daily":
+	case "weekly":
+		ctx.CC = []string{"jefferson@archive.org"}
+	default:
+		panic("unknown freq: " + freq)
+	}
+
+	err = tmpl.Execute(os.Stdout, ctx)
+	if err != nil {
+		return fmt.Errorf("template execution failed: %w", err)
+	}
 	return nil
 }
 
@@ -382,7 +243,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "update":
-		err = writeDay()
+		err = writeDailyStats()
 	case "email-daily":
 		err = email("daily")
 	case "email-weekly":

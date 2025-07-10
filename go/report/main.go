@@ -84,7 +84,30 @@ type dailyStats struct {
 	Date                 string
 }
 
+type weeklyStats struct {
+	LastWeekTotal int
+	LastWeekPct   float64
+	Averages      map[int]float64
+	BySource      map[string]float64
+}
+
 type stats struct {
+	FatcatReleases                weeklyStats
+	SPNReqs                       weeklyStats
+	SPNPDFs                       weeklyStats
+	ContainerTotal                int
+	WorkTotal                     int
+	WorkWithArchiveTotal          int
+	WorkWithArchivePct            float64
+	ReleaseTotal                  int
+	ContainerInIASTotal           int
+	ScholarSearchesLastMonth      int
+	FatcatCatalogQueriesLastMonth int
+	ScholarSitemapTotal           int
+	// LastKbartTotal
+	// one off crawl total works in last month
+	// one off crawl total releases in last month
+
 	// TODO
 }
 
@@ -221,6 +244,8 @@ func email(freq string) error {
 	switch freq {
 	case "daily":
 	case "weekly":
+		ctx.CC = []string{"jefferson@archive.org"}
+	case "monthly":
 		ctx.CC = []string{"jefferson@archive.org"}
 	default:
 		panic("unknown freq: " + freq)

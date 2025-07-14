@@ -5,6 +5,8 @@ import sys
 import time
 
 import httpx
+from httpx_retries import Retry, RetryTransport
+
 
 ES_URL = "https://scholar.archive.org/_es/"
 SC_URL = "http://wbgrp-svc506.us.archive.org:3030/rpc/"
@@ -38,12 +40,40 @@ def sandcrawler_stats() -> dict:
     return out
 
 
+def fatcat_json_stats() -> dict:
+    timeout = 30.0
+    retry = Retry(total=10, backoff_factor=3)
+    out = {}
+
+    s = {}
+
+    with httpx.Client(transport=RetryTransport(retry)) as client:
+        r = client.get(FC_STATS_URL, timeout=timeout)
+        if r.status_code != 200:
+            raise Exception(f"fatcat API down after much retrying: {r.text}")
+
+        s = json.loads(r.text)
+
+    return {
+            "fatcat_releases": s["releases"]["total"],
+            "fatcat_refs": s["releases"]["refs_total"],
+            "fatcat_papers": s["papers"]["total"],
+            # i'm actually not sure what the in_web thing is, but from my
+            # reading of fatcat code it appears to note releases of type
+            # article with files that have http or ftp urls.
+            "fatcat_papers_in_web": s["papers"]["in_web"],
+            "fatcat_papers_in_kbart": s["papers"]["in_kbart"],
+            "fatcat_containers": s["containers"]["total"],
+            }
+
+
 def gather():
     STATS_PATH.mkdir(exist_ok=True)
 
     stats = {}
 
     stats = stats | sandcrawler_stats()
+    stats = stats | fatcat_json_stats()
     # TODO fatcat: releases
     # TODO fatcat: containers
     # TODO fatcat: works

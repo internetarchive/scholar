@@ -19,9 +19,9 @@ def sandcrawler_stats() -> dict:
         raise Exception(f"sandcrawler error: {r.text}")
     s = json.loads(r.text)
     out = out | {
-            "sandcrawler_pdf_reqs": s["reqs"],
-            "sandcrawler_pdf_hits": s["hits"],
-            "sandcrawler_pdf_misses": s["misses"],
+            "sandcrawler_pdf_reqs": s[0]["reqs"],
+            "sandcrawler_pdf_hits": s[0]["hits"],
+            "sandcrawler_pdf_misses": s[0]["misses"],
             }
 
     r = httpx.get(SC_URL + "stat_pdf_error_totals")
@@ -37,6 +37,8 @@ def sandcrawler_stats() -> dict:
 
 
 def gather():
+    STATS_PATH.mkdir(exist_ok=True)
+
     stats = {}
 
     stats = stats | sandcrawler_stats()
@@ -52,7 +54,6 @@ def gather():
     # TODO scholar: queries
     # TODO scholar: sitemap
 
-    STATS_PATH.mkdir(exist_ok=True)
     with open(STATS_PATH / time.time(), "w") as f:
         json.dump(stats, f)
 

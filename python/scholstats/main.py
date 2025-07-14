@@ -56,7 +56,7 @@ def gather():
     # TODO scholar: queries
     # TODO scholar: sitemap
 
-    with open(STATS_PATH / f"{time.time()}", "w") as f:
+    with open(STATS_PATH / f"{time.time()}.json", "w") as f:
         json.dump(stats, f)
 
 

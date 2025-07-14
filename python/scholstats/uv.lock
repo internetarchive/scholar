@@ -62,6 +62,18 @@ wheels = [
 ]
 
 [[package]]
+name = "httpx-retries"
+version = "0.4.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/httpx-retries/0.4.0/httpx_retries-0.4.0.tar.gz", hash = "sha256:a7aa513e3f1eef347aac69adecfad9f421210a84df88c88f935ec130f98e6642" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/httpx-retries/0.4.0/httpx_retries-0.4.0-py3-none-any.whl", hash = "sha256:61df3e70889e2f74ebcaf1ae4213f1bdb67dc68dfa8b2e9da41a63afd513e3fb" },
+]
+
+[[package]]
 name = "idna"
 version = "3.10"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -154,12 +166,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "httpx" },
+    { name = "httpx-retries" },
     { name = "pandas" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
+    { name = "httpx-retries", specifier = ">=0.4" },
     { name = "pandas", specifier = ">=2.3" },
 ]
 

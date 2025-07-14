@@ -43,11 +43,10 @@ def sandcrawler_stats() -> dict:
 def fatcat_json_stats() -> dict:
     timeout = 30.0
     retry = Retry(total=10, backoff_factor=3)
-    out = {}
 
     s = {}
 
-    with httpx.Client(transport=RetryTransport(retry)) as client:
+    with httpx.Client(transport=RetryTransport(retry=retry)) as client:
         r = client.get(FC_STATS_URL, timeout=timeout)
         if r.status_code != 200:
             raise Exception(f"fatcat API down after much retrying: {r.text}")

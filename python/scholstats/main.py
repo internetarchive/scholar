@@ -14,7 +14,7 @@ STATS_PATH = pathlib.Path("stats")
 
 def sandcrawler_stats() -> dict:
     out = {}
-    r = httpx.get(SC_URL + "stat_pdf_totals")
+    r = httpx.get(SC_URL + "stat_pdf_totals", timeout=60.0)
     if r.status_code != 200:
         raise Exception(f"sandcrawler error: {r.text}")
     s = json.loads(r.text)

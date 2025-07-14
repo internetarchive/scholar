@@ -66,7 +66,7 @@ def fatcat_json_stats() -> dict:
             # article with files that have http or ftp urls.
             "fatcat_papers_in_web": s["papers"]["in_web"],
             "fatcat_papers_in_kbart": s["papers"]["in_kbart"],
-            "fatcat_containers": s["containers"]["total"],
+            "fatcat_containers": s["container"]["total"],
             }
 
 

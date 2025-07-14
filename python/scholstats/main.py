@@ -13,8 +13,9 @@ STATS_PATH = pathlib.Path("stats")
 
 
 def sandcrawler_stats() -> dict:
+    timeout = 60.0
     out = {}
-    r = httpx.get(SC_URL + "stat_pdf_totals", timeout=60.0)
+    r = httpx.get(SC_URL + "stat_pdf_totals", timeout=timeout)
     if r.status_code != 200:
         raise Exception(f"sandcrawler error: {r.text}")
     s = json.loads(r.text)
@@ -24,7 +25,7 @@ def sandcrawler_stats() -> dict:
             "sandcrawler_pdf_misses": s[0]["misses"],
             }
 
-    r = httpx.get(SC_URL + "stat_pdf_error_totals")
+    r = httpx.get(SC_URL + "stat_pdf_error_totals", timeout=timeout)
     if r.status_code != 200:
         raise Exception(f"sandcrawler error: {r.text}")
     key_re = re.compile("^[a-zA-Z]")
@@ -33,6 +34,7 @@ def sandcrawler_stats() -> dict:
             continue
         key = f"sandcrawler_pdf_error_{error_total['status']}"
         out[key] = error_total["count"]
+
     return out
 
 

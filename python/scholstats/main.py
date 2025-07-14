@@ -42,6 +42,10 @@ def sandcrawler_stats() -> dict:
 
 def fatcat_json_stats() -> dict:
     timeout = 30.0
+    # this is a huge backoff because the fatcat API routinely goes down for up
+    # to an hour. the formula used here is backoff_factor * 2**attempts which
+    # means the maximum timeout will be 3 * 2^10 or 3072. The previous waits
+    # will put the overall wait time over an hour.
     retry = Retry(total=10, backoff_factor=3)
 
     s = {}
@@ -54,8 +58,8 @@ def fatcat_json_stats() -> dict:
         s = json.loads(r.text)
 
     return {
-            "fatcat_releases": s["releases"]["total"],
-            "fatcat_refs": s["releases"]["refs_total"],
+            "fatcat_releases": s["release"]["total"],
+            "fatcat_refs": s["release"]["refs_total"],
             "fatcat_papers": s["papers"]["total"],
             # i'm actually not sure what the in_web thing is, but from my
             # reading of fatcat code it appears to note releases of type

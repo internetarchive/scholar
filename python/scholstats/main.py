@@ -7,7 +7,7 @@ import time
 import httpx
 
 ES_URL = "https://scholar.archive.org/_es/"
-SC_URL = "http://webgrp-svc506.us.archive.org:3030/rpc/"
+SC_URL = "http://wbgrp-svc506.us.archive.org:3030/rpc/"
 FC_STATS_URL = "https://scholar.archive.org/fatcat/stats.json"
 STATS_PATH = pathlib.Path("stats")
 

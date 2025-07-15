@@ -3,6 +3,7 @@ import pathlib
 import re
 import sys
 import time
+from typing import Any
 
 import httpx
 from httpx_retries import Retry, RetryTransport
@@ -14,9 +15,9 @@ FC_STATS_URL = "https://scholar.archive.org/fatcat/stats.json"
 STATS_PATH = pathlib.Path("stats")
 
 
-def sandcrawler_stats() -> dict:
+def sandcrawler_stats() -> dict[str, Any]:
     timeout = 60.0
-    out = {}
+    out: dict[str, int] = {}
     r = httpx.get(SC_URL + "stat_pdf_totals", timeout=timeout)
     if r.status_code != 200:
         raise Exception(f"sandcrawler error: {r.text}")
@@ -40,7 +41,7 @@ def sandcrawler_stats() -> dict:
     return out
 
 
-def fatcat_json_stats() -> dict:
+def fatcat_json_stats() -> dict[str, Any]:
     timeout = 30.0
     # this is a huge backoff because the fatcat API routinely goes down for up
     # to an hour. the formula used here is backoff_factor * 2**attempts which
@@ -70,12 +71,12 @@ def fatcat_json_stats() -> dict:
             }
 
 
-def elasticsearch_stats() -> dict:
+def elasticsearch_stats() -> dict[str, Any]:
     timeout = 30.0
-    out = {}
+    out: dict[str, int] = {}
 
     # full text PDFs indexed in scholar
-    esq = {
+    esq: dict[str, Any] = {
             "query": {
                 "bool": {
                     "must": [
@@ -86,7 +87,8 @@ def elasticsearch_stats() -> dict:
                 }
             }
 
-    r = httpx.get(ES_URL + "scholar_fulltext", timeout=timeout, json=esq)
+    r = httpx.request("GET", ES_URL + "scholar_fulltext",
+                      timeout=timeout, json=esq)
     if r.status_code != 200:
         raise Exception(f"elasticsearch failed: {r.text}")
 
@@ -104,7 +106,8 @@ def elasticsearch_stats() -> dict:
                 }
             }
 
-    r = httpx.get(ES_URL + "scholar_fulltext", timeout=timeout, json=esq)
+    r = httpx.request("GET", ES_URL + "scholar_fulltext",
+                      timeout=timeout, json=esq)
     if r.status_code != 200:
         raise Exception(f"elasticsearch failed: {r.text}")
 
@@ -138,7 +141,7 @@ def elasticsearch_stats() -> dict:
 def gather():
     STATS_PATH.mkdir(exist_ok=True)
 
-    stats = {}
+    stats: dict[str, int] = {}
     stats = stats | elasticsearch_stats()
     stats = stats | sandcrawler_stats()
     stats = stats | fatcat_json_stats()

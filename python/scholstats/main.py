@@ -115,7 +115,7 @@ def elasticsearch_stats() -> dict[str, Any]:
         json.loads(r.text)["aggregations"]["unique_count"]["value"]
 
     # searches in scholar
-    r = httpx.get(ES_URL + "scholar_fulltext/_stats_search", timeout=timeout)
+    r = httpx.get(ES_URL + "scholar_fulltext/_stats/search", timeout=timeout)
     if r.status_code != 200:
         raise Exception(f"elasticsearch failed: {r.text}")
 

@@ -70,23 +70,80 @@ def fatcat_json_stats() -> dict:
             }
 
 
+def elasticsearch_stats() -> dict:
+    timeout = 30.0
+    out = {}
+
+    # full text PDFs indexed in scholar
+    esq = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"term": {"access.access_type": "wayback"}},
+                        {"term": {"access.mimetype": "application/pdf"}},
+                        ]
+                    }
+                }
+            }
+
+    r = httpx.get(ES_URL + "scholar_fulltext", timeout=timeout, json=esq)
+    if r.status_code != 200:
+        raise Exception(f"elasticsearch failed: {r.text}")
+
+    out["elasticsearch_scholar_indexed_pdfs"] = json.loads(r.text)["count"]
+
+    # containers reflected by IAS index
+    esq = {
+            "size": 0,
+            "aggs": {
+                "unique_count": {
+                    "cardinality": {
+                         "field": "biblio.container_ident"
+                         }
+                    }
+                }
+            }
+
+    r = httpx.get(ES_URL + "scholar_fulltext", timeout=timeout, json=esq)
+    if r.status_code != 200:
+        raise Exception(f"elasticsearch failed: {r.text}")
+
+    out["elasticsearch_scholar_containers"] = \
+        json.loads(r.text)["aggregations"]["unique_count"]["value"]
+
+    # searches in scholar
+    r = httpx.get(ES_URL + "scholar_fulltext/_stats_search", timeout=timeout)
+    if r.status_code != 200:
+        raise Exception(f"elasticsearch failed: {r.text}")
+
+    out["elasticsearch_scholar_searches"] = \
+        json.loads(r.text)["_all"]["total"]["search"]["query_total"]
+
+    # searches in fatcat
+    ixs = ["fatcat_container", "fatcat_file", "fatcat_release", "fatcat_ref"]
+    total_es_fc_queries = 0
+    for ix in ixs:
+        r = httpx.get(ES_URL + f"{ix}/_stats_search", timeout=timeout)
+        if r.status_code != 200:
+            raise Exception(f"elasticsearch failed: {r.text}")
+
+        total_es_fc_queries += \
+            json.loads(r.text)["_all"]["total"]["search"]["query_total"]
+
+    out["elasticsearch_fatcat_searches"] = total_es_fc_queries
+
+    return out
+
+
 def gather():
     STATS_PATH.mkdir(exist_ok=True)
 
     stats = {}
-
+    stats = stats | elasticsearch_stats()
     stats = stats | sandcrawler_stats()
     stats = stats | fatcat_json_stats()
-    # TODO fatcat: releases
-    # TODO fatcat: containers
     # TODO fatcat: works
     # TODO fatcat: works with an archived release
-    # TODO fatcat: citations
-    # TODO fatcat: queries
-    # TODO fatcat: in_kbart
-    # TODO scholar: containers
-    # TODO scholar: releases
-    # TODO scholar: queries
     # TODO scholar: sitemap
 
     with open(STATS_PATH / f"{time.time()}.json", "w") as f:

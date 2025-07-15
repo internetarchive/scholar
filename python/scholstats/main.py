@@ -106,7 +106,7 @@ def elasticsearch_stats() -> dict[str, Any]:
                 }
             }
 
-    r = httpx.request("GET", ES_URL + "scholar_fulltext/_count",
+    r = httpx.request("GET", ES_URL + "scholar_fulltext/_search",
                       timeout=timeout, json=esq)
     if r.status_code != 200:
         raise Exception(f"elasticsearch failed: {r.text}")

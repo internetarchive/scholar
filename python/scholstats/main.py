@@ -3,6 +3,7 @@ import pathlib
 import re
 import sys
 import time
+from subprocess import check_output
 from typing import Any
 
 import httpx
@@ -138,6 +139,11 @@ def elasticsearch_stats() -> dict[str, Any]:
     return out
 
 
+def scholar_sitemap_stats() -> dict[str, int]:
+    output = check_output("cat /srv/scholar/sitemap/* | wc -l", shell=True)
+    return {"scholar_sitemap_lines": int(output)}
+
+
 def gather():
     STATS_PATH.mkdir(exist_ok=True)
 
@@ -145,9 +151,9 @@ def gather():
     stats = stats | elasticsearch_stats()
     stats = stats | sandcrawler_stats()
     stats = stats | fatcat_json_stats()
+    stats = stats | scholar_sitemap_stats()
     # TODO fatcat: works
     # TODO fatcat: works with an archived release
-    # TODO scholar: sitemap
 
     with open(STATS_PATH / f"{time.time()}.json", "w") as f:
         json.dump(stats, f)

@@ -167,7 +167,7 @@ def report():
     for fname in os.listdir(STATS_PATH):
         dfd["date"].append(pandas.to_datetime(float(fname[:-5]), unit="s"))
         with open(STATS_PATH / fname, 'r') as f:
-            for k, v in json.load(f):
+            for k, v in json.load(f).items():
                 if not dfd.get(k):
                     dfd[k] = []
                 dfd[k].append(v)

@@ -87,7 +87,7 @@ def elasticsearch_stats() -> dict[str, Any]:
                 }
             }
 
-    r = httpx.request("GET", ES_URL + "scholar_fulltext",
+    r = httpx.request("GET", ES_URL + "scholar_fulltext/_count",
                       timeout=timeout, json=esq)
     if r.status_code != 200:
         raise Exception(f"elasticsearch failed: {r.text}")
@@ -106,7 +106,7 @@ def elasticsearch_stats() -> dict[str, Any]:
                 }
             }
 
-    r = httpx.request("GET", ES_URL + "scholar_fulltext",
+    r = httpx.request("GET", ES_URL + "scholar_fulltext/_count",
                       timeout=timeout, json=esq)
     if r.status_code != 200:
         raise Exception(f"elasticsearch failed: {r.text}")
@@ -126,7 +126,7 @@ def elasticsearch_stats() -> dict[str, Any]:
     ixs = ["fatcat_container", "fatcat_file", "fatcat_release", "fatcat_ref"]
     total_es_fc_queries = 0
     for ix in ixs:
-        r = httpx.get(ES_URL + f"{ix}/_stats_search", timeout=timeout)
+        r = httpx.get(ES_URL + f"{ix}/_stats/search", timeout=timeout)
         if r.status_code != 200:
             raise Exception(f"elasticsearch failed: {r.text}")
 

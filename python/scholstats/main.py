@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import re
 import sys
@@ -7,6 +8,7 @@ from subprocess import check_output
 from typing import Any
 
 import httpx
+import pandas
 from httpx_retries import Retry, RetryTransport
 
 
@@ -154,13 +156,27 @@ def gather():
     stats = stats | scholar_sitemap_stats()
     # TODO fatcat: works
     # TODO fatcat: works with an archived release
+    # TODO periodic crawl counts
 
     with open(STATS_PATH / f"{time.time()}.json", "w") as f:
         json.dump(stats, f)
 
 
 def report():
-    print("generating report")
+    dfd: dict[str, Any] = {"date": []}
+    for fname in os.listdir(STATS_PATH):
+        dfd["date"].append(pandas.to_datetime(float(fname[:-5])))
+        with open(STATS_PATH / fname, 'r') as f:
+            for k, v in json.loads(f):
+                if not dfd.get(k):
+                    dfd[k] = []
+                dfd[k].append(v)
+    df = pandas.DataFrame(dfd)
+    print(df["date"].max())
+    print(df["sandcrawler_pdf_reqs"].max())
+    print(df.describe())
+
+    # TODO
 
 
 if __name__ == "__main__":

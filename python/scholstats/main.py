@@ -3,7 +3,7 @@ import os
 import pathlib
 import re
 import sys
-from datetime import date
+from datetime import datetime
 from subprocess import check_output
 from typing import Any
 
@@ -158,15 +158,16 @@ def gather():
     # TODO fatcat: works with an archived release
     # TODO periodic crawl counts
 
-    with open(STATS_PATH / f"{date.today()}.json", "w") as f:
+    fname = f"{datetime.now(datetime.UTC).isoformat()}.json"
+
+    with open(STATS_PATH / fname, "w") as f:
         json.dump(stats, f)
 
 
 def make_frame() -> pandas.DataFrame:
     dfd: dict[str, list[Any]] = {"date": []}
     for fname in os.listdir(STATS_PATH):
-        dfd["date"].append(pandas.to_datetime(int(fname.split(".")[0]),
-                                              unit="s"))
+        dfd["date"].append(fname[:-5])
         with open(STATS_PATH / fname, 'r') as f:
             for k, v in json.load(f).items():
                 if not dfd.get(k):

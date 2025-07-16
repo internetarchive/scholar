@@ -3,7 +3,7 @@ import os
 import pathlib
 import re
 import sys
-import time
+from datetime import date
 from subprocess import check_output
 from typing import Any
 
@@ -158,20 +158,25 @@ def gather():
     # TODO fatcat: works with an archived release
     # TODO periodic crawl counts
 
-    with open(STATS_PATH / f"{time.time()}.json", "w") as f:
+    with open(STATS_PATH / f"{date.today()}.json", "w") as f:
         json.dump(stats, f)
 
 
-def report():
-    dfd: dict[str, Any] = {"date": []}
+def make_frame() -> pandas.DataFrame:
+    dfd: dict[str, list[Any]] = {"date": []}
     for fname in os.listdir(STATS_PATH):
-        dfd["date"].append(pandas.to_datetime(float(fname[:-5]), unit="s"))
+        dfd["date"].append(pandas.to_datetime(int(fname.split(".")[0]),
+                                              unit="s"))
         with open(STATS_PATH / fname, 'r') as f:
             for k, v in json.load(f).items():
                 if not dfd.get(k):
                     dfd[k] = []
                 dfd[k].append(v)
-    df = pandas.DataFrame(dfd)
+    return pandas.DataFrame(dfd)
+
+
+def report():
+    df = make_frame()
     print(df["date"].max())
     print(df["sandcrawler_pdf_reqs"].max())
     print(df.describe())

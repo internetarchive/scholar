@@ -148,8 +148,6 @@ def scholar_sitemap_stats() -> dict[str, int]:
 
 
 def gather():
-    STATS_PATH.mkdir(exist_ok=True)
-
     now = datetime.now(UTC)
     ds = now.strftime("%Y-%m-%d %H:%M:%S")
 

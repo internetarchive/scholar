@@ -11,6 +11,11 @@ dependencies = [
 ] 
 
 [[tool.uv.index]]
-url = "https://nexus.us.archive.org/repository/pypi-group/simple"
+url = "http://nexus.us.archive.org/repository/pypi-group/simple"
 default = true
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.10.3",
+]
 

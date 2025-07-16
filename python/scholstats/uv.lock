@@ -25,6 +25,63 @@ wheels = [
 ]
 
 [[package]]
+name = "contourpy"
+version = "1.3.2"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2.tar.gz", hash = "sha256:b6945942715a034c671b7fc54f9588126b0b8bf23db2696e3ca8328f3ff0ab54" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:de39db2604ae755316cb5967728f4bea92685884b1e767b7c24e983ef5f771cb" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:3f9e896f447c5c8618f1edb2bafa9a4030f22a575ec418ad70611450720b5b08" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:71e2bd4a1c4188f5c2b8d274da78faab884b59df20df63c34f74aa1813c4427c" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:de425af81b6cea33101ae95ece1f696af39446db9682a0b56daaa48cfc29f38f" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:977e98a0e0480d3fe292246417239d2d45435904afd6d7332d8455981c408b85" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:434f0adf84911c924519d2b08fc10491dd282b20bdd3fa8f60fd816ea0b48841" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:c66c4906cdbc50e9cba65978823e6e00b45682eb09adbb78c9775b74eb222422" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:8b7fc0cd78ba2f4695fd0a6ad81a19e7e3ab825c31b577f384aa9d7817dc3bef" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-win32.whl", hash = "sha256:15ce6ab60957ca74cff444fe66d9045c1fd3e92c8936894ebd1f3eef2fff075f" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313-win_amd64.whl", hash = "sha256:e1578f7eafce927b168752ed7e22646dad6cd9bca673c60bff55889fa236ebf9" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-macosx_10_13_x86_64.whl", hash = "sha256:0475b1f6604896bc7c53bb070e355e9321e1bc0d381735421a2d2068ec56531f" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:c85bb486e9be652314bb5b9e2e3b0d1b2e643d5eec4992c0fbe8ac71775da739" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:745b57db7758f3ffc05a10254edd3182a2a83402a89c00957a8e8a22f5582823" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:970e9173dbd7eba9b4e01aab19215a48ee5dd3f43cef736eebde064a171f89a5" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:c6c4639a9c22230276b7bffb6a850dfc8258a2521305e1faefe804d006b2e532" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cc829960f34ba36aad4302e78eabf3ef16a3a100863f0d4eeddf30e8a485a03b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:d32530b534e986374fc19eaa77fcb87e8a99e5431499949b828312bdcd20ac52" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:e298e7e70cf4eb179cc1077be1c725b5fd131ebc81181bf0c03525c8abc297fd" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-win32.whl", hash = "sha256:d0e589ae0d55204991450bb5c23f571c64fe43adaa53f93fc902a84c96f52fe1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/contourpy/1.3.2/contourpy-1.3.2-cp313-cp313t-win_amd64.whl", hash = "sha256:78e9253c3de756b3f6a5174d024c4835acd59eb3f8e2ca13e775dbffe1558f69" },
+]
+
+[[package]]
+name = "cycler"
+version = "0.12.1"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/cycler/0.12.1/cycler-0.12.1.tar.gz", hash = "sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/cycler/0.12.1/cycler-0.12.1-py3-none-any.whl", hash = "sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30" },
+]
+
+[[package]]
+name = "fonttools"
+version = "4.58.5"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5.tar.gz", hash = "sha256:b2a35b0a19f1837284b3a23dd64fd7761b8911d50911ecd2bdbaf5b2d1b5df9c" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:f4b6f1360da13cecc88c0d60716145b31e1015fbe6a59e32f73a4404e2ea92cf" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:4a036822e915692aa2c03e2decc60f49a8190f8111b639c947a4f4e5774d0d7a" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-cp313-cp313-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:a6d7709fcf4577b0f294ee6327088884ca95046e1eccde87c53bbba4d5008541" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b9b5099ca99b79d6d67162778b1b1616fc0e1de02c1a178248a0da8d78a33852" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:3f2c05a8d82a4d15aebfdb3506e90793aea16e0302cec385134dd960647a36c0" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:79f0c4b1cc63839b61deeac646d8dba46f8ed40332c2ac1b9997281462c2e4ba" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-cp313-cp313-win32.whl", hash = "sha256:a1a9a2c462760976882131cbab7d63407813413a2d32cd699e86a1ff22bf7aa5" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-cp313-cp313-win_amd64.whl", hash = "sha256:bca61b14031a4b7dc87e14bf6ca34c275f8e4b9f7a37bc2fe746b532a924cf30" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/fonttools/4.58.5/fonttools-4.58.5-py3-none-any.whl", hash = "sha256:e48a487ed24d9b611c5c4b25db1e50e69e9854ca2670e39a3486ffcd98863ec4" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -83,6 +140,73 @@ wheels = [
 ]
 
 [[package]]
+name = "kiwisolver"
+version = "1.4.8"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8.tar.gz", hash = "sha256:23d5f023bdc8c7e54eb65f03ca5d5bb25b601eac4d7f1a042888a1f45237987e" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:1c8ceb754339793c24aee1c9fb2485b5b1f5bb1c2c214ff13368431e51fc9a09" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:54a62808ac74b5e55a04a408cda6156f986cefbcf0ada13572696b507cc92fa1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:68269e60ee4929893aad82666821aaacbd455284124817af45c11e50a4b42e3c" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:34d142fba9c464bc3bbfeff15c96eab0e7310343d6aefb62a79d51421fcc5f1b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3ddc373e0eef45b59197de815b1b28ef89ae3955e7722cc9710fb91cd77b7f47" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:77e6f57a20b9bd4e1e2cedda4d0b986ebd0216236f0106e55c28aea3d3d69b16" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:08e77738ed7538f036cd1170cbed942ef749137b1311fa2bbe2a7fda2f6bf3cc" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a5ce1e481a74b44dd5e92ff03ea0cb371ae7a0268318e202be06c8f04f4f1246" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:fc2ace710ba7c1dfd1a3b42530b62b9ceed115f19a1656adefce7b1782a37794" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:3452046c37c7692bd52b0e752b87954ef86ee2224e624ef7ce6cb21e8c41cc1b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-musllinux_1_2_ppc64le.whl", hash = "sha256:7e9a60b50fe8b2ec6f448fe8d81b07e40141bfced7f896309df271a0b92f80f3" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-musllinux_1_2_s390x.whl", hash = "sha256:918139571133f366e8362fa4a297aeba86c7816b7ecf0bc79168080e2bd79957" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:e063ef9f89885a1d68dd8b2e18f5ead48653176d10a0e324e3b0030e3a69adeb" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-win_amd64.whl", hash = "sha256:a17b7c4f5b2c51bb68ed379defd608a03954a1845dfed7cc0117f1cc8a9b7fd2" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313-win_arm64.whl", hash = "sha256:3cd3bc628b25f74aedc6d374d5babf0166a92ff1317f46267f12d2ed54bc1d30" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-macosx_10_13_universal2.whl", hash = "sha256:370fd2df41660ed4e26b8c9d6bbcad668fbe2560462cba151a721d49e5b6628c" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-macosx_10_13_x86_64.whl", hash = "sha256:84a2f830d42707de1d191b9490ac186bf7997a9495d4e9072210a1296345f7dc" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:7a3ad337add5148cf51ce0b55642dc551c0b9d6248458a757f98796ca7348712" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:7506488470f41169b86d8c9aeff587293f530a23a23a49d6bc64dab66bedc71e" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2f0121b07b356a22fb0414cec4666bbe36fd6d0d759db3d37228f496ed67c880" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:d6d6bd87df62c27d4185de7c511c6248040afae67028a8a22012b010bc7ad062" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:291331973c64bb9cce50bbe871fb2e675c4331dab4f31abe89f175ad7679a4d7" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:893f5525bb92d3d735878ec00f781b2de998333659507d29ea4466208df37bed" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:b47a465040146981dc9db8647981b8cb96366fbc8d452b031e4f8fdffec3f26d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-musllinux_1_2_i686.whl", hash = "sha256:99cea8b9dd34ff80c521aef46a1dddb0dcc0283cf18bde6d756f1e6f31772165" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-musllinux_1_2_ppc64le.whl", hash = "sha256:151dffc4865e5fe6dafce5480fab84f950d14566c480c08a53c663a0020504b6" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-musllinux_1_2_s390x.whl", hash = "sha256:577facaa411c10421314598b50413aa1ebcf5126f704f1e5d72d7e4e9f020d90" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/kiwisolver/1.4.8/kiwisolver-1.4.8-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:be4816dc51c8a471749d664161b434912eee82f2ea66bd7628bd14583a833e85" },
+]
+
+[[package]]
+name = "matplotlib"
+version = "3.10.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "contourpy" },
+    { name = "cycler" },
+    { name = "fonttools" },
+    { name = "kiwisolver" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pillow" },
+    { name = "pyparsing" },
+    { name = "python-dateutil" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3.tar.gz", hash = "sha256:2f82d2c5bb7ae93aaaa4cd42aca65d76ce6376f83304fa3a630b569aca274df0" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:9f2efccc8dcf2b86fc4ee849eea5dcaecedd0773b30f47980dc0cbeabf26ec84" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:3ddbba06a6c126e3301c3d272a99dcbe7f6c24c14024e80307ff03791a5f294e" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:748302b33ae9326995b238f606e9ed840bf5886ebafcb233775d946aa8107a15" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a80fcccbef63302c0efd78042ea3c2436104c5b1a4d3ae20f864593696364ac7" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:55e46cbfe1f8586adb34f7587c3e4f7dedc59d5226719faf6cb54fc24f2fd52d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313-win_amd64.whl", hash = "sha256:151d89cb8d33cb23345cd12490c76fd5d18a56581a16d950b48c6ff19bb2ab93" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313t-macosx_10_13_x86_64.whl", hash = "sha256:c26dd9834e74d164d06433dc7be5d75a1e9890b926b3e57e74fa446e1a62c3e2" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:24853dad5b8c84c8c2390fc31ce4858b6df504156893292ce8092d190ef8151d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:68f7878214d369d7d4215e2a9075fef743be38fa401d32e6020bab2dfabaa566" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f6929fc618cb6db9cb75086f73b3219bbb25920cb24cee2ea7a12b04971a4158" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:6c7818292a5cc372a2dc4c795e5c356942eb8350b98ef913f7fda51fe175ac5d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/matplotlib/3.10.3/matplotlib-3.10.3-cp313-cp313t-win_amd64.whl", hash = "sha256:4f23ffe95c5667ef8a2b56eea9b53db7f43910fa4a2d5472ae0f72b64deab4d5" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.3.1"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -113,6 +237,15 @@ wheels = [
 ]
 
 [[package]]
+name = "packaging"
+version = "25.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/packaging/25.0/packaging-25.0.tar.gz", hash = "sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/packaging/25.0/packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484" },
+]
+
+[[package]]
 name = "pandas"
 version = "2.3.1"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -137,6 +270,70 @@ wheels = [
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pandas/2.3.1/pandas-2.3.1-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2f4d6feeba91744872a600e6edbbd5b033005b431d5ae8379abee5bcfa479fab" },
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pandas/2.3.1/pandas-2.3.1-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:fe37e757f462d31a9cd7580236a82f353f5713a80e059a29753cf938c6775d96" },
     { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pandas/2.3.1/pandas-2.3.1-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:5db9637dbc24b631ff3707269ae4559bce4b7fd75c1c4d7e13f40edc42df4444" },
+]
+
+[[package]]
+name = "pillow"
+version = "11.3.0"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0.tar.gz", hash = "sha256:3828ee7586cd0b2091b6209e5ad53e20d0649bbe87164a459d0676e035e8f523" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-ios_13_0_arm64_iphoneos.whl", hash = "sha256:1c627742b539bba4309df89171356fcb3cc5a9178355b2727d1b74a6cf155fbd" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-ios_13_0_arm64_iphonesimulator.whl", hash = "sha256:30b7c02f3899d10f13d7a48163c8969e4e653f8b43416d23d13d1bbfdc93b9f8" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-ios_13_0_x86_64_iphonesimulator.whl", hash = "sha256:7859a4cc7c9295f5838015d8cc0a9c215b77e43d07a25e460f35cf516df8626f" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:ec1ee50470b0d050984394423d96325b744d55c701a439d2bd66089bff963d3c" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:7db51d222548ccfd274e4572fdbf3e810a5e66b00608862f947b163e613b67dd" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2d6fcc902a24ac74495df63faad1884282239265c6839a0a6416d33faedfae7e" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:f0f5d8f4a08090c6d6d578351a2b91acf519a54986c055af27e7a93feae6d3f1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c37d8ba9411d6003bba9e518db0db0c58a680ab9fe5179f040b0463644bc9805" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:13f87d581e71d9189ab21fe0efb5a23e9f28552d5be6979e84001d3b8505abe8" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:023f6d2d11784a465f09fd09a34b150ea4672e85fb3d05931d89f373ab14abb2" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:45dfc51ac5975b938e9809451c51734124e73b04d0f0ac621649821a63852e7b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-win32.whl", hash = "sha256:a4d336baed65d50d37b88ca5b60c0fa9d81e3a87d4a7930d3880d1624d5b31f3" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-win_amd64.whl", hash = "sha256:0bce5c4fd0921f99d2e858dc4d4d64193407e1b99478bc5cacecba2311abde51" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313-win_arm64.whl", hash = "sha256:1904e1264881f682f02b7f8167935cce37bc97db457f8e7849dc3a6a52b99580" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-macosx_10_13_x86_64.whl", hash = "sha256:4c834a3921375c48ee6b9624061076bc0a32a60b5532b322cc0ea64e639dd50e" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:5e05688ccef30ea69b9317a9ead994b93975104a677a36a8ed8106be9260aa6d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:1019b04af07fc0163e2810167918cb5add8d74674b6267616021ab558dc98ced" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:f944255db153ebb2b19c51fe85dd99ef0ce494123f21b9db4877ffdfc5590c7c" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1f85acb69adf2aaee8b7da124efebbdb959a104db34d3a2cb0f3793dbae422a8" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:05f6ecbeff5005399bb48d198f098a9b4b6bdf27b8487c7f38ca16eeb070cd59" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:a7bc6e6fd0395bc052f16b1a8670859964dbd7003bd0af2ff08342eb6e442cfe" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:83e1b0161c9d148125083a35c1c5a89db5b7054834fd4387499e06552035236c" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-win32.whl", hash = "sha256:2a3117c06b8fb646639dce83694f2f9eac405472713fcb1ae887469c0d4f6788" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-win_amd64.whl", hash = "sha256:857844335c95bea93fb39e0fa2726b4d9d758850b34075a7e3ff4f4fa3aa3b31" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp313-cp313t-win_arm64.whl", hash = "sha256:8797edc41f3e8536ae4b10897ee2f637235c94f27404cac7297f7b607dd0716e" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-macosx_10_13_x86_64.whl", hash = "sha256:d9da3df5f9ea2a89b81bb6087177fb1f4d1c7146d583a3fe5c672c0d94e55e12" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:0b275ff9b04df7b640c59ec5a3cb113eefd3795a8df80bac69646ef699c6981a" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:0743841cabd3dba6a83f38a92672cccbd69af56e3e91777b0ee7f4dba4385632" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:2465a69cf967b8b49ee1b96d76718cd98c4e925414ead59fdf75cf0fd07df673" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:41742638139424703b4d01665b807c6468e23e699e8e90cffefe291c5832b027" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:93efb0b4de7e340d99057415c749175e24c8864302369e05914682ba642e5d77" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:7966e38dcd0fa11ca390aed7c6f20454443581d758242023cf36fcb319b1a874" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:98a9afa7b9007c67ed84c57c9e0ad86a6000da96eaa638e4f8abe5b65ff83f0a" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-win32.whl", hash = "sha256:02a723e6bf909e7cea0dac1b0e0310be9d7650cd66222a5f1c571455c0a45214" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-win_amd64.whl", hash = "sha256:a418486160228f64dd9e9efcd132679b7a02a5f22c982c78b6fc7dab3fefb635" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314-win_arm64.whl", hash = "sha256:155658efb5e044669c08896c0c44231c5e9abcaadbc5cd3648df2f7c0b96b9a6" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-macosx_10_13_x86_64.whl", hash = "sha256:59a03cdf019efbfeeed910bf79c7c93255c3d54bc45898ac2a4140071b02b4ae" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:f8a5827f84d973d8636e9dc5764af4f0cf2318d26744b3d902931701b0d46653" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:ee92f2fd10f4adc4b43d07ec5e779932b4eb3dbfbc34790ada5a6669bc095aa6" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:c96d333dcf42d01f47b37e0979b6bd73ec91eae18614864622d9b87bbd5bbf36" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:4c96f993ab8c98460cd0c001447bff6194403e8b1d7e149ade5f00594918128b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:41342b64afeba938edb034d122b2dda5db2139b9a4af999729ba8818e0056477" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:068d9c39a2d1b358eb9f245ce7ab1b5c3246c7c8c7d9ba58cfa5b43146c06e50" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:a1bc6ba083b145187f648b667e05a2534ecc4b9f2784c2cbe3089e44868f2b9b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-win32.whl", hash = "sha256:118ca10c0d60b06d006be10a501fd6bbdfef559251ed31b794668ed569c87e12" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-win_amd64.whl", hash = "sha256:8924748b688aa210d79883357d102cd64690e56b923a186f35a82cbc10f997db" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pillow/11.3.0/pillow-11.3.0-cp314-cp314t-win_arm64.whl", hash = "sha256:79ea0d14d3ebad43ec77ad5272e6ff9bba5b679ef73375ea760261207fa8e0aa" },
+]
+
+[[package]]
+name = "pyparsing"
+version = "3.2.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyparsing/3.2.3/pyparsing-3.2.3.tar.gz", hash = "sha256:b9c13f1ab8b3b542f72e28f634bad4de758ab3ce4546e4301970ad6fa77c38be" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/pyparsing/3.2.3/pyparsing-3.2.3-py3-none-any.whl", hash = "sha256:a749938e02d6fd0b59b356ca504a24982314bb090c383e3cf201c95ef7e2bfcf" },
 ]
 
 [[package]]
@@ -170,12 +367,20 @@ dependencies = [
     { name = "pandas" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "matplotlib" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "httpx-retries", specifier = ">=0.4" },
     { name = "pandas", specifier = ">=2.3" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "matplotlib", specifier = ">=3.10.3" }]
 
 [[package]]
 name = "six"

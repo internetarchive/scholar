@@ -2,7 +2,7 @@ import json
 import pathlib
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, UTC
 from subprocess import check_output
 from typing import Any
 
@@ -150,7 +150,7 @@ def scholar_sitemap_stats() -> dict[str, int]:
 def gather():
     STATS_PATH.mkdir(exist_ok=True)
 
-    now = datetime.now(datetime.UTC)
+    now = datetime.now(UTC)
     ds = now.strftime("%Y-%m-%d %H:%M:%S")
 
     stats: dict[str, str | int] = {"datetime": ds}

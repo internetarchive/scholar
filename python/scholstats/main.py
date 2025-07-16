@@ -162,6 +162,7 @@ def gather():
 
     with open(STATS_PATH, "a") as f:
         json.dump(stats, f)
+        print("", file=f)
 
 
 def make_frame() -> pandas.DataFrame:

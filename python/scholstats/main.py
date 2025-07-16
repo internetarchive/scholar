@@ -1,5 +1,4 @@
 import json
-import os
 import pathlib
 import re
 import sys
@@ -15,7 +14,7 @@ from httpx_retries import Retry, RetryTransport
 ES_URL = "https://scholar.archive.org/_es/"
 SC_URL = "http://wbgrp-svc506.us.archive.org:3030/rpc/"
 FC_STATS_URL = "https://scholar.archive.org/fatcat/stats.json"
-STATS_PATH = pathlib.Path("stats")
+STATS_PATH = pathlib.Path("./stats.jsonl")
 
 
 def sandcrawler_stats() -> dict[str, Any]:
@@ -50,6 +49,8 @@ def fatcat_json_stats() -> dict[str, Any]:
     # to an hour. the formula used here is backoff_factor * 2**attempts which
     # means the maximum timeout will be 3 * 2^10 or 3072. The previous waits
     # will put the overall wait time over an hour.
+    #
+    # TODO fatcat went down and it only waited 761 seconds
     retry = Retry(total=10, backoff_factor=3)
 
     s = {}
@@ -149,7 +150,10 @@ def scholar_sitemap_stats() -> dict[str, int]:
 def gather():
     STATS_PATH.mkdir(exist_ok=True)
 
-    stats: dict[str, int] = {}
+    now = datetime.now(datetime.UTC)
+    ds = now.strftime("%Y-%m-%d %H:%M:%S")
+
+    stats: dict[str, str | int] = {"datetime": ds}
     stats = stats | elasticsearch_stats()
     stats = stats | sandcrawler_stats()
     stats = stats | fatcat_json_stats()
@@ -158,22 +162,21 @@ def gather():
     # TODO fatcat: works with an archived release
     # TODO periodic crawl counts
 
-    fname = f"{datetime.now(datetime.UTC).isoformat()}.json"
-
-    with open(STATS_PATH / fname, "w") as f:
+    with open(STATS_PATH, "a") as f:
         json.dump(stats, f)
 
 
 def make_frame() -> pandas.DataFrame:
-    dfd: dict[str, list[Any]] = {"date": []}
-    for fname in os.listdir(STATS_PATH):
-        dfd["date"].append(fname[:-5])
-        with open(STATS_PATH / fname, 'r') as f:
-            for k, v in json.load(f).items():
-                if not dfd.get(k):
-                    dfd[k] = []
-                dfd[k].append(v)
-    return pandas.DataFrame(dfd)
+    return pandas.read_json(STATS_PATH, lines=True)
+    # dfd: dict[str, list[Any]] = {"date": []}
+    # for fname in os.listdir(STATS_PATH):
+    #     dfd["date"].append(fname[:-5])
+    #     with open(STATS_PATH / fname, 'r') as f:
+    #         for k, v in json.load(f).items():
+    #             if not dfd.get(k):
+    #                 dfd[k] = []
+    #             dfd[k].append(v)
+    # return pandas.DataFrame(dfd)
 
 
 def report():

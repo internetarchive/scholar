@@ -1,7 +1,10 @@
+import base64
+import io
 import json
 import pathlib
 import re
 import sys
+import warnings
 from datetime import datetime, UTC
 from subprocess import check_output
 from typing import Any
@@ -9,9 +12,13 @@ from typing import Any
 import httpx
 import jinja2
 import pandas as pd
-import matplotlib as plt
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import seaborn as sns
 from httpx_retries import Retry, RetryTransport
+
+# this useless pandas warning was annoying me
+warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 jenv = jinja2.Environment(loader=jinja2.FileSystemLoader("."))
 
@@ -151,7 +158,7 @@ def scholar_sitemap_stats() -> dict[str, int]:
     return {"scholar_sitemap_lines": int(output)}
 
 
-def gather():
+def gather(jsonl_path: pathlib.Path):
     now = datetime.now(UTC)
     ds = now.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -173,13 +180,13 @@ def gather():
     #  - could be computed from changelog but i don't feel like writing tooling
     #    for the legacy version
 
-    with open(STATS_PATH, "a") as f:
+    with open(jsonl_path, "a") as f:
         json.dump(stats, f)
         print("", file=f)
 
 
-def make_frame() -> pd.DataFrame:
-    df = pd.read_json(STATS_PATH, lines=True)
+def make_frame(jsonl_path: pathlib.Path) -> pd.DataFrame:
+    df = pd.read_json(jsonl_path, lines=True)
     for col in df.columns:
         if col != 'datetime':
             df[col+'_diff'] = df[col].diff()
@@ -189,7 +196,25 @@ def make_frame() -> pd.DataFrame:
 
 
 def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
-    print(df.describe())
+    bio = io.BytesIO()
+
+    # sandcrawler
+    fig, axs = plt.subplots(figsize=(12, 8))
+    # axs.set_xlabel("farts")
+    axs.set_ylabel("SPN PDF requests")
+    # axs.format_xdata = mdates.DateFormatter('%Y-%m-%d')
+    axs.grid(True)
+    df[["sandcrawler_pdf_misses", "sandcrawler_pdf_hits"]].plot.bar(
+            ax=axs, stacked=True, rot=0)
+    fig.savefig(bio, format='png')
+    bio.seek(0)
+    sc_graph_b64 = base64.b64encode(bio.read()).decode()
+
+    ctx = {
+        "generated": datetime.today(),
+        "sc_graph_b64": sc_graph_b64,
+        }
+    return tmpl.render(ctx)
 
     # TODO can now use plot.bar() on various _diff columns to see useful
     # information
@@ -200,9 +225,10 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
 if __name__ == "__main__":
     match sys.argv:
         case [_, "gather"]:
-            gather()
+            gather(STATS_PATH)
         case [_, "report"]:
-            report(make_frame(), jenv.get_template("report.html"))
+            print(report(make_frame(STATS_PATH),
+                         jenv.get_template("report.html")))
         case _:
             print("expected either 'gather' or 'report'", file=sys.stderr)
             sys.exit(1)

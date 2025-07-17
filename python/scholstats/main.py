@@ -7,8 +7,13 @@ from subprocess import check_output
 from typing import Any
 
 import httpx
-import pandas
+import jinja2
+import pandas as pd
+import matplotlib as plt
+import seaborn as sns
 from httpx_retries import Retry, RetryTransport
+
+jenv = jinja2.Environment(loader=jinja2.FileSystemLoader("."))
 
 
 ES_URL = "https://scholar.archive.org/_es/"
@@ -70,7 +75,6 @@ def fatcat_json_stats() -> dict[str, Any]:
             # reading of fatcat code it appears to note releases of type
             # article with files that have http or ftp urls.
             "fatcat_papers_in_web": s["papers"]["in_web"],
-            "fatcat_papers_in_kbart": s["papers"]["in_kbart"],
             "fatcat_containers": s["container"]["total"],
             }
 
@@ -157,34 +161,40 @@ def gather():
     stats = stats | fatcat_json_stats()
     stats = stats | scholar_sitemap_stats()
     # TODO fatcat: works
+    #  - this is not exposed in ES, so need to connect directly to fc db
     # TODO fatcat: works with an archived release
+    #  - this is a complex, slow query -- a join across files, releases, works,
+    #    idents, everything
     # TODO periodic crawl counts
+    #  - this will have to be manual
+    # TODO kbart report size
+    #  - this will have to be manual
+    # TODO percentage of releases by source
+    #  - could be computed from changelog but i don't feel like writing tooling
+    #    for the legacy version
 
     with open(STATS_PATH, "a") as f:
         json.dump(stats, f)
         print("", file=f)
 
 
-def make_frame() -> pandas.DataFrame:
-    return pandas.read_json(STATS_PATH, lines=True)
-    # dfd: dict[str, list[Any]] = {"date": []}
-    # for fname in os.listdir(STATS_PATH):
-    #     dfd["date"].append(fname[:-5])
-    #     with open(STATS_PATH / fname, 'r') as f:
-    #         for k, v in json.load(f).items():
-    #             if not dfd.get(k):
-    #                 dfd[k] = []
-    #             dfd[k].append(v)
-    # return pandas.DataFrame(dfd)
+def make_frame() -> pd.DataFrame:
+    df = pd.read_json(STATS_PATH, lines=True)
+    for col in df.columns:
+        if col != 'datetime':
+            df[col+'_diff'] = df[col].diff()
+            df[col+'_pct'] = df[col].pct_change()
+    df.set_index("datetime", inplace=True)
+    return df
 
 
-def report():
-    df = make_frame()
-    print(df["date"].max())
-    print(df["sandcrawler_pdf_reqs"].max())
+def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     print(df.describe())
 
-    # TODO
+    # TODO can now use plot.bar() on various _diff columns to see useful
+    # information
+    # report can be a header like "total blah: xxxx" with a graph underneath
+    # showing deltas over time
 
 
 if __name__ == "__main__":
@@ -192,7 +202,7 @@ if __name__ == "__main__":
         case [_, "gather"]:
             gather()
         case [_, "report"]:
-            report()
+            report(make_frame(), jenv.get_template("report.html"))
         case _:
             print("expected either 'gather' or 'report'", file=sys.stderr)
             sys.exit(1)

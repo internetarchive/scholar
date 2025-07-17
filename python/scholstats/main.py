@@ -13,7 +13,6 @@ import httpx
 import jinja2
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 import seaborn as sns
 from httpx_retries import Retry, RetryTransport
 
@@ -21,6 +20,9 @@ from httpx_retries import Retry, RetryTransport
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 jenv = jinja2.Environment(loader=jinja2.FileSystemLoader("."))
+
+sns.set_style("darkgrid")
+sns.set_palette("husl")
 
 
 ES_URL = "https://scholar.archive.org/_es/"
@@ -196,29 +198,43 @@ def make_frame(jsonl_path: pathlib.Path) -> pd.DataFrame:
 
 
 def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
-    bio = io.BytesIO()
+    ctx = {
+        "generated": datetime.today(),
+        }
 
     # sandcrawler
 
-    fig, axs = plt.subplots(figsize=(12, 8))
-    axs.set_ylabel("SPN PDF requests")
-    axs.grid(True)
+    bio = io.BytesIO()
     df[["sandcrawler_pdf_misses_diff", "sandcrawler_pdf_hits_diff"]].plot.bar(
-            ax=axs, stacked=True, rot=0)
-    fig.savefig(bio, format='png')
+            stacked=True,
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="SPN PDF requests")
+    plt.savefig(bio, format='png')
     bio.seek(0)
-    sc_graph_b64 = base64.b64encode(bio.read()).decode()
+    ctx["sc_graph_b64"] = base64.b64encode(bio.read()).decode()
 
-    ctx = {
-        "generated": datetime.today(),
-        "sc_graph_b64": sc_graph_b64,
-        }
+    spn_error_cols = []
+    for col in df.columns:
+        if col.startswith("sandcrawler_pdf_error") and col.endswith("_diff"):
+            if df[col].mean() > 50:
+                spn_error_cols.append(col)
+
+    bio = io.BytesIO()
+    ax = df[spn_error_cols].plot(
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="SPN errors (mean diff >50)")
+    ax.legend(framealpha=0.5)
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    ctx["sc_pdf_errors_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    # fatcat
+
     return tmpl.render(ctx)
-
-    # TODO can now use plot.bar() on various _diff columns to see useful
-    # information
-    # report can be a header like "total blah: xxxx" with a graph underneath
-    # showing deltas over time
 
 
 if __name__ == "__main__":

@@ -204,7 +204,7 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     axs.set_ylabel("SPN PDF requests")
     # axs.format_xdata = mdates.DateFormatter('%Y-%m-%d')
     axs.grid(True)
-    df[["sandcrawler_pdf_misses", "sandcrawler_pdf_hits"]].plot.bar(
+    df[["sandcrawler_pdf_misses_diff", "sandcrawler_pdf_hits_diff"]].plot.bar(
             ax=axs, stacked=True, rot=0)
     fig.savefig(bio, format='png')
     bio.seek(0)

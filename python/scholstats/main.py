@@ -199,10 +199,9 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     bio = io.BytesIO()
 
     # sandcrawler
+
     fig, axs = plt.subplots(figsize=(12, 8))
-    # axs.set_xlabel("farts")
     axs.set_ylabel("SPN PDF requests")
-    # axs.format_xdata = mdates.DateFormatter('%Y-%m-%d')
     axs.grid(True)
     df[["sandcrawler_pdf_misses_diff", "sandcrawler_pdf_hits_diff"]].plot.bar(
             ax=axs, stacked=True, rot=0)

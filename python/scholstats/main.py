@@ -1,3 +1,11 @@
+# notes to a future self
+#
+# the doc for this work talks about averages for different periods of time --
+# 7d, 30d, 60d etc. I have not implemented anything like that since as of
+# writing we haven't been collecting data for more than two days. This
+# currently produces graphs where each line of data gets its own tick on the x
+# axis -- in other words, a point per day. I think that's good enough until we
+# have >30 days worth of stuff at least.
 import base64
 import io
 import json

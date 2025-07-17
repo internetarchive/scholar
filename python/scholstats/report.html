@@ -11,15 +11,55 @@
 
     <img src="data:image/png;base64, {{sc_pdf_errors_graph_b64}}">
 
-    <h2>fatcat</h2>
+    <h2>scholar holdings</h2>
 
-    <!-- TODO totals -->
-    <!-- TODO change over time bar graph -->
+    <table border="sure">
+      <tr>
+        <td>fulltext PDFs in index</td>
+        <td>{{ias_indexed_pdfs}}</td>
+      </tr>
+      <tr>
+        <td>containers in index</td>
+        <td>{{ias_containers}}</td>
+      </tr>
+    </table>
 
-    <h2>scholar</h2>
+    <img src="data:image/png;base64, {{ias_releases_diff_graph_b64}}">
 
-    <!-- TODO totals -->
-    <!-- TODO change over time bar graphs -->
+    <h2>user searches</h2>
+
+    <img src="data:image/png;base64, {{ias_searches_diff_graph_b64}}">
+    <img src="data:image/png;base64, {{fc_searches_diff_graph_b64}}">
+
+    <h2>fatcat holdings</h2>
+
+    <table border="sure">
+      <tr>
+        <td>total releases</td>
+        <td>{{fatcat_releases}}</td>
+      </tr>
+      <tr>
+        <td>total papers</td>
+        <td>{{fatcat_papers}}</td>
+      </tr>
+      <tr>
+        <td>total papers with archive (papers_in_web)</td>
+        <td>{{fatcat_papers_in_web}}</td>
+      </tr>
+      <tr>
+        <td>total contribs</td>
+        <td>{{fatcat_refs}}</td>
+      </tr>
+      <tr>
+        <td>total containers</td>
+        <td>{{fatcat_containers}}</td>
+      </tr>
+    </table>
+
+    <img src="data:image/png;base64, {{fc_release_graph_b64}}">
+    <img src="data:image/png;base64, {{fc_release_diff_graph_b64}}">
+    <img src="data:image/png;base64, {{fc_refs_diff_graph_b64}}">
+    <img src="data:image/png;base64, {{fc_containers_diff_graph_b64}}">
 
   </body>
 </html>

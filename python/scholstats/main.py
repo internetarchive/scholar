@@ -205,15 +205,21 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     # sandcrawler
 
     bio = io.BytesIO()
-    df[["sandcrawler_pdf_misses_diff", "sandcrawler_pdf_hits_diff"]].plot.bar(
+    ax = df[["sandcrawler_pdf_misses_diff",
+             "sandcrawler_pdf_hits_diff"]].plot.bar(
+            title="SPN PDF requests",
             stacked=True,
             figsize=(12, 8),
             rot=0,
             grid=True,
-            ylabel="SPN PDF requests")
+            ylabel="count")
     plt.savefig(bio, format='png')
+    ax.legend(framealpha=0.5)
     bio.seek(0)
     ctx["sc_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    plt.clf()
+    plt.cla()
 
     spn_error_cols = []
     for col in df.columns:
@@ -223,16 +229,161 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
 
     bio = io.BytesIO()
     ax = df[spn_error_cols].plot(
+            title="SPN errors (mean diff >50)",
             figsize=(12, 8),
             rot=0,
             grid=True,
-            ylabel="SPN errors (mean diff >50)")
+            ylabel="count")
     ax.legend(framealpha=0.5)
     plt.savefig(bio, format='png')
     bio.seek(0)
     ctx["sc_pdf_errors_graph_b64"] = base64.b64encode(bio.read()).decode()
 
+    plt.clf()
+    plt.cla()
+
+    # scholar
+    # regarding totals, most recent row wanted
+    latest = df.loc[df.index.max()]
+    ctx = ctx | {
+            "ias_indexed_pdfs": int(latest.elasticsearch_scholar_indexed_pdfs),
+            "ias_containers": int(latest.elasticsearch_scholar_containers),
+            }
+
+    bio = io.BytesIO()
+    ax = df["elasticsearch_scholar_indexed_pdfs_diff"].plot.bar(
+            title="scholar releases indexed per day",
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="count",
+            )
+    ax.legend(framealpha=0.5)
+    plt.ticklabel_format(style='plain', axis='y')
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    ctx["ias_releases_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    plt.clf()
+    plt.cla()
+
+    # ES queries
+
+    bio = io.BytesIO()
+    ax = df["elasticsearch_scholar_searches_diff"].plot.bar(
+            title="scholar searches per day",
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="count",
+            )
+    ax.legend(framealpha=0.5)
+    plt.ticklabel_format(style='plain', axis='y')
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    ctx["ias_searches_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    plt.clf()
+    plt.cla()
+
+    bio = io.BytesIO()
+    ax = df["elasticsearch_fatcat_searches_diff"].plot.bar(
+            title="fatcat searches per day",
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="count",
+            )
+    ax.legend(framealpha=0.5)
+    plt.ticklabel_format(style='plain', axis='y')
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    ctx["fc_searches_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    plt.clf()
+    plt.cla()
+
     # fatcat
+
+    # regarding totals, most recent row wanted
+    latest = df.loc[df.index.max()]
+    ctx = ctx | {
+            "fatcat_releases": int(latest.fatcat_releases),
+            "fatcat_papers": int(latest.fatcat_papers),
+            "fatcat_papers_in_web": int(latest.fatcat_papers_in_web),
+            "fatcat_refs": int(latest.fatcat_refs),
+            "fatcat_containers": int(latest.fatcat_containers),
+            }
+
+    bio = io.BytesIO()
+    ax = df[["fatcat_releases", "fatcat_papers",
+             "fatcat_papers_in_web"]].plot.bar(
+            title="fatcat release totals",
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="count",
+            )
+    ax.legend(framealpha=0.5)
+    plt.ticklabel_format(style='plain', axis='y')
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    ctx["fc_release_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    plt.clf()
+    plt.cla()
+
+    bio = io.BytesIO()
+    ax = df[["fatcat_releases_diff", "fatcat_papers_diff",
+             "fatcat_papers_in_web_diff"]].plot.bar(
+            title="fatcat release change per day",
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="count",
+            )
+    ax.legend(framealpha=0.5)
+    plt.ticklabel_format(style='plain', axis='y')
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    ctx["fc_release_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    plt.clf()
+    plt.cla()
+
+    bio = io.BytesIO()
+    ax = df.fatcat_refs_diff.plot.bar(
+            title="fatcat contribs change per day",
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="count",
+            )
+    ax.legend(framealpha=0.5)
+    plt.ticklabel_format(style='plain', axis='y')
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    ctx["fc_refs_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    plt.clf()
+    plt.cla()
+
+    bio = io.BytesIO()
+    ax = df["fatcat_containers_diff"].plot.bar(
+            title="fatcat containers change per day",
+            figsize=(12, 8),
+            rot=0,
+            grid=True,
+            ylabel="count",
+            )
+    ax.legend(framealpha=0.5)
+    plt.ticklabel_format(style='plain', axis='y')
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    ctx["fc_containers_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+
+    plt.clf()
+    plt.cla()
 
     return tmpl.render(ctx)
 

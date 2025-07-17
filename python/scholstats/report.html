@@ -12,6 +12,8 @@
     <img src="data:image/png;base64, {{sc_pdf_errors_graph_b64}}">
 
     <h2>scholar holdings</h2>
+            "scholar_sitemap_works_lines": int(works_output),
+            "scholar_sitemap_access_lines": int(access_output),
 
     <table border="sure">
       <tr>
@@ -21,6 +23,14 @@
       <tr>
         <td>containers in index</td>
         <td>{{ias_containers}}</td>
+      </tr>
+      <tr>
+        <td>sitemap count (works)</td>
+        <td>{{ias_sitemap_works}}</td>
+      </tr>
+      <tr>
+        <td>sitemap count (access)</td>
+        <td>{{ias_sitemap_access}}</td>
       </tr>
     </table>
 

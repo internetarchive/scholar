@@ -13,7 +13,7 @@ import pathlib
 import re
 import sys
 import warnings
-from datetime import datetime, UTC
+from datetime import datetime, UTC, date
 from subprocess import check_output
 from typing import Any
 
@@ -164,8 +164,14 @@ def elasticsearch_stats() -> dict[str, Any]:
 
 
 def scholar_sitemap_stats() -> dict[str, int]:
-    output = check_output("cat /srv/scholar/sitemap/* | wc -l", shell=True)
-    return {"scholar_sitemap_lines": int(output)}
+    works_output = check_output(
+            "cat /srv/scholar/sitemap/sitmap-works* | wc -l", shell=True)
+    access_output = check_output(
+            "cat /srv/scholar/sitemap/sitmap-works* | wc -l", shell=True)
+    return {
+            "scholar_sitemap_works_lines": int(works_output),
+            "scholar_sitemap_access_lines": int(access_output),
+            }
 
 
 def gather(jsonl_path: pathlib.Path):
@@ -256,6 +262,8 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     ctx = ctx | {
             "ias_indexed_pdfs": int(latest.elasticsearch_scholar_indexed_pdfs),
             "ias_containers": int(latest.elasticsearch_scholar_containers),
+            "ias_sitemap_works": int(latest.scholar_sitemap_works_lines),
+            "ias_sitemap_access": int(latest.scholar_sitemap_access_lines),
             }
 
     bio = io.BytesIO()
@@ -396,11 +404,21 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     return tmpl.render(ctx)
 
 
+def email_header(emails: list[str]) -> str:
+    return f'''From: nsmith@archive.org
+To: {", ".join(emails)}
+Subject: scholar stats for {date.today()}
+Content-Type: text/html'''
+
+
 if __name__ == "__main__":
     match sys.argv:
         case [_, "gather"]:
             gather(STATS_PATH)
-        case [_, "report"]:
+        case [_, "report", *emails]:
+            if len(emails) > 0:
+                print(email_header(emails))
+                print()
             print(report(make_frame(STATS_PATH),
                          jenv.get_template("report.html")))
         case _:

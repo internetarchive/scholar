@@ -241,20 +241,21 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
             if df[col].mean() > 50:
                 spn_error_cols.append(col)
 
-    bio = io.BytesIO()
-    ax = df[spn_error_cols].plot(
-            title="SPN errors (mean diff >50)",
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count")
-    ax.legend(framealpha=0.5)
-    plt.savefig(bio, format='png')
-    bio.seek(0)
-    ctx["sc_pdf_errors_graph_b64"] = base64.b64encode(bio.read()).decode()
+    if len(spn_error_cols) > 0:
+        bio = io.BytesIO()
+        ax = df[spn_error_cols].plot(
+                title="SPN errors (mean diff >50)",
+                figsize=(12, 8),
+                rot=0,
+                grid=True,
+                ylabel="count")
+        ax.legend(framealpha=0.5)
+        plt.savefig(bio, format='png')
+        bio.seek(0)
+        ctx["sc_pdf_errors_graph_b64"] = base64.b64encode(bio.read()).decode()
 
-    plt.clf()
-    plt.cla()
+        plt.clf()
+        plt.cla()
 
     # scholar
     # regarding totals, most recent row wanted

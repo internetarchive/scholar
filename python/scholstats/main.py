@@ -165,9 +165,9 @@ def elasticsearch_stats() -> dict[str, Any]:
 
 def scholar_sitemap_stats() -> dict[str, int]:
     works_output = check_output(
-            "cat /srv/scholar/sitemap/sitmap-works* | wc -l", shell=True)
+            "cat /srv/scholar/sitemap/sitemap-works* | wc -l", shell=True)
     access_output = check_output(
-            "cat /srv/scholar/sitemap/sitmap-works* | wc -l", shell=True)
+            "cat /srv/scholar/sitemap/sitemap-works* | wc -l", shell=True)
     return {
             "scholar_sitemap_works_lines": int(works_output),
             "scholar_sitemap_access_lines": int(access_output),

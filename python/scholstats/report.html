@@ -1,47 +1,113 @@
 <!DOCTYPE html>
 <html>
   <body>
-    <h1>scholar stats</h1>
+    <h1>Scholar stats for {{ generated }} </h1>
     <p>
-    generated at {{ generated }}
+    The stats in this report are pulled from a variety of sources and collected
+    once a day as cumulative totals. The code runs on
+    <code>wbgrp-svc500.us.archive.org</code> and can be found on <a
+    href="https://git.archive.org/webgroup/scholar/-/tree/trunk/python/scholstats">gitlab</a>.
     </p>
-    <h2>sandcrawler</h2>
+    <p>
+    As of right now the graphs are largely plotted day by day. Once we have
+    more data (&gt;60 days worth) I'll tweak the graphs to show different
+    scales of time.
+    </p>
 
+    <h2>Sandcrawler (SPN)</h2>
+    <p>
+    These two graphs reflect daily use of Save Page Now. The first graph shows
+    the total requests made to SPN per day broken down by successes (PDF
+    acquired) and misses; the second graph shows a breakdown of the most common
+    errors that lead to missed PDFs. Right now errors are included if they
+    average 50 occurences per day or more; once we have more data I'll tweak
+    that.
+    </p>
     <img src="data:image/png;base64, {{sc_graph_b64}}">
-
     <img src="data:image/png;base64, {{sc_pdf_errors_graph_b64}}">
 
-    <h2>scholar holdings</h2>
-            "scholar_sitemap_works_lines": int(works_output),
-            "scholar_sitemap_access_lines": int(access_output),
+    <table border="yeah">
+      <caption>
+        common spn errors
+      </caption>
+      <tr>
+        <td><b>no-pdf-link</b></td>
+        <td>no link to PDF found from initial seed</td>
+      </tr>
+      <tr>
+        <td><b>spn2-cdx-lookup-failure</b></td>
+        <td>SPN result was not found in CDX. this means CDX live is lagging behind.</td>
+      </tr>
+      <tr>
+        <td><b>blocked-cookie</b></td>
+        <td>SPN failed and it appeared to be because of a lack of a particular cookie</td>
+      </tr>
+      <tr>
+        <td><b>no-capture</b></td>
+        <td>Tried to find resource in WBM but WBM redirected us too many times</td>
+      </tr>
+      <tr>
+        <td><b>spn2-backoff</b></td>
+        <td>we oversaturated the SPN API and our request was rejected</td>
+      </tr>
+      <tr>
+        <td><b>terminal-bad-status</b></td>
+        <td>crawl led to a 4xx or 5xx</td>
+      </tr>
+      <tr>
+        <td><b>skip-url-blocklist</b></td>
+        <td>url was on our blocklist, did not attempt capture</td>
+      </tr>
+    </table>
 
+    <h2>Scholar holdings</h2>
+    <p>
+    The first table shows overall totals in IAS's index; the graph shows daily
+    full text IAS indexing counts.
+    </p>
+
+    <h3>Totals</h3>
     <table border="sure">
       <tr>
         <td>fulltext PDFs in index</td>
         <td>{{ias_indexed_pdfs}}</td>
+        <td>full text PDFs in elasticsearch index</td>
       </tr>
       <tr>
         <td>containers in index</td>
         <td>{{ias_containers}}</td>
+        <td>total unique containers reflected by releases in full text index</td>
       </tr>
       <tr>
         <td>sitemap count (works)</td>
         <td>{{ias_sitemap_works}}</td>
+        <td>number of lines in the "works" sitemap files</td>
       </tr>
       <tr>
         <td>sitemap count (access)</td>
         <td>{{ias_sitemap_access}}</td>
+        <td>number of lines in the "access" sitemap files</td>
       </tr>
     </table>
 
     <img src="data:image/png;base64, {{ias_releases_diff_graph_b64}}">
 
-    <h2>user searches</h2>
+    <h2>User searches</h2>
+    <p>
+    Daily search counts. The scholar graph shows daily IAS searches; the Fatcat
+    graph is a roll-up of release, file, and container searches.
+    </p>
 
     <img src="data:image/png;base64, {{ias_searches_diff_graph_b64}}">
     <img src="data:image/png;base64, {{fc_searches_diff_graph_b64}}">
 
-    <h2>fatcat holdings</h2>
+    <h2>Fatcat holdings</h2>
+    <p>
+    Fatcat totals. The table shows current holding statistics as gleaned from
+    Elasticsearch. The graph shows the ratios of overall release holdings:
+    releases, releases of type <code>article</code>, and releases of type
+    <code>article</code> that have an associated file.
+    </p>
 
     <table border="sure">
       <tr>
@@ -66,10 +132,12 @@
       </tr>
     </table>
 
+    <p>
+    These graph show daily changes in Fatcat holdings.
+    </p>
     <img src="data:image/png;base64, {{fc_release_graph_b64}}">
     <img src="data:image/png;base64, {{fc_release_diff_graph_b64}}">
     <img src="data:image/png;base64, {{fc_refs_diff_graph_b64}}">
     <img src="data:image/png;base64, {{fc_containers_diff_graph_b64}}">
-
   </body>
 </html>

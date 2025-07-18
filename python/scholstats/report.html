@@ -69,24 +69,24 @@
     <h3>Totals</h3>
     <table border="sure">
       <tr>
-        <td>fulltext PDFs in index</td>
+        <td><b>fulltext PDFs in index</b></td>
         <td>{{ias_indexed_pdfs}}</td>
-        <td>full text PDFs in elasticsearch index</td>
+        <td><em>full text PDFs in elasticsearch index</em></td>
       </tr>
       <tr>
-        <td>containers in index</td>
+        <td><b>containers in index</b></td>
         <td>{{ias_containers}}</td>
-        <td>total unique containers reflected by releases in full text index</td>
+        <td><em>total unique containers reflected by releases in full text index</em></td>
       </tr>
       <tr>
-        <td>sitemap count (works)</td>
+        <td><b>sitemap count (works)</b></td>
         <td>{{ias_sitemap_works}}</td>
-        <td>number of lines in the "works" sitemap files</td>
+        <td><em>number of lines in the "works" sitemap files</em></td>
       </tr>
       <tr>
-        <td>sitemap count (access)</td>
+        <td><b>sitemap count (access)</b></td>
         <td>{{ias_sitemap_access}}</td>
-        <td>number of lines in the "access" sitemap files</td>
+        <td><em>number of lines in the "access" sitemap files</em></td>
       </tr>
     </table>
 
@@ -132,10 +132,11 @@
       </tr>
     </table>
 
+    <img src="data:image/png;base64, {{fc_release_graph_b64}}">
+
     <p>
     These graph show daily changes in Fatcat holdings.
     </p>
-    <img src="data:image/png;base64, {{fc_release_graph_b64}}">
     <img src="data:image/png;base64, {{fc_release_diff_graph_b64}}">
     <img src="data:image/png;base64, {{fc_refs_diff_graph_b64}}">
     <img src="data:image/png;base64, {{fc_containers_diff_graph_b64}}">

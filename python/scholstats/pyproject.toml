@@ -15,6 +15,9 @@ dependencies = [
 url = "http://nexus.us.archive.org/repository/pypi-group/simple"
 default = true
 
+[tool.uv]
+python-install-mirror = "https://nexus.us.archive.org/repository/raw-python-build-standalone"
+
 [dependency-groups]
 dev = [
     "matplotlib>=3.10.3",

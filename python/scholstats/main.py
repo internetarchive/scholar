@@ -9,6 +9,7 @@
 import base64
 import io
 import json
+import os
 import pathlib
 import re
 import sys
@@ -36,7 +37,7 @@ sns.set_palette("husl")
 ES_URL = "https://scholar.archive.org/_es/"
 SC_URL = "http://wbgrp-svc506.us.archive.org:3030/rpc/"
 FC_STATS_URL = "https://scholar.archive.org/fatcat/stats.json"
-STATS_PATH = pathlib.Path("./stats.jsonl")
+DEFAULT_STATS_PATH = pathlib.Path("./stats.jsonl")
 
 
 def sandcrawler_stats() -> dict[str, Any]:
@@ -413,15 +414,17 @@ Content-Type: text/html'''
 
 
 if __name__ == "__main__":
+    stats_path = os.environ.get("SCHOLSTATS_PATH", DEFAULT_STATS_PATH)
     match sys.argv:
         case [_, "gather"]:
-            gather(STATS_PATH)
+            gather(stats_path)
         case [_, "report", *emails]:
             if len(emails) > 0:
                 print(email_header(emails))
                 print()
-            print(report(make_frame(STATS_PATH),
+            print(report(make_frame(stats_path),
                          jenv.get_template("report.html")))
         case _:
-            print("expected either 'gather' or 'report'", file=sys.stderr)
+            print("expected either 'gather' or 'report [emails]'",
+                  file=sys.stderr)
             sys.exit(1)

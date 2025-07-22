@@ -166,7 +166,7 @@ func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	// - for each line, make a future for a "maybe create in fatcat" activity
 
 	// TODO activity: read results from s3 and create in fatcat, returning fatcat IDs for paper acquisition
-	// TODO activity: for eatch fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
+	// TODO activity: for each fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
 	// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
 	// TODO activity: bulk ingestion into ES of parsed stuff
 

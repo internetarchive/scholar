@@ -5,13 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os/exec"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/miku/scholkit/feeds"
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/sethgrid/pester"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -85,91 +82,93 @@ type entity struct {
 
 func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
+	out := CrossrefCrawlResult{}
 
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 100 * time.Second,
+		TaskQueue:           "scholar-external",
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
-	out := CrossrefCrawlResult{}
-
 	var s3Key string
-	err := workflow.ExecuteActivity(ctx, APIToS3).Get(ctx, &s3Key)
+	err := workflow.ExecuteActivity(ctx, ScholkitCrossrefDailyFeed).Get(ctx, &s3Key)
 	if err != nil {
-		workflow.GetLogger(ctx).Error("APIToS3 failed:", err)
+		workflow.GetLogger(ctx).Error("ScholkitCrossrefDailyFeed failed:", err)
 		return nil, err
 	}
 
-	bstart := 0
-	chunkSelector := workflow.NewSelector(ctx)
+	/*
+		bstart := 0
+		chunkSelector := workflow.NewSelector(ctx)
 
-	var chunkErr error
-	entities := []entity{}
-	fCount := 0
-	for {
-		result := chunkedS3Result{}
-		err = workflow.ExecuteActivity(ctx, chunkedS3ReadLines, s3Key, bstart).Get(ctx, &result)
-		if err != nil {
-			workflow.GetLogger(ctx).Error("chunkedS3ReadLines failed:", err)
-			return nil, err
-		}
-		// TODO process result.Lines
-		if len(result.Lines) == 0 {
-			break
-		}
-		future := workflow.ExecuteActivity(ctx, s3ChunkToFatcat, result.Lines)
-		chunkSelector.AddFuture(future, func(f workflow.Future) {
-			var chunkEntities []entity
-			chunkErr = f.Get(ctx, &chunkEntities)
-			if chunkErr != nil {
-				return
+		var chunkErr error
+		entities := []entity{}
+		fCount := 0
+		for {
+			result := chunkedS3Result{}
+			err = workflow.ExecuteActivity(ctx, chunkedS3ReadLines, s3Key, bstart).Get(ctx, &result)
+			if err != nil {
+				workflow.GetLogger(ctx).Error("chunkedS3ReadLines failed:", err)
+				return nil, err
 			}
-			for _, v := range chunkEntities {
-				entities = append(entities, v)
+			// TODO process result.Lines
+			if len(result.Lines) == 0 {
+				break
 			}
-		})
-		fCount++
-		bstart = result.NextReadIx
-	}
-
-	crawlSelector := workflow.NewSelector(ctx)
-
-	for x := 0; x < fCount; x++ {
-		chunkSelector.Select(ctx)
-		if chunkErr != nil {
-			workflow.GetLogger(ctx).Error("chunk upload to fatcat failed:", chunkErr)
-			return nil, err
-		}
-		for _, e := range entities {
-			switch e.flavor {
-			case "release":
-				future := workflow.ExecuteActivity(ctx, crawlForEntity, e.ID)
-				crawlSelector.AddFuture(future, func(f workflow.Future) {
-					// TODO
+			future := workflow.ExecuteActivity(ctx, s3ChunkToFatcat, result.Lines)
+			chunkSelector.AddFuture(future, func(f workflow.Future) {
+				var chunkEntities []entity
+				chunkErr = f.Get(ctx, &chunkEntities)
+				if chunkErr != nil {
 					return
-				})
-			default:
-				// TODO anything? possibly nothing if we switch to PG FTS
-			}
+				}
+				for _, v := range chunkEntities {
+					entities = append(entities, v)
+				}
+			})
+			fCount++
+			bstart = result.NextReadIx
 		}
-		entities = []entity{}
-	}
 
-	// TODO handle the outcome of a crawl
+		crawlSelector := workflow.NewSelector(ctx)
 
-	// TODO what if there is one activity to read the s3 file and emit a single jsonl as input to an activity? that, in parallel, is really what I want.
+		for x := 0; x < fCount; x++ {
+			chunkSelector.Select(ctx)
+			if chunkErr != nil {
+				workflow.GetLogger(ctx).Error("chunk upload to fatcat failed:", chunkErr)
+				return nil, err
+			}
+			for _, e := range entities {
+				switch e.flavor {
+				case "release":
+					future := workflow.ExecuteActivity(ctx, crawlForEntity, e.ID)
+					crawlSelector.AddFuture(future, func(f workflow.Future) {
+						// TODO
+						return
+					})
+				default:
+					// TODO anything? possibly nothing if we switch to PG FTS
+				}
+			}
+			entities = []entity{}
+		}
 
-	// so trying to map out how to structure the s3 read -> fatcat writes.
-	// ideally, we:
-	// - stream the s3 value
-	// - decompress a chunk into N lines
-	// - for each line, make a future for a "maybe create in fatcat" activity
+		// TODO handle the outcome of a crawl
 
-	// TODO activity: read results from s3 and create in fatcat, returning fatcat IDs for paper acquisition
-	// TODO activity: for each fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
-	// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
-	// TODO activity: bulk ingestion into ES of parsed stuff
+		// TODO what if there is one activity to read the s3 file and emit a single jsonl as input to an activity? that, in parallel, is really what I want.
 
+		// so trying to map out how to structure the s3 read -> fatcat writes.
+		// ideally, we:
+		// - stream the s3 value
+		// - decompress a chunk into N lines
+		// - for each line, make a future for a "maybe create in fatcat" activity
+
+		// TODO activity: read results from s3 and create in fatcat, returning fatcat IDs for paper acquisition
+		// TODO activity: for each fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
+		// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
+		// TODO activity: bulk ingestion into ES of parsed stuff
+
+	*/
 	return &out, nil
 }
 
@@ -192,52 +191,45 @@ func chunkedS3ReadLines(ctx context.Context, s3Key string, readStart, readEnd in
 	return out, nil
 }
 
-func APIToS3(ctx context.Context) (out string, err error) {
+func ScholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
+	// TODO eventually, if needed, this activity can take granular arguments to
+	// control sk's execution
 	l := activity.GetLogger(ctx)
-	l.Info("APIToS3 job running")
+	l.Info("ScholkitCrossrefDaily job running")
 
-	// TODO write helper for dual writing to both master/replica endpoints
+	bucket := viper.GetString("crossref.sks3bucket")
+	skS3Prefix := viper.GetString("crossref.sks3prefix")
 
-	s3, err := minio.New(viper.GetString("s3_endpoint"), &minio.Options{
-		Creds: credentials.NewStaticV4(
-			viper.GetString("s3_access_key"),
-			viper.GetString("s3_secret_key"),
-			""),
-		Secure: true,
-	})
-	if err != nil {
-		l.Error("failed to make s3 client:", err)
-		return
+	// this is for distinguishing runs. we could tie this to the activity
+	// execution if we felt like it.
+	skFeedPrefix := "crossref-daily-0-"
+
+	today := time.Now()
+	yesterday := today.AddDate(0, -1, 0)
+	syncEnd := today.Format("2006-01-02")
+	syncStart := yesterday.Format("2006-01-02")
+
+	skPath := viper.GetString("scholkit.path")
+	skArgs := []string{
+		"-s", "crossref",
+		"-d", viper.GetString("scholkit.dataDir"),
+		"--crossref-upload-s3",
+		"--crossref-feed-prefix", skFeedPrefix,
+		"--crossref-s3-bucket", bucket,
+		"--crossref-s3-prefix", skS3Prefix,
+		"--crossref-sync-start", syncStart,
+		"--crossref-sync-end", syncEnd,
+	}
+	cmd := exec.Command(skPath, skArgs...)
+	// TODO may want to captue sk logging at some point
+	if err = cmd.Run(); err != nil {
+		return "", fmt.Errorf("sk failed: %w", err)
 	}
 
-	// TODO this is just to test s3 connection for now
-	info, err := s3.ListBuckets(ctx)
-	if err != nil {
-		l.Error("failed to talk to s3:", err)
-		return
-	}
-	l.Debug(fmt.Sprintf("%#v", info))
+	s3Key := fmt.Sprintf("%s%s%s.ndjson",
+		skS3Prefix, skFeedPrefix, syncStart)
 
-	client := pester.New()
-	client.Backoff = pester.ExponentialBackoff
-	client.MaxRetries = 3
-	client.RetryOnHTTP429 = true
-	client.Timeout = time.Second * 60 * 60
-
-	ch := feeds.CrossrefHarvester{
-		Client:              client,
-		ApiEndpoint:         "https://api.crossref.org/works",
-		ApiFilter:           "index",
-		ApiEmail:            "scholar@archive.org",
-		Rows:                1000,
-		UserAgent:           "scholar.archive.org trawler",
-		AcceptableMissRatio: 0.1, // TODO what's this
-		MaxRetries:          3,
-	}
-	fmt.Println(ch)
-	// TODO
-
-	return "", nil
+	return s3Key, nil
 }
 
 func s3ChunkToFatcat(ctx context.Context, lines []string) ([]entity, error) {

@@ -46,11 +46,11 @@ func RunStarter() error {
 
 	id, err := uuid.New()
 	if err != nil {
-		return fmt.Errorf("could not make a workflowID: %w")
+		return fmt.Errorf("could not make a workflowID: %w", err)
 	}
 	sid, err := uuid.New()
 	if err != nil {
-		return fmt.Errorf("could not make a workflowID: %w")
+		return fmt.Errorf("could not make a workflowID: %w", err)
 	}
 	scheduleID := "crossref_schedule_" + sid.String()
 	workflowID := "crossref_" + id.String()

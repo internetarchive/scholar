@@ -6,6 +6,7 @@
 # currently produces graphs where each line of data gets its own tick on the x
 # axis -- in other words, a point per day. I think that's good enough until we
 # have >30 days worth of stuff at least.
+
 import base64
 import io
 import json
@@ -31,7 +32,7 @@ warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 jenv = jinja2.Environment(loader=jinja2.FileSystemLoader("."))
 
 sns.set_style("darkgrid")
-sns.set_palette("husl")
+sns.set_palette("Paired")
 
 
 ES_URL = "https://scholar.archive.org/_es/"
@@ -209,7 +210,24 @@ def make_frame(jsonl_path: pathlib.Path) -> pd.DataFrame:
             df[col+'_diff'] = df[col].diff()
             df[col+'_pct'] = df[col].pct_change()
     df.set_index("datetime", inplace=True)
+    df.index = [pd.to_datetime(date).date() for date in df.index]
+
     return df
+
+
+def plot_to_b64() -> str:
+    """Invokes global plt to save current plot as image and returns it as a
+    base64 string"""
+    bio = io.BytesIO()
+    plt.savefig(bio, format='png')
+    bio.seek(0)
+    return base64.b64encode(bio.read()).decode()
+
+
+# TODO this should be part of a context manager
+def plot_clear():
+    plt.clf()
+    plt.cla()
 
 
 def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
@@ -217,46 +235,40 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
         "generated": datetime.today(),
         }
 
+    default_plot_args = {
+            "figsize": (12, 8),
+            "rot": 30,
+            "grid": True,
+            "ylabel": "count",
+            }
+
     # sandcrawler
 
-    bio = io.BytesIO()
+    plot_args = default_plot_args | {
+            "title": "SPN PDF requests",
+            "stacked": True}
     ax = df[["sandcrawler_pdf_misses_diff",
-             "sandcrawler_pdf_hits_diff"]].plot.bar(
-            title="SPN PDF requests",
-            stacked=True,
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count")
-    plt.savefig(bio, format='png')
+             "sandcrawler_pdf_hits_diff"]].plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
-    bio.seek(0)
-    ctx["sc_graph_b64"] = base64.b64encode(bio.read()).decode()
+    ctx["sc_graph_b64"] = plot_to_b64()
 
-    plt.clf()
-    plt.cla()
+    plot_clear()
 
     spn_error_cols = []
     for col in df.columns:
         if col.startswith("sandcrawler_pdf_error") and col.endswith("_diff"):
-            if df[col].mean() > 50:
+            if df[col].mean() > 50 and len(spn_error_cols) < 10:
                 spn_error_cols.append(col)
 
     if len(spn_error_cols) > 0:
-        bio = io.BytesIO()
-        ax = df[spn_error_cols].plot(
-                title="SPN errors (mean diff >50)",
-                figsize=(12, 8),
-                rot=0,
-                grid=True,
-                ylabel="count")
+        plot_args = default_plot_args | {
+            "title": "SPN errors (mean diff >50)"
+            }
+        ax = df[spn_error_cols].plot(**plot_args)
         ax.legend(framealpha=0.5)
-        plt.savefig(bio, format='png')
-        bio.seek(0)
-        ctx["sc_pdf_errors_graph_b64"] = base64.b64encode(bio.read()).decode()
+        ctx["sc_pdf_errors_graph_b64"] = plot_to_b64()
 
-        plt.clf()
-        plt.cla()
+        plot_clear()
 
     # scholar
     # regarding totals, most recent row wanted
@@ -268,58 +280,37 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
             "ias_sitemap_access": int(latest.scholar_sitemap_access_lines),
             }
 
-    bio = io.BytesIO()
-    ax = df["elasticsearch_scholar_indexed_pdfs_diff"].plot.bar(
-            title="scholar releases indexed per day",
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count",
-            )
+    plot_args = default_plot_args | {
+            "title": "scholar releases indexed per day",
+            }
+    ax = df["elasticsearch_scholar_indexed_pdfs_diff"].plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
-    plt.savefig(bio, format='png')
-    bio.seek(0)
-    ctx["ias_releases_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+    ctx["ias_releases_diff_graph_b64"] = plot_to_b64()
 
-    plt.clf()
-    plt.cla()
+    plot_clear()
 
     # ES queries
 
-    bio = io.BytesIO()
-    ax = df["elasticsearch_scholar_searches_diff"].plot.bar(
-            title="scholar searches per day",
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count",
-            )
+    plot_args = default_plot_args | {
+            "title": "scholar searches per day",
+            }
+    ax = df["elasticsearch_scholar_searches_diff"].plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
-    plt.savefig(bio, format='png')
-    bio.seek(0)
-    ctx["ias_searches_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+    ctx["ias_searches_diff_graph_b64"] = plot_to_b64()
 
-    plt.clf()
-    plt.cla()
+    plot_clear()
 
-    bio = io.BytesIO()
-    ax = df["elasticsearch_fatcat_searches_diff"].plot.bar(
-            title="fatcat searches per day",
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count",
-            )
+    plot_args = default_plot_args | {
+            "title": "fatcat searches per day",
+            }
+    ax = df["elasticsearch_fatcat_searches_diff"].plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
-    plt.savefig(bio, format='png')
-    bio.seek(0)
-    ctx["fc_searches_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+    ctx["fc_searches_diff_graph_b64"] = plot_to_b64()
 
-    plt.clf()
-    plt.cla()
+    plot_clear()
 
     # fatcat
 
@@ -333,75 +324,47 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
             "fatcat_containers": int(latest.fatcat_containers),
             }
 
-    bio = io.BytesIO()
+    plot_args = default_plot_args | {
+            "title": "fatcat release totals",
+            }
     ax = df[["fatcat_releases", "fatcat_papers",
-             "fatcat_papers_in_web"]].plot.bar(
-            title="fatcat release totals",
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count",
-            )
+             "fatcat_papers_in_web"]].plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
-    plt.savefig(bio, format='png')
-    bio.seek(0)
-    ctx["fc_release_graph_b64"] = base64.b64encode(bio.read()).decode()
+    ctx["fc_release_graph_b64"] = plot_to_b64()
 
-    plt.clf()
-    plt.cla()
+    plot_clear()
 
-    bio = io.BytesIO()
+    plot_args = default_plot_args | {
+            "title": "fatcat release change per day",
+            }
     ax = df[["fatcat_releases_diff", "fatcat_papers_diff",
-             "fatcat_papers_in_web_diff"]].plot.bar(
-            title="fatcat release change per day",
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count",
-            )
+             "fatcat_papers_in_web_diff"]].plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
-    plt.savefig(bio, format='png')
-    bio.seek(0)
-    ctx["fc_release_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+    ctx["fc_release_diff_graph_b64"] = plot_to_b64()
 
-    plt.clf()
-    plt.cla()
+    plot_clear()
 
-    bio = io.BytesIO()
-    ax = df.fatcat_refs_diff.plot.bar(
-            title="fatcat contribs change per day",
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count",
-            )
+    plot_args = default_plot_args | {
+            "title": "fatcat contribs change per day",
+            }
+    ax = df.fatcat_refs_diff.plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
-    plt.savefig(bio, format='png')
-    bio.seek(0)
-    ctx["fc_refs_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+    ctx["fc_refs_diff_graph_b64"] = plot_to_b64()
 
-    plt.clf()
-    plt.cla()
+    plot_clear()
 
-    bio = io.BytesIO()
-    ax = df["fatcat_containers_diff"].plot.bar(
-            title="fatcat containers change per day",
-            figsize=(12, 8),
-            rot=0,
-            grid=True,
-            ylabel="count",
-            )
+    plot_args = default_plot_args | {
+            "title": "fatcat containers change per day",
+            }
+    ax = df["fatcat_containers_diff"].plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
-    plt.savefig(bio, format='png')
-    bio.seek(0)
-    ctx["fc_containers_diff_graph_b64"] = base64.b64encode(bio.read()).decode()
+    ctx["fc_containers_diff_graph_b64"] = plot_to_b64()
 
-    plt.clf()
-    plt.cla()
+    plot_clear()
 
     return tmpl.render(ctx)
 

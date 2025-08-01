@@ -216,7 +216,8 @@ def make_frame(jsonl_path: pathlib.Path) -> pd.DataFrame:
 
 
 def plot_to_b64() -> str:
-    """Invokes global plt to save current plot as image and returns the byes"""
+    """Invokes global plt to save current plot as image and returns it as a
+    base64 string"""
     bio = io.BytesIO()
     plt.savefig(bio, format='png')
     bio.seek(0)

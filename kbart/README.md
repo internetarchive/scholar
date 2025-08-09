@@ -8,8 +8,7 @@ a report to them of our relevant holdings.
 
 
 1. Make a new directory in here for the current year
-2. Obtain the latest ISSN to ISSNL mapping file from issn.org. Either of these links worked as of August 2025:
-  - http://issn.org/issnltables.zip
+2. Obtain the latest ISSN to ISSNL mapping file from issn.org. This link worked as of August 2025:
   - https://www.issn.org/wp-content/uploads/2014/03/issnltables.zip
 3. Obtain the listing of serials held in petabox. This requires, as of August 2025, talking to Charles Horn. If he's not around, ask in `#scholarly-web` in slack.
   - link should look like https://archive.org/download/internetarchive-kbart/InternetArchive_Serials_KBART_20250731.zip
@@ -30,17 +29,6 @@ a report to them of our relevant holdings.
   1. `ftp-ssl ftp.issn.org`
   2. `ftp> put ia_serials_combined_kbart.2025-08-06.tsv`
 
-## Nota Bene
-
-The FTP connection depends on a username and password; these can be found TODO IN ANSIBLE TODO
-
-TODO what is the point of this?
-
-Check fatcat stats:
-
-    wc -l ia_sim_keepers_kbart.tsv fatcat_kbart.tsv ia_serials_combined_kbart.tsv
-    cat kbart_containers.json | jq .status -r | sort | uniq -c | sort -nr
-
 ## ISSN.org FTP Upload
 
 Username is `InternetArchive`; password is stored in the `ait-ansible` repo in `prod/group_vars/scholar/vault`. 
@@ -48,7 +36,7 @@ Username is `InternetArchive`; password is stored in the `ait-ansible` repo in `
 ```bash
 # start in local working directory with the KBART file to upload
 ftp ftp.issn.org
-ftp> put ia_serials_combined_kbart.2025.08.06.tsv
+ftp> put ia_serials_combined_kbart.2025-08-06.tsv
 ```
 
 ## Future

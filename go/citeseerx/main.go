@@ -1,7 +1,7 @@
 package main
 
 /*
-This script operates on sha1s gleaned from a comparison of sha1s found from comparing citeseerx's sitemap with fatcat's file records.
+This script operates on sha1s gleaned from a comparison of citeseerx's sitemap with fatcat's file records.
 
 the actual file consumed here was produced by this sql on fatcat's prod db:
 

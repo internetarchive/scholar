@@ -14,4 +14,21 @@ the `trawler` project is a nascent attempt at porting the current kafka/systemd/
 
 `kbart` has documentation and code for generating the annual keepers' registry report.
 
-`bash` is for one-off scripts and currently just has one for checking DOIs against the fatcat2 API.
+`scripts` has infrequently used or one off programs in various languages.
+
+## infra stuff
+
+All of our ansible is co-housed in the `ait-ansible` repository and does not live here.
+
+
+\* a lot of the scholar project still exists in other repos, still:
+
+- fatcat-scholar (scholar.archive.org, fatcat frontend)
+- fatcat (worker daemons)
+- sandcrawler (worker daemons)
+- chocula
+- arabesque
+- fuzzycat
+
+
+all of these are destined to end up in here

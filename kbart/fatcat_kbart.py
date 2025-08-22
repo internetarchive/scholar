@@ -24,6 +24,7 @@ from typing import Optional
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+from requests.exceptions import RetryError
 
 THIS_YEAR = datetime.date.today().year
 PAPER_RELEASE_TYPES = ['article-journal', 'conference_paper', 'article',
@@ -243,6 +244,7 @@ def to_kbart(info: dict) -> bool:
     )
     return row
 
+
 def parse_ident(raw: str) -> Optional[str]:
     raw = raw.strip()
     if not raw:
@@ -255,23 +257,30 @@ def parse_ident(raw: str) -> Optional[str]:
         return raw
     return None
 
+
 def run(dump_json=False, from_existing=False):
-    kbart_writer = csv.DictWriter(sys.stdout, fieldnames=KBART_FIELD_NAMES, dialect='excel-tab')
+    kbart_writer = csv.DictWriter(sys.stdout,
+                                  fieldnames=KBART_FIELD_NAMES,
+                                  dialect='excel-tab')
     if not dump_json:
         kbart_writer.writeheader()
 
-    for l in sys.stdin:
+    for line in sys.stdin:
         info = None
-        if not l.strip():
+        if not line.strip():
             continue
 
         if from_existing:
-            info = json.loads(l)
+            info = json.loads(line)
         else:
-            ident = parse_ident(l)
-            if not l:
+            ident = parse_ident(line)
+            if not line:
                 continue
-            info = fetch_container_info(ident)
+            try:
+                info = fetch_container_info(ident)
+            except RetryError:
+                print(f"container_{ident}: 500", file=sys.stderr)
+                continue
             if not info:
                 continue
 
@@ -287,5 +296,7 @@ def run(dump_json=False, from_existing=False):
             row = to_kbart(info)
             kbart_writer.writerow(row)
 
-if __name__=='__main__':
-    run(dump_json='--json' in sys.argv, from_existing='--from-existing' in sys.argv)
+
+if __name__ == '__main__':
+    run(dump_json='--json' in sys.argv,
+        from_existing='--from-existing' in sys.argv)

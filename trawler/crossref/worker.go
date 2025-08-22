@@ -33,7 +33,7 @@ func RunWorker() error {
 	w := worker.New(c, viper.GetString("crossref.task_queue"), worker.Options{})
 
 	w.RegisterWorkflow(CrossrefCrawlWorkflow)
-	w.RegisterActivity(APIToS3)
+	w.RegisterActivity(ScholkitCrossrefDailyFeed)
 	w.RegisterActivity(chunkedS3ReadLines)
 	w.RegisterActivity(s3ChunkToFatcat)
 	w.RegisterActivity(crawlForEntity)

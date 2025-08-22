@@ -213,7 +213,9 @@ func ScholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
 	skArgs := []string{
 		"-s", "crossref",
 		"-d", viper.GetString("scholkit.dataDir"),
+		// TODO config file
 		"--crossref-upload-s3",
+		"--crossref-s3-rclone-remote", "seaweed314",
 		"--crossref-feed-prefix", skFeedPrefix,
 		"--crossref-s3-bucket", bucket,
 		"--crossref-s3-prefix", skS3Prefix,

@@ -5,3 +5,4 @@ db.sqlite3
 cache.db
 data
 stats.jsonl
+djscholar/src/static

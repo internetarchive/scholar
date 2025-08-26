@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/jackc/pgx/v5"
@@ -66,7 +67,37 @@ type record struct {
 }
 
 func worker(id int, jobs <-chan record, results chan<- record) {
-	for j := range jobs {
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	for r := range jobs {
+		wbmLink := ""
+		if r.DOI != "" {
+			// check fc2
+			//  "https://scholar.archive.org/api/fatcat/v2/release/lookup/fulltext" \
+			//-d "id_type=doi" -d "id_value=${1}" -w '%{redirect_url}'
+			req, err := http.NewRequest(
+				"GET",
+				"https://scholar.archive.org/api/fatcat/v2/release/lookup/fulltext",
+				nil)
+			if err != nil {
+				panic(err)
+			}
+
+			q := req.URL.Query()
+			q.Add("id_type", "doi")
+			q.Add("id_value", r.DOI)
+			req.URL.RawQuery = q.Encode()
+			resp, err := client.Do(req)
+			if err == nil {
+				// TODO pull location header and see if it's wbm
+			}
+
+			// if miss, check fc1
+
+		}
 
 		//fmt.Println("Worker", id, "started job", j)
 		//time.Sleep(time.Second)

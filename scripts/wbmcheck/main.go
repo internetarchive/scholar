@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -36,6 +39,7 @@ type config struct {
 	CSVReader *csv.Reader
 	Workers   int
 	Out       *csv.Writer
+	Log       *log.Logger
 }
 
 func main() {
@@ -46,11 +50,14 @@ func main() {
 	}
 
 	cfg := &config{
+		Workers:   8,
 		FCConn:    fc1conn,
 		CSVReader: csv.NewReader(os.Stdin),
-		Workers:   8,
 		Out:       csv.NewWriter(os.Stdout),
+		Log:       log.New(os.Stderr, "", log.Lshortfile),
 	}
+
+	cfg.Log.Println("starting")
 
 	if err := _main(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "failed: %s", err.Error())
@@ -66,7 +73,7 @@ type record struct {
 	WBM      string
 }
 
-func worker(id int, jobs <-chan record, results chan<- record) {
+func worker(cfg *config, jobs <-chan record, results chan<- record) {
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -75,9 +82,6 @@ func worker(id int, jobs <-chan record, results chan<- record) {
 	for r := range jobs {
 		wbmLink := ""
 		if r.DOI != "" {
-			// check fc2
-			//  "https://scholar.archive.org/api/fatcat/v2/release/lookup/fulltext" \
-			//-d "id_type=doi" -d "id_value=${1}" -w '%{redirect_url}'
 			req, err := http.NewRequest(
 				"GET",
 				"https://scholar.archive.org/api/fatcat/v2/release/lookup/fulltext",
@@ -85,24 +89,40 @@ func worker(id int, jobs <-chan record, results chan<- record) {
 			if err != nil {
 				panic(err)
 			}
-
 			q := req.URL.Query()
 			q.Add("id_type", "doi")
 			q.Add("id_value", r.DOI)
 			req.URL.RawQuery = q.Encode()
+			cfg.Log.Printf("%#v", req.URL)
+			cfg.Log.Printf("%#v", req.URL.RawQuery)
 			resp, err := client.Do(req)
-			if err == nil {
-				// TODO pull location header and see if it's wbm
+			if err != nil {
+				cfg.Log.Printf("doi '%s' got error '%s'", r.DOI, err.Error())
+			} else if resp.StatusCode == 301 || resp.StatusCode == 302 {
+				cfg.Log.Printf("%s: got a 30{1,2}", r.ID)
+				loc := resp.Header.Get("Location")
+				if strings.Contains(loc, "web.archive.org") {
+					wbmLink = loc
+				} else {
+					cfg.Log.Printf("%s: non-wbm link: '%s'", r.ID, loc)
+				}
+			} else if resp.StatusCode == 404 {
+				cfg.Log.Printf("%s: 404", r.ID)
+				// TODO look up via fc1 db
+			} else {
+				cfg.Log.Printf("doi '%s' got unexpected status '%d'", r.DOI, resp.StatusCode)
 			}
-
-			// if miss, check fc1
 
 		}
 
-		//fmt.Println("Worker", id, "started job", j)
-		//time.Sleep(time.Second)
-		//fmt.Println("Worker", id, "finished job", j)
-		//results <- j * 2 // Send result to results channel
+		if wbmLink == "" {
+			// TOFO fuzzy title search
+		}
+
+		rr := r
+		rr.WBM = wbmLink
+
+		results <- rr
 	}
 }
 
@@ -110,11 +130,35 @@ func _main(cfg *config) error {
 	jobs := make(chan record)
 	results := make(chan record)
 
-	workers := cfg.Workers
+	var wg sync.WaitGroup
 
-	for w := 1; w <= workers; w++ {
-		go worker(w, jobs, results)
+	for w := 0; w < cfg.Workers; w++ {
+		// 1.25 has wg.Go
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			worker(cfg, jobs, results)
+		}()
 	}
+
+	go func() {
+		outLine := []string{}
+		for r := range results {
+			if r.WBM == "" {
+				cfg.Log.Printf("%s: no wbm found", r.ID)
+				continue
+			}
+			cfg.Log.Printf("%s: wbm found", r.ID)
+			outLine = []string{
+				r.ID,
+				r.Citation,
+				r.DOI,
+				r.Type,
+				r.WBM,
+			}
+			cfg.Out.Write(outLine)
+		}
+	}()
 
 	var line []string
 	var err error
@@ -124,6 +168,7 @@ func _main(cfg *config) error {
 		line, err = cfg.CSVReader.Read()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				cfg.Log.Println("finished submitting jobs")
 				break
 			} else {
 				lineErrs = append(lineErrs, err)
@@ -138,32 +183,17 @@ func _main(cfg *config) error {
 			Type:     line[3],
 		}
 		jobs <- r
+		cfg.Log.Printf("submitted job for %s", r.ID)
 		count++
 	}
 	if len(lineErrs) > 0 {
 		errRatio := float64(len(lineErrs)) / float64(count)
-		fmt.Fprintf(os.Stderr,
-			"encountered %d line error (ratio: %f)\n", len(lineErrs), errRatio)
+		cfg.Log.Printf(
+			"encountered %d line error (ratio: %f)", len(lineErrs), errRatio)
 	}
-
 	close(jobs)
 
-	outLine := []string{}
-	for i := 0; i < count; i++ {
-		r := <-results
-		if r.WBM == "" {
-			continue
-		}
-		outLine = []string{
-			r.ID,
-			r.Citation,
-			r.DOI,
-			r.Type,
-			r.WBM,
-		}
-		cfg.Out.Write(outLine)
-	}
-
+	wg.Wait()
 	close(results)
 
 	return nil

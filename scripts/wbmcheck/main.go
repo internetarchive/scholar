@@ -44,6 +44,7 @@ type config struct {
 
 func main() {
 	fc1conn, err := pgx.Connect(context.Background(), os.Getenv("FATCAT1_PGURL"))
+	defer fc1conn.Close(context.Background())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to connect to database: %s", err.Error())
 		os.Exit(2)
@@ -72,6 +73,23 @@ type record struct {
 	Type     string
 	WBM      string
 }
+
+const doiQ = `
+SELECT
+  fru.url
+FROM release_rev rr
+JOIN release_ident ri
+  ON ri.rev_id = rr.id
+JOIN file_rev_release frr
+  ON frr.target_release_ident_id = ri.id
+JOIN file_rev_url fru
+  ON fru.file_rev = frr.file_rev
+WHERE
+  rr.doi = $1
+AND
+  fru.url LIKE '%web.archive.org%'
+LIMIT 1;
+`
 
 func worker(cfg *config, jobs <-chan record, results chan<- record) {
 	client := &http.Client{
@@ -116,7 +134,15 @@ func worker(cfg *config, jobs <-chan record, results chan<- record) {
 		}
 
 		if wbmLink == "" {
-			// TOFO fuzzy title search
+			ctx := context.Background()
+			err := cfg.FCConn.QueryRow(ctx, doiQ, r.DOI).Scan(&wbmLink)
+			if err != nil {
+				cfg.Log.Printf("%s: db error '%s'", r.ID, err.Error())
+			}
+		}
+
+		if wbmLink == "" {
+			// TODO fuzzy search
 		}
 
 		rr := r

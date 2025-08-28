@@ -1,77 +1,41 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/miku/grobidclient/tei"
 )
 
-/*
-
-- connect to fatcat1
-- connect to fatcat2 - or no, i should just use API
-- connect to fc es
-- read line
-- if DOI, look in fatcat2
-  - if not found, DOI in fatcat1
-		- if not found, title search in es
-- else title search in es
-- if found, use release ID to check files
-- if file found, print line with WBM link added
-*/
-
-/*
-FATCAT2_PGURL
-FATCAT1_PGURL
-*/
-
 type config struct {
-	FCConn    *pgx.Conn
+	FCDBURL   string
 	CSVReader *csv.Reader
 	Workers   int
 	Out       *csv.Writer
 	Log       *log.Logger
 }
 
-func main() {
-	fc1conn, err := pgx.Connect(context.Background(), os.Getenv("FATCAT1_PGURL"))
-	defer fc1conn.Close(context.Background())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "unable to connect to database: %s", err.Error())
-		os.Exit(2)
-	}
-
-	cfg := &config{
-		Workers:   8,
-		FCConn:    fc1conn,
-		CSVReader: csv.NewReader(os.Stdin),
-		Out:       csv.NewWriter(os.Stdout),
-		Log:       log.New(os.Stderr, "", log.Lshortfile),
-	}
-
-	cfg.Log.Println("starting")
-
-	if err := _main(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "failed: %s", err.Error())
-		os.Exit(1)
-	}
-}
-
 type record struct {
+	// from source csv
 	ID       string
 	Citation string
 	DOI      string
 	Type     string
-	WBM      string
+	// added by this script
+	WBM    string
+	Source string
 }
 
 const doiQ = `
@@ -91,14 +55,128 @@ AND
 LIMIT 1;
 `
 
-func worker(cfg *config, jobs <-chan record, results chan<- record) {
+func main() {
+	cfg := &config{
+		Workers:   12,
+		FCDBURL:   os.Getenv("FATCAT1_PGURL"),
+		CSVReader: csv.NewReader(os.Stdin),
+		Out:       csv.NewWriter(os.Stdout),
+		Log:       log.New(os.Stderr, "", log.Lshortfile),
+	}
+
+	cfg.Log.Println("starting")
+
+	if err := _main(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "failed: %s", err.Error())
+		os.Exit(1)
+	}
+}
+
+func buildESQuery(title string, authors []string) io.Reader {
+	joinedAuthors := strings.Join(authors, " ")
+
+	q := map[string]any{
+		"size": 1,
+		"query": map[string]any{
+			"bool": map[string]any{
+				"must": []map[string]any{
+					{
+						"match": map[string]any{
+							"title": map[string]string{
+								"query":     title,
+								"fuzziness": "AUTO",
+							},
+						},
+					},
+					{
+						"match": map[string]any{
+							"contrib_names": map[string]string{
+								"query":    joinedAuthors,
+								"operator": "or",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	bs, err := json.Marshal(q)
+	if err != nil {
+		panic(err)
+	}
+
+	return bytes.NewBuffer(bs)
+}
+
+func fuzzySearch(cfg *config, r record) string {
+	v := url.Values{}
+	v.Set("citations", r.Citation)
+	v.Set("consolidateCitations", "0")
+	cfg.Log.Printf("%s: submitting citation '%s'", r.ID, r.Citation)
+
+	resp, err := http.PostForm("http://wbgrp-svc506:8070/api/processCitation", v)
+	if err != nil {
+		cfg.Log.Printf("%s: grobid failed: '%s'", r.ID, err.Error())
+		return ""
+	}
+	xbody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		cfg.Log.Printf("%s: grobid xml read failed: '%s'", r.ID, err.Error())
+		return ""
+	}
+
+	pc := tei.ParseCitation(string(xbody))
+
+	cfg.Log.Printf("%s: parsed tei title '%s'", r.ID, pc.Title)
+
+	if pc.Title == "" {
+		return ""
+	}
+
+	authorNames := []string{}
+	for _, a := range pc.Authors {
+		cfg.Log.Printf("%#v", a)
+		authorNames = append(authorNames, a.FullName)
+	}
+
+	body := buildESQuery(pc.Title, authorNames)
+
+	resp, err = http.Post("https://scholar.archive.org/_es/fatcat_release/_search", "application/json", body)
+	if err != nil {
+		cfg.Log.Printf("%s: ES failed: '%s'", r.ID, err.Error())
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		cfg.Log.Printf("%s: could not read ES body: '%s'", r.ID, err.Error())
+		return ""
+	}
+
+	cfg.Log.Printf("%s: %#v", r.ID, string(bs))
+
+	// TODO use title in ES query
+
+	return ""
+}
+
+func worker(ctx context.Context, cfg *config, pool *pgxpool.Pool, jobs <-chan record, results chan<- record) {
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Release()
+
 	for r := range jobs {
 		wbmLink := ""
+		source := ""
 		if r.DOI != "" {
 			req, err := http.NewRequest(
 				"GET",
@@ -111,8 +189,6 @@ func worker(cfg *config, jobs <-chan record, results chan<- record) {
 			q.Add("id_type", "doi")
 			q.Add("id_value", r.DOI)
 			req.URL.RawQuery = q.Encode()
-			cfg.Log.Printf("%#v", req.URL)
-			cfg.Log.Printf("%#v", req.URL.RawQuery)
 			resp, err := client.Do(req)
 			if err != nil {
 				cfg.Log.Printf("doi '%s' got error '%s'", r.DOI, err.Error())
@@ -121,6 +197,7 @@ func worker(cfg *config, jobs <-chan record, results chan<- record) {
 				loc := resp.Header.Get("Location")
 				if strings.Contains(loc, "web.archive.org") {
 					wbmLink = loc
+					source = "fc2"
 				} else {
 					cfg.Log.Printf("%s: non-wbm link: '%s'", r.ID, loc)
 				}
@@ -134,25 +211,36 @@ func worker(cfg *config, jobs <-chan record, results chan<- record) {
 		}
 
 		if wbmLink == "" {
-			ctx := context.Background()
-			err := cfg.FCConn.QueryRow(ctx, doiQ, r.DOI).Scan(&wbmLink)
+			err := conn.QueryRow(ctx, doiQ, r.DOI).Scan(&wbmLink)
 			if err != nil {
 				cfg.Log.Printf("%s: db error '%s'", r.ID, err.Error())
+			} else {
+				source = "fc2"
 			}
 		}
 
+		// TODO fuzzy search
 		if wbmLink == "" {
-			// TODO fuzzy search
+			wbmLink = fuzzySearch(cfg, r)
 		}
 
 		rr := r
 		rr.WBM = wbmLink
+		rr.Source = source
 
 		results <- rr
 	}
 }
 
 func _main(cfg *config) error {
+	ctx := context.Background()
+
+	fcpool, err := pgxpool.New(ctx, os.Getenv("FATCAT1_PGURL"))
+	if err != nil {
+		return fmt.Errorf("unable to connect to db: %w", err)
+	}
+	defer fcpool.Close()
+
 	jobs := make(chan record)
 	results := make(chan record)
 
@@ -163,11 +251,19 @@ func _main(cfg *config) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			worker(cfg, jobs, results)
+			worker(ctx, cfg, fcpool, jobs, results)
 		}()
 	}
 
 	go func() {
+		cfg.Out.Write([]string{
+			"id",
+			"citation_text",
+			"doi",
+			"type",
+			"source",
+			"wbm",
+		})
 		outLine := []string{}
 		for r := range results {
 			if r.WBM == "" {
@@ -180,14 +276,15 @@ func _main(cfg *config) error {
 				r.Citation,
 				r.DOI,
 				r.Type,
+				r.Source,
 				r.WBM,
 			}
 			cfg.Out.Write(outLine)
 		}
+		cfg.Out.Flush()
 	}()
 
 	var line []string
-	var err error
 	var lineErrs = []error{}
 	count := 0
 	for {

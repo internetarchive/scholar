@@ -202,26 +202,24 @@ func worker(ctx context.Context, cfg *config, pool *pgxpool.Pool, jobs <-chan re
 					cfg.Log.Printf("%s: non-wbm link: '%s'", r.ID, loc)
 				}
 			} else if resp.StatusCode == 404 {
+				msgb, err := io.ReadAll(resp.Body)
 				cfg.Log.Printf("%s: 404", r.ID)
-				// TODO look up via fc1 db
+				if strings.Contains(string(msgb), "no release found") {
+					err = conn.QueryRow(ctx, doiQ, r.DOI).Scan(&wbmLink)
+					if err != nil {
+						cfg.Log.Printf("%s: db error '%s'", r.ID, err.Error())
+					} else {
+						source = "fc2"
+					}
+				}
 			} else {
 				cfg.Log.Printf("doi '%s' got unexpected status '%d'", r.DOI, resp.StatusCode)
 			}
-
-		}
-
-		if wbmLink == "" {
-			err := conn.QueryRow(ctx, doiQ, r.DOI).Scan(&wbmLink)
-			if err != nil {
-				cfg.Log.Printf("%s: db error '%s'", r.ID, err.Error())
-			} else {
-				source = "fc2"
-			}
-		}
-
-		// TODO fuzzy search
-		if wbmLink == "" {
+		} else {
 			wbmLink = fuzzySearch(cfg, r)
+			if wbmLink != "" {
+				source = "es"
+			}
 		}
 
 		rr := r

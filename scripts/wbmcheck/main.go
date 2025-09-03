@@ -12,9 +12,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/miku/grobidclient/tei"
 )
@@ -38,6 +40,18 @@ type record struct {
 	Source string
 }
 
+type elasticHit struct {
+	Source struct {
+		Revision string
+	} `json:"_source"`
+}
+
+type elasticResult struct {
+	Hits struct {
+		Hits []elasticHit
+	}
+}
+
 const doiQ = `
 SELECT
   fru.url
@@ -55,9 +69,26 @@ AND
 LIMIT 1;
 `
 
+const revQ = `
+SELECT
+  fru.url
+FROM release_rev rr
+JOIN release_ident ri
+  ON ri.rev_id = rr.id
+JOIN file_rev_release frr
+  ON frr.target_release_ident_id = ri.id
+JOIN file_rev_url fru
+  ON fru.file_rev = frr.file_rev
+WHERE
+  rr.id = $1
+AND
+  fru.url LIKE '%web.archive.org%'
+LIMIT 1;
+`
+
 func main() {
 	cfg := &config{
-		Workers:   12,
+		Workers:   28,
 		FCDBURL:   os.Getenv("FATCAT1_PGURL"),
 		CSVReader: csv.NewReader(os.Stdin),
 		Out:       csv.NewWriter(os.Stdout),
@@ -72,31 +103,65 @@ func main() {
 	}
 }
 
-func buildESQuery(title string, authors []string) io.Reader {
+func fc2uuid(fcid string) uuid.UUID {
+	// TODO this actually is not needed, i think, because the document has a
+	// release_rev id in UUID already
+	/*
+			    b = fcid.split("_")[-1].upper().encode("utf-8")
+		    assert len(b) == 26
+		    raw_bytes = base64.b32decode(b + b"======")
+		    return str(uuid.UUID(bytes=raw_bytes)).lower()
+
+	*/
+	if len(fcid) != 26 {
+		panic("bad fcid")
+	}
+	fcid += "======"
+	u, err := uuid.FromBytes([]byte(fcid))
+	if err != nil {
+		panic(err)
+	}
+
+	return u
+}
+
+func buildESQuery(title string, year int, authors []string) io.Reader {
 	joinedAuthors := strings.Join(authors, " ")
 
+	must := []map[string]any{
+		{
+			"match": map[string]any{
+				"title": map[string]any{
+					"query": title,
+					"boost": 1.5,
+					//"fuzziness": "AUTO",
+				},
+			},
+		},
+		{
+			"match": map[string]any{
+				"contrib_names": map[string]any{
+					"query":    joinedAuthors,
+					"operator": "or",
+				},
+			},
+		},
+	}
+
+	if year > 0 {
+		must = append(must, map[string]any{
+			"match": map[string]any{
+				"release_year": year,
+			},
+		})
+	}
+
 	q := map[string]any{
-		"size": 1,
+		"size":      1,
+		"min_score": 80,
 		"query": map[string]any{
 			"bool": map[string]any{
-				"must": []map[string]any{
-					{
-						"match": map[string]any{
-							"title": map[string]string{
-								"query":     title,
-								"fuzziness": "AUTO",
-							},
-						},
-					},
-					{
-						"match": map[string]any{
-							"contrib_names": map[string]string{
-								"query":    joinedAuthors,
-								"operator": "or",
-							},
-						},
-					},
-				},
+				"must": must,
 			},
 		},
 	}
@@ -109,7 +174,7 @@ func buildESQuery(title string, authors []string) io.Reader {
 	return bytes.NewBuffer(bs)
 }
 
-func fuzzySearch(cfg *config, r record) string {
+func fuzzySearch(ctx context.Context, cfg *config, conn *pgxpool.Conn, r record) string {
 	v := url.Values{}
 	v.Set("citations", r.Citation)
 	v.Set("consolidateCitations", "0")
@@ -129,19 +194,38 @@ func fuzzySearch(cfg *config, r record) string {
 
 	pc := tei.ParseCitation(string(xbody))
 
+	cfg.Log.Printf("%s: %#v\n", r.ID, pc)
+
+	if pc == nil {
+		return ""
+	}
+
 	cfg.Log.Printf("%s: parsed tei title '%s'", r.ID, pc.Title)
 
 	if pc.Title == "" {
 		return ""
 	}
 
+	queryTitle := pc.Title
+
+	if strings.Contains(queryTitle, "Archived") {
+		ix := strings.Index(queryTitle, "Archived ")
+		if ix > 0 {
+			queryTitle = strings.TrimSpace(queryTitle[0:ix])
+		}
+	}
+
 	authorNames := []string{}
 	for _, a := range pc.Authors {
-		cfg.Log.Printf("%#v", a)
 		authorNames = append(authorNames, a.FullName)
 	}
 
-	body := buildESQuery(pc.Title, authorNames)
+	queryYear := -1
+	if pc.Date != "" {
+		queryYear, _ = strconv.Atoi(pc.Date)
+	}
+
+	body := buildESQuery(queryTitle, queryYear, authorNames)
 
 	resp, err = http.Post("https://scholar.archive.org/_es/fatcat_release/_search", "application/json", body)
 	if err != nil {
@@ -155,11 +239,27 @@ func fuzzySearch(cfg *config, r record) string {
 		return ""
 	}
 
-	cfg.Log.Printf("%s: %#v", r.ID, string(bs))
+	cfg.Log.Printf("%s: %s, %d, %v ->\n%#v", r.ID, queryTitle, queryYear, authorNames, string(bs))
 
-	// TODO use title in ES query
+	var esr elasticResult
+	err = json.Unmarshal(bs, &esr)
+	if err != nil {
+		cfg.Log.Printf("%s: failed to parse es json: '%s'", r.ID, err.Error())
+		return ""
+	}
 
-	return ""
+	if len(esr.Hits.Hits) == 0 {
+		return ""
+	}
+
+	var wbmLink string
+
+	err = conn.QueryRow(ctx, revQ, esr.Hits.Hits[0].Source.Revision).Scan(&wbmLink)
+	if err != nil {
+		cfg.Log.Printf("%s: revQ db error: %s", r.ID, err.Error())
+	}
+
+	return wbmLink
 }
 
 func worker(ctx context.Context, cfg *config, pool *pgxpool.Pool, jobs <-chan record, results chan<- record) {
@@ -203,20 +303,24 @@ func worker(ctx context.Context, cfg *config, pool *pgxpool.Pool, jobs <-chan re
 				}
 			} else if resp.StatusCode == 404 {
 				msgb, err := io.ReadAll(resp.Body)
-				cfg.Log.Printf("%s: 404", r.ID)
-				if strings.Contains(string(msgb), "no release found") {
+				if err != nil {
+					cfg.Log.Printf("%s: could not read fc2 resp body: '%s'", r.ID, err.Error())
+				} else {
+					cfg.Log.Printf("%s: fc2: '%s'", r.ID, string(msgb))
+				}
+				if err != nil || strings.Contains(string(msgb), "no release found") {
 					err = conn.QueryRow(ctx, doiQ, r.DOI).Scan(&wbmLink)
 					if err != nil {
 						cfg.Log.Printf("%s: db error '%s'", r.ID, err.Error())
 					} else {
-						source = "fc2"
+						source = "fc1"
 					}
 				}
 			} else {
 				cfg.Log.Printf("doi '%s' got unexpected status '%d'", r.DOI, resp.StatusCode)
 			}
 		} else {
-			wbmLink = fuzzySearch(cfg, r)
+			wbmLink = fuzzySearch(ctx, cfg, conn, r)
 			if wbmLink != "" {
 				source = "es"
 			}

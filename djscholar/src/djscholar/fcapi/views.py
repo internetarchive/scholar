@@ -300,8 +300,10 @@ def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
         "extids__id_type": lookup.id_type,
         "extids__id_value": lookup.id_value})
     if len(rs) == 0:
-        raise Http404(f"no release found with {lookup.id_type} of {lookup.id_value}")
+        raise Http404(
+                f"no release found with {lookup.id_type} of {lookup.id_value}")
     return ReleaseSchema.from_orm(rs[0])
+
 
 @v2api.get("/release/lookup/fulltext")
 def fulltext(request, lookup: Query[ReleaseLookup]) -> HttpResponse:
@@ -313,7 +315,8 @@ def fulltext(request, lookup: Query[ReleaseLookup]) -> HttpResponse:
         "extids__id_type": lookup.id_type,
         "extids__id_value": lookup.id_value})
     if len(rs) == 0:
-        raise Http404(f"no release found with {lookup.id_type} of {lookup.id_value}")
+        raise Http404(
+                f"no release found with {lookup.id_type} of {lookup.id_value}")
 
     files = m.File.objects.filter(releasefile__release_id=rs[0].id)
     wayback_url = ""
@@ -337,9 +340,10 @@ def fulltext(request, lookup: Query[ReleaseLookup]) -> HttpResponse:
         url = other_url
 
     if url == "":
-        raise Http404(f"no fulltext for {lookup.id_type}:{lookup.id_value} known to fatcat")
+        raise Http404(f"no fulltext for {lookup.id_type}:{lookup.id_value}")
 
     return HttpResponseRedirect(url)
+
 
 @v2api.get("/release/{ident}")
 def get_release(request, ident: UUID) -> ReleaseSchema:
@@ -964,6 +968,13 @@ def webcapture_changelog(request, cq: Query[ChangelogQuery]) -> list[WebcaptureS
     """
     return changelog(cq, m.Webcapture, WebcaptureSchema)
 
+
+@v2api.excpetion_handler(Http404)
+def not_found(request, exc):
+    return v2api.create_response(
+            request,
+            {"message": str(exc)},
+            status=404)
 
 # Fileset routes
 

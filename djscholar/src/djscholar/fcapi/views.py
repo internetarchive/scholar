@@ -969,7 +969,7 @@ def webcapture_changelog(request, cq: Query[ChangelogQuery]) -> list[WebcaptureS
     return changelog(cq, m.Webcapture, WebcaptureSchema)
 
 
-@v2api.excpetion_handler(Http404)
+@v2api.exception_handler(Http404)
 def not_found(request, exc):
     return v2api.create_response(
             request,

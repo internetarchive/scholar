@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/miku/grobidclient/tei"
 )
@@ -101,28 +101,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed: %s", err.Error())
 		os.Exit(1)
 	}
-}
-
-func fc2uuid(fcid string) uuid.UUID {
-	// TODO this actually is not needed, i think, because the document has a
-	// release_rev id in UUID already
-	/*
-			    b = fcid.split("_")[-1].upper().encode("utf-8")
-		    assert len(b) == 26
-		    raw_bytes = base64.b32decode(b + b"======")
-		    return str(uuid.UUID(bytes=raw_bytes)).lower()
-
-	*/
-	if len(fcid) != 26 {
-		panic("bad fcid")
-	}
-	fcid += "======"
-	u, err := uuid.FromBytes([]byte(fcid))
-	if err != nil {
-		panic(err)
-	}
-
-	return u
 }
 
 func buildESQuery(title string, year int, authors []string) io.Reader {
@@ -227,9 +205,19 @@ func fuzzySearch(ctx context.Context, cfg *config, conn *pgxpool.Conn, r record)
 
 	body := buildESQuery(queryTitle, queryYear, authorNames)
 
-	resp, err = http.Post("https://scholar.archive.org/_es/fatcat_release/_search", "application/json", body)
+	esRetries := 6
+
+	for n := 1; n <= esRetries; n++ {
+		resp, err = http.Post("https://scholar.archive.org/_es/fatcat_release/_search", "application/json", body)
+		if err == nil {
+			break
+		}
+		cfg.Log.Printf("%s: ES attempt %d failed: '%s'", r.ID, n, err.Error())
+		time.Sleep(10 * time.Second)
+	}
+
 	if err != nil {
-		cfg.Log.Printf("%s: ES failed: '%s'", r.ID, err.Error())
+		return ""
 	}
 
 	bs, err := io.ReadAll(resp.Body)

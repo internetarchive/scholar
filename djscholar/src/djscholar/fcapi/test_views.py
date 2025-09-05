@@ -1079,6 +1079,13 @@ class TestFileRoutes(EntityCRUDTestCase):
             self.assertEqual(response.status_code, HTTPStatus.OK)
             self.assertEqual(response.data['id'], str(self.entity.id))
 
+        for id_type, id_value in keys:
+            val = id_value.upper()
+            response = client.get(
+                    f"{self.lookup}?id_type={id_type}&id_value={val}")
+            self.assertEqual(response.status_code, HTTPStatus.OK)
+            self.assertEqual(response.data['id'], str(self.entity.id))
+
         legacy_ident = uuid2fcid(self.entity.id)
         response = client.get(
                 f"/file/lookup?id_type=legacy_ident&id_value={legacy_ident}")

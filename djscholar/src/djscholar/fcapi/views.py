@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
 import pydantic
+from pydantic import AfterValidator
 from django.db import transaction
 from django.http import HttpResponse, HttpResponseRedirect, Http404
 from ninja.pagination import paginate
@@ -48,9 +49,13 @@ class CreatorLookup(Schema):
     id_value: str
 
 
+def lower(s: str) -> str:
+    return s.lower()
+
+
 class FileLookup(Schema):
     id_type: Literal["sha1", "sha256", "md5", "legacy_ident"]
-    id_value: str
+    id_value: Annotated[str, AfterValidator(lower)]
 
 
 class ReleaseLookup(Schema):

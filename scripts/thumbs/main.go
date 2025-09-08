@@ -40,6 +40,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -62,6 +63,7 @@ type elasticResult struct {
 }
 
 func main() {
+	l := log.New(os.Stderr, "", log.lshortfile)
 	client := http.Client{}
 	initQuery := `{"fields": ["fulltext.thumbnail_url"], "_source": false, "size":10000}`
 	req, err := http.NewRequest("GET", path, bytes.NewBufferString(initQuery))
@@ -94,6 +96,7 @@ func main() {
 	for scrollID != "" {
 		for _, hit := range er.Hits.Hits {
 			for _, turl := range hit.Fields.Turl {
+				l.Println(turl)
 				if strings.Contains(turl, "/thumbnail/pdf") {
 					sp := strings.SplitN(turl, "/", 2)
 					fmt.Println(sp[1])

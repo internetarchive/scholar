@@ -63,7 +63,7 @@ type elasticResult struct {
 }
 
 func main() {
-	l := log.New(os.Stderr, "", log.lshortfile)
+	l := log.New(os.Stderr, "", log.Lshortfile)
 	client := http.Client{}
 	initQuery := `{"fields": ["fulltext.thumbnail_url"], "_source": false, "size":10000}`
 	req, err := http.NewRequest("GET", path, bytes.NewBufferString(initQuery))

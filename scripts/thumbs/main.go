@@ -84,11 +84,18 @@ func main() {
 		panic(err)
 	}
 
+	l.Println(string(body))
+	if resp.StatusCode != 200 {
+		panic("non 200 response from ES")
+	}
+
 	var er elasticResult
 	err = json.Unmarshal(body, &er)
 	if err != nil {
 		panic(err)
 	}
+
+	l.Printf("%#v", er)
 
 	scrollID := er.ScrollID
 	thumbsFound := 0
@@ -113,6 +120,11 @@ func main() {
 		resp, err := client.Do(req)
 		if err != nil {
 			panic(err.Error())
+		}
+		l.Println(string(body))
+
+		if resp.StatusCode != 200 {
+			panic("non 200 response from ES")
 		}
 
 		body, err := io.ReadAll(resp.Body)

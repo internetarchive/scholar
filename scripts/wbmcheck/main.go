@@ -29,12 +29,17 @@ type config struct {
 	Log       *log.Logger
 }
 
+// The full csv had a different structure than the samples.
+// sample: id,citation_text,doi,type
+// full: id,url,citation_text
+
 type record struct {
 	// from source csv
 	ID       string
+	URL      string
 	Citation string
-	DOI      string
-	Type     string
+	DOI      string // unused for full csv
+	//Type     string
 	// added by this script
 	WBM    string
 	Source string
@@ -88,7 +93,7 @@ LIMIT 1;
 
 func main() {
 	cfg := &config{
-		Workers:   28,
+		Workers:   64,
 		FCDBURL:   os.Getenv("FATCAT1_PGURL"),
 		CSVReader: csv.NewReader(os.Stdin),
 		Out:       csv.NewWriter(os.Stdout),
@@ -363,9 +368,10 @@ func _main(cfg *config) error {
 			cfg.Log.Printf("%s: wbm found", r.ID)
 			outLine = []string{
 				r.ID,
+				r.URL,
 				r.Citation,
-				r.DOI,
-				r.Type,
+				//r.DOI,
+				//r.Type,
 				r.Source,
 				r.WBM,
 			}
@@ -391,9 +397,10 @@ func _main(cfg *config) error {
 
 		r := record{
 			ID:       line[0],
-			Citation: line[1],
-			DOI:      line[2],
-			Type:     line[3],
+			URL:      line[1],
+			Citation: line[2],
+			//DOI:      line[2],
+			//Type:     line[3],
 		}
 		jobs <- r
 		cfg.Log.Printf("submitted job for %s", r.ID)

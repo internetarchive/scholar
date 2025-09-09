@@ -81,7 +81,7 @@ type entity struct {
 	flavor string
 }
 
-func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
+func crossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
 	out := CrossrefCrawlResult{}
 
@@ -92,11 +92,12 @@ func CrossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var s3Key string
-	err := workflow.ExecuteActivity(ctx, ScholkitCrossrefDailyFeed).Get(ctx, &s3Key)
+	err := workflow.ExecuteActivity(ctx, scholkitCrossrefDailyFeed).Get(ctx, &s3Key)
 	if err != nil {
-		workflow.GetLogger(ctx).Error("ScholkitCrossrefDailyFeed failed:", err)
+		workflow.GetLogger(ctx).Error("scholkitCrossrefDailyFeed failed:", err)
 		return nil, err
 	}
+	workflow.GetLogger(ctx).Info("scholkitCrossrefDailyFeed s3key: ", s3Key)
 
 	/*
 		bstart := 0
@@ -192,13 +193,13 @@ func chunkedS3ReadLines(ctx context.Context, s3Key string, readStart, readEnd in
 	return out, nil
 }
 
-func ScholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
+func scholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
 	// TODO eventually, if needed, this activity can take granular arguments to
-	// control sk's execution
+	// control sk's execution (ie, run for a specific date or limit how many things to pull)
 	l := activity.GetLogger(ctx)
 	l.Info("ScholkitCrossrefDaily job running")
 
-	limit := viper.GetInt("crossref.limit")
+	limit := viper.GetInt("crossref.default_limit")
 
 	s3Bucket := viper.GetString("crossref.sks3bucket")
 

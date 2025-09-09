@@ -21,8 +21,13 @@ func RunWorker() error {
 	} else {
 		namespace = "default"
 	}
+	hostport := viper.GetString("temporal.hostport")
+	if hostport == "" {
+		hostport = client.DefaultHostPort
+	}
+
 	c, err := client.Dial(client.Options{
-		HostPort:  client.DefaultHostPort,
+		HostPort:  hostport,
 		Namespace: namespace,
 	})
 	if err != nil {

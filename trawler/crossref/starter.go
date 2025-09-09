@@ -35,8 +35,13 @@ func RunStarter() error {
 		namespace = "default"
 	}
 
+	hostport := viper.GetString("temporal.hostport")
+	if hostport == "" {
+		hostport = client.DefaultHostPort
+	}
+
 	c, err := client.Dial(client.Options{
-		HostPort:  client.DefaultHostPort,
+		HostPort:  hostport,
 		Namespace: namespace,
 	})
 	if err != nil {
@@ -64,7 +69,7 @@ func RunStarter() error {
 		},
 		Action: &client.ScheduleWorkflowAction{
 			ID:        workflowID,
-			Workflow:  CrossrefCrawlWorkflow,
+			Workflow:  crossrefCrawlWorkflow,
 			TaskQueue: viper.GetString("crossref.task_queue"),
 		},
 	})

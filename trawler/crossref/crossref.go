@@ -211,6 +211,7 @@ func scholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
 
 	s3Prefix := today.Format("2006") + "/"
 
+	// sk-feed -s crossref -d /home/nsmith/sk-test --crossref-upload-s3 --crossref-s3-rclone-remote seaweed314 --crossref-s3-bucket sk-crossref --crossref-s3-prefix 2025/ --crossref-sync-start 2025-09-08 --crossref-sync-end 2025-09-09 --limit 1000
 	skPath := viper.GetString("scholkit.path")
 	skArgs := []string{
 		"-s", "crossref",

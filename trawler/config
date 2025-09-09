@@ -4,6 +4,8 @@
 # - /etc/trawler/config
 # - $HOME/.config/trawler/config
 # - .
+[temporal]
+hostport = "" # blank to use temporal sdk default
 
 [scholkit]
 path = "/usr/local/bin/sk-feed"

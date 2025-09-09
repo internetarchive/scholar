@@ -44,11 +44,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
 	path       = "https://scholar.archive.org/_es/scholar_fulltext/_search"
-	scrollPath = "https://scholar.archive.org/_es/scholar_fulltext/_search/scroll"
+	scrollPath = "https://scholar.archive.org/_es/_search/scroll"
 )
 
 type elasticResult struct {
@@ -73,6 +74,7 @@ func main() {
 	req.Header.Set("Content-Type", "application/json")
 	q := req.URL.Query()
 	q.Set("scroll", "1m")
+	req.URL.RawQuery = q.Encode()
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -84,8 +86,8 @@ func main() {
 		panic(err)
 	}
 
-	l.Println(string(body))
 	if resp.StatusCode != 200 {
+		l.Println(string(body))
 		panic("non 200 response from ES")
 	}
 
@@ -95,15 +97,17 @@ func main() {
 		panic(err)
 	}
 
-	l.Printf("%#v", er)
-
 	scrollID := er.ScrollID
 	thumbsFound := 0
 
+	// TODO seems to be a ton of SIM stuff. can i pare down the original query so
+	// i page through less stuff?
+
 	for scrollID != "" {
+		l.Println(er.ScrollID)
 		for _, hit := range er.Hits.Hits {
 			for _, turl := range hit.Fields.Turl {
-				l.Println(turl)
+				l.Println("*** TURL " + turl)
 				if strings.Contains(turl, "/thumbnail/pdf") {
 					sp := strings.SplitN(turl, "/", 2)
 					fmt.Println(sp[1])
@@ -117,13 +121,26 @@ func main() {
 			panic(err)
 		}
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := client.Do(req)
-		if err != nil {
-			panic(err.Error())
+
+		retries := 12
+		interval := 10 * time.Second
+		var resp *http.Response
+		for r := range retries {
+			resp, err = client.Do(req)
+			if err == nil {
+				err = nil
+				break
+			}
+			time.Sleep(interval * time.Duration(r) * time.Second)
 		}
-		l.Println(string(body))
+
+		if err != nil {
+			panic(err)
+		}
 
 		if resp.StatusCode != 200 {
+			l.Println(resp.StatusCode)
+			l.Println(string(body))
 			panic("non 200 response from ES")
 		}
 

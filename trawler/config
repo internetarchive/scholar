@@ -16,4 +16,4 @@ task_queue = "crossref_crawl"
 #every = "24h"
 every = "60s"
 sks3bucket = "sk-crossref"
-sks3prefix = "daily/"
+limit = 1000 # for dev

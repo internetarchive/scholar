@@ -1,7 +1,6 @@
 package crossref
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -87,7 +86,7 @@ func crossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 100 * time.Second,
-		TaskQueue:           "scholar-external",
+		TaskQueue:           viper.GetString("crossref.task_queue"),
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
@@ -193,11 +192,14 @@ func chunkedS3ReadLines(ctx context.Context, s3Key string, readStart, readEnd in
 	return out, nil
 }
 
+// TODO rename to skCrossrefHarvest
+// TODO support args struct with: Day string, Limit int
+
 func scholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
 	// TODO eventually, if needed, this activity can take granular arguments to
 	// control sk's execution (ie, run for a specific date or limit how many things to pull)
 	l := activity.GetLogger(ctx)
-	l.Info("ScholkitCrossrefDaily job running")
+	l.Info("scholkitCrossrefDailyFeed job running")
 
 	limit := viper.GetInt("crossref.default_limit")
 
@@ -205,7 +207,7 @@ func scholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
 
 	today := time.Now()
 
-	yesterday := today.AddDate(0, -1, 0)
+	yesterday := today.AddDate(0, 0, -1)
 	syncEnd := today.Format("2006-01-02")
 	syncStart := yesterday.Format("2006-01-02")
 
@@ -227,14 +229,19 @@ func scholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
 		skArgs = append(skArgs, "--limit")
 		skArgs = append(skArgs, fmt.Sprintf("%d", limit))
 	}
+	l.Info("cmd: ", skPath, skArgs)
 	cmd := exec.Command(skPath, skArgs...)
-	bs := []byte{}
-	cmd.Stdout = bytes.NewBuffer(bs)
-	if err = cmd.Run(); err != nil {
+	bs, err := cmd.Output()
+	if err != nil {
+		if errors.Is(err, &exec.ExitError{}) {
+			l.Error("************* scholkit stderr start ****************")
+			l.Error(string(err.(*exec.ExitError).Stderr))
+			l.Error("************* scholkit stderr end *******#**********")
+		}
 		return "", fmt.Errorf("sk failed: %w", err)
 	}
 
-	l.Info("scholkit uploaded crossref data to s3 key '%s'", string(bs))
+	l.Info("scholkit uploaded crossref data to s3 key", string(bs))
 
 	return string(bs), nil
 }

@@ -9,13 +9,14 @@ hostport = "" # blank to use temporal sdk default
 
 [scholkit]
 path = "/usr/local/bin/sk-feed"
-dataDir = "/var/data/trawler"
+# dataDir = "/var/data/trawler"
+dataDir = "./data"
 
 [crossref]
 temporal_namespace = "dev.crossref"
 temporal_namespace_retention = "8760h"
 task_queue = "crossref_crawl"
 #every = "24h"
-every = "60s"
+every = "120s"
 sks3bucket = "sk-crossref"
 default_limit = 1000 # for dev; typically would be -1 for unlimited

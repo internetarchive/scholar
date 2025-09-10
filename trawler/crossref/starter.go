@@ -13,7 +13,12 @@ import (
 	"storj.io/common/uuid"
 )
 
-func RunStarter() error {
+func StartOneOff() error {
+	// TODO start the crawl workflow manually, accept arguments from CLI
+	return errors.New("not implemented")
+}
+
+func StartSchedule() error {
 	ctx := context.Background()
 
 	every := viper.GetString("crossref.every")

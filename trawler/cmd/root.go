@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+var cfgFile string
+
 var rootCmd = &cobra.Command{
 	Use:   "trawler",
 	Short: "control CLI for scholar trawler",
@@ -27,12 +29,23 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
-	viper.AddConfigPath("/etc/trawler/")
-	viper.AddConfigPath("$HOME/.config/trawler")
-	viper.AddConfigPath(".")
+	cobra.OnInitialize(initConfig)
+
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file override")
+
 	rootCmd.AddCommand(crossref.Cmd)
+}
+
+func initConfig() {
+	if cfgFile != "" {
+		viper.SetConfigFile(cfgFile)
+	} else {
+		viper.SetConfigName("config")
+		viper.SetConfigType("toml")
+		viper.AddConfigPath("/etc/trawler/")
+		viper.AddConfigPath("$HOME/.config/trawler")
+		viper.AddConfigPath(".")
+	}
 }
 
 func Execute() {

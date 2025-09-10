@@ -186,17 +186,21 @@ func crawlForEntity(ctx context.Context, entityID uuid.UUID) (crawlResult, error
 	return out, nil
 }
 
-type chunkedS3Result struct {
+type readS3LinesOutput struct {
 	NextReadIx int
 	Lines      []string
 }
 
-func chunkedS3ReadLines(ctx context.Context, s3Key string, readStart, readEnd int) (chunkedS3Result, error) {
-	out := chunkedS3Result{}
-	return out, nil
+type readS3LinesInput struct {
+	S3Key     string
+	ReadStart int
+	ReadEnd   int
 }
 
-// TODO support args struct with: Day string, Limit int
+func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutput, err error) {
+	// TODO
+	return
+}
 
 type skCrossrefInput struct {
 	// Day value in format 2006-01-02

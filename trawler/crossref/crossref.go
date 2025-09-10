@@ -80,7 +80,11 @@ type entity struct {
 	flavor string
 }
 
-func crossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
+type crossrefCrawlInput struct {
+	SKInput skCrossrefInput
+}
+
+func crossrefCrawlWorkflow(ctx workflow.Context, in crossrefCrawlInput) (*CrossrefCrawlResult, error) {
 	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
 	out := CrossrefCrawlResult{}
 
@@ -90,13 +94,8 @@ func crossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
-	skInput := skCrossrefInput{
-		Day:   "",   // today
-		Limit: 1000, // TODO just for dev
-	}
-
 	var skOut skCrossrefOutput
-	err := workflow.ExecuteActivity(ctx, skCrossref, skInput).Get(ctx, &skOut)
+	err := workflow.ExecuteActivity(ctx, skCrossref, in.SKInput).Get(ctx, &skOut)
 	if err != nil {
 		workflow.GetLogger(ctx).Error("scholkit crossref activity failed:", err)
 		return nil, err
@@ -215,7 +214,7 @@ func skCrossref(ctx context.Context, in skCrossrefInput) (out skCrossrefOutput, 
 	// TODO eventually, if needed, this activity can take granular arguments to
 	// control sk's execution (ie, run for a specific date or limit how many things to pull)
 	l := activity.GetLogger(ctx)
-	l.Info("starting crossref harvest")
+	l.Info("starting crossref harvest", in)
 
 	limit := in.Limit
 	if limit == 0 {

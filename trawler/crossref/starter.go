@@ -60,6 +60,15 @@ func RunStarter() error {
 	scheduleID := "crossref_schedule_" + sid.String()
 	workflowID := "crossref_" + id.String()
 
+	workflowArgs := []any{
+		crossrefCrawlInput{
+			SKInput: skCrossrefInput{
+				Day:   "",   // Today
+				Limit: 1000, // TODO for dev
+			},
+		},
+	}
+
 	scheduleHandle, err := c.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID: scheduleID,
 		Spec: client.ScheduleSpec{
@@ -70,6 +79,7 @@ func RunStarter() error {
 		Action: &client.ScheduleWorkflowAction{
 			ID:        workflowID,
 			Workflow:  crossrefCrawlWorkflow,
+			Args:      workflowArgs,
 			TaskQueue: viper.GetString("crossref.task_queue"),
 		},
 	})

@@ -223,6 +223,10 @@ func skCrossref(ctx context.Context, in skCrossrefInput) (out skCrossrefOutput, 
 
 	s3Bucket := viper.GetString("crossref.sks3bucket")
 
+	// TODO this is going to cause a problem with heartbeating; sk-feed might run
+	// for hours.
+	// Need to have a goroutine sending heartbeats while sk-feed is running
+
 	var syncStart time.Time
 	var syncEnd time.Time
 	if in.Day != "" {

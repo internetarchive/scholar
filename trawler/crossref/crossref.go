@@ -90,13 +90,18 @@ func crossrefCrawlWorkflow(ctx workflow.Context) (*CrossrefCrawlResult, error) {
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
-	var s3Key string
-	err := workflow.ExecuteActivity(ctx, scholkitCrossrefDailyFeed).Get(ctx, &s3Key)
+	skInput := skCrossrefInput{
+		Day:   "",   // today
+		Limit: 1000, // TODO just for dev
+	}
+
+	var skOut skCrossrefOutput
+	err := workflow.ExecuteActivity(ctx, skCrossref, skInput).Get(ctx, &skOut)
 	if err != nil {
-		workflow.GetLogger(ctx).Error("scholkitCrossrefDailyFeed failed:", err)
+		workflow.GetLogger(ctx).Error("scholkit crossref activity failed:", err)
 		return nil, err
 	}
-	workflow.GetLogger(ctx).Info("scholkitCrossrefDailyFeed s3key: ", s3Key)
+	workflow.GetLogger(ctx).Info("scholkit crossref s3key:", skOut.S3Key)
 
 	/*
 		bstart := 0
@@ -192,26 +197,47 @@ func chunkedS3ReadLines(ctx context.Context, s3Key string, readStart, readEnd in
 	return out, nil
 }
 
-// TODO rename to skCrossrefHarvest
 // TODO support args struct with: Day string, Limit int
 
-func scholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
+type skCrossrefInput struct {
+	// Day value in format 2006-01-02
+	Day string
+	// Limit of items to fetch for a day; 0 or less for unlimited
+	Limit int
+}
+
+type skCrossrefOutput struct {
+	// S3Key points to a large .ndjson file of metadata
+	S3Key string
+}
+
+func skCrossref(ctx context.Context, in skCrossrefInput) (out skCrossrefOutput, err error) {
 	// TODO eventually, if needed, this activity can take granular arguments to
 	// control sk's execution (ie, run for a specific date or limit how many things to pull)
 	l := activity.GetLogger(ctx)
-	l.Info("scholkitCrossrefDailyFeed job running")
+	l.Info("starting crossref harvest")
 
-	limit := viper.GetInt("crossref.default_limit")
+	limit := in.Limit
+	if limit == 0 {
+		limit = viper.GetInt("crossref.default_limit")
+	}
 
 	s3Bucket := viper.GetString("crossref.sks3bucket")
 
-	today := time.Now()
+	var syncStart time.Time
+	var syncEnd time.Time
+	if in.Day != "" {
+		syncStart, err = time.Parse("2006-01-02", in.Day)
+		if err != nil {
+			return
+		}
+		syncEnd = syncStart.AddDate(0, 0, 1)
+	} else {
+		syncEnd = time.Now()
+		syncStart = syncEnd.AddDate(0, 0, -1)
+	}
 
-	yesterday := today.AddDate(0, 0, -1)
-	syncEnd := today.Format("2006-01-02")
-	syncStart := yesterday.Format("2006-01-02")
-
-	s3Prefix := today.Format("2006") + "/"
+	s3Prefix := syncEnd.Format("2006") + "/"
 
 	// sk-feed -s crossref -d /home/nsmith/sk-test --crossref-upload-s3 --crossref-s3-rclone-remote seaweed314 --crossref-s3-bucket sk-crossref --crossref-s3-prefix 2025/ --crossref-sync-start 2025-09-08 --crossref-sync-end 2025-09-09 --limit 1000
 	skPath := viper.GetString("scholkit.path")
@@ -222,8 +248,8 @@ func scholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
 		"--crossref-s3-rclone-remote", "seaweed314",
 		"--crossref-s3-bucket", s3Bucket,
 		"--crossref-s3-prefix", s3Prefix,
-		"--crossref-sync-start", syncStart,
-		"--crossref-sync-end", syncEnd,
+		"--crossref-sync-start", syncStart.Format("2006-01-02"),
+		"--crossref-sync-end", syncEnd.Format("2006-01-02"),
 	}
 	if limit > 0 {
 		skArgs = append(skArgs, "--limit")
@@ -238,12 +264,13 @@ func scholkitCrossrefDailyFeed(ctx context.Context) (out string, err error) {
 			l.Error(string(err.(*exec.ExitError).Stderr))
 			l.Error("************* scholkit stderr end *******#**********")
 		}
-		return "", fmt.Errorf("sk failed: %w", err)
+		return out, fmt.Errorf("sk failed: %w", err)
 	}
 
 	l.Info("scholkit uploaded crossref data to s3 key", string(bs))
 
-	return string(bs), nil
+	out.S3Key = string(bs)
+	return
 }
 
 func s3ChunkToFatcat(ctx context.Context, lines []string) ([]entity, error) {

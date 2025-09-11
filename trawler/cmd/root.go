@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"git.archive.org/webgroup/scholar/trawler/cmd/crossref"
+	"git.archive.org/webgroup/scholar/trawler/cmd/crossrefcmd"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -33,7 +33,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file override")
 
-	rootCmd.AddCommand(crossref.Cmd)
+	rootCmd.AddCommand(crossrefcmd.Cmd)
 }
 
 func initConfig() {

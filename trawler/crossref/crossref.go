@@ -60,6 +60,32 @@ func ensureNamespace(ctx context.Context, namespace string) error {
 	return nil
 }
 
+// SetupTemporal creates a Temporal client, ensuring that the crossref namespace exists.
+func SetupTemporal(ctx context.Context) (client.Client, error) {
+	namespace := viper.GetString("crossref.temporal_namespace")
+	if namespace != "" {
+		err := ensureNamespace(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("could not ensure namesapce: %w", err)
+		}
+	} else {
+		namespace = "default"
+	}
+	hostport := viper.GetString("temporal.hostport")
+	if hostport == "" {
+		hostport = client.DefaultHostPort
+	}
+
+	c, err := client.Dial(client.Options{
+		HostPort:  hostport,
+		Namespace: namespace,
+	})
+	if err != nil {
+		log.Fatalln("Unable to create client", err)
+	}
+	return c, nil
+}
+
 type CrossrefCrawlResult struct {
 	FoundCounts struct {
 		Releases   int
@@ -80,17 +106,19 @@ type entity struct {
 	flavor string
 }
 
-type crossrefCrawlInput struct {
-	SKInput skCrossrefInput
+type CrossrefCrawlInput struct {
+	SKInput SKCrossrefInput
 }
 
-func crossrefCrawlWorkflow(ctx workflow.Context, in crossrefCrawlInput) (*CrossrefCrawlResult, error) {
+func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (*CrossrefCrawlResult, error) {
 	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
 	out := CrossrefCrawlResult{}
 
+	// fetch crossref metadata from the upstream API and store in s3
+
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 100 * time.Second,
-		TaskQueue:           viper.GetString("crossref.task_queue"),
+		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
+		TaskQueue:           viper.GetString("crossref.external_task_queue"),
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
@@ -214,7 +242,7 @@ type skCrossrefOutput struct {
 	S3Key string
 }
 
-func skCrossref(ctx context.Context, in skCrossrefInput) (out skCrossrefOutput, err error) {
+func skCrossref(ctx context.Context, in SKCrossrefInput) (out skCrossrefOutput, err error) {
 	// TODO eventually, if needed, this activity can take granular arguments to
 	// control sk's execution (ie, run for a specific date or limit how many things to pull)
 	l := activity.GetLogger(ctx)

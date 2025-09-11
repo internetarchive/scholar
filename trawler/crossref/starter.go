@@ -13,13 +13,39 @@ import (
 	"storj.io/common/uuid"
 )
 
-func StartOneOff() error {
+func StartOneOff(in CrossrefCrawlInput) error {
 	// TODO start the crawl workflow manually, accept arguments from CLI
-	return errors.New("not implemented")
+	ctx := context.Background()
+	c, err := SetupTemporal(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	id, err := uuid.New()
+	if err != nil {
+		return fmt.Errorf("could not make a workflowID: %w", err)
+	}
+	workflowID := "crossref_" + id.String()
+
+	c.ExecuteWorkflow(ctx,
+		client.StartWorkflowOptions{
+			ID:        workflowID,
+			TaskQueue: viper.GetString("crossref.internal_task_queue"),
+		},
+		crossrefCrawlWorkflow,
+		in)
+
+	return nil
 }
 
 func StartSchedule() error {
 	ctx := context.Background()
+	c, err := SetupTemporal(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
 
 	every := viper.GetString("crossref.every")
 	if every == "" {
@@ -29,30 +55,6 @@ func StartSchedule() error {
 	if err != nil {
 		return fmt.Errorf("could not parse crossref.every: %w", err)
 	}
-
-	namespace := viper.GetString("crossref.temporal_namespace")
-	if namespace != "" {
-		err := ensureNamespace(ctx, namespace)
-		if err != nil {
-			return fmt.Errorf("could not ensure namesapce: %w", err)
-		}
-	} else {
-		namespace = "default"
-	}
-
-	hostport := viper.GetString("temporal.hostport")
-	if hostport == "" {
-		hostport = client.DefaultHostPort
-	}
-
-	c, err := client.Dial(client.Options{
-		HostPort:  hostport,
-		Namespace: namespace,
-	})
-	if err != nil {
-		log.Fatalln("Unable to create client", err)
-	}
-	defer c.Close()
 
 	id, err := uuid.New()
 	if err != nil {
@@ -66,8 +68,8 @@ func StartSchedule() error {
 	workflowID := "crossref_" + id.String()
 
 	workflowArgs := []any{
-		crossrefCrawlInput{
-			SKInput: skCrossrefInput{
+		CrossrefCrawlInput{
+			SKInput: SKCrossrefInput{
 				Day:   "",   // Today
 				Limit: 1000, // TODO for dev
 			},
@@ -85,7 +87,7 @@ func StartSchedule() error {
 			ID:        workflowID,
 			Workflow:  crossrefCrawlWorkflow,
 			Args:      workflowArgs,
-			TaskQueue: viper.GetString("crossref.task_queue"),
+			TaskQueue: viper.GetString("crossref.internal_task_queue"),
 		},
 	})
 	if err != nil {

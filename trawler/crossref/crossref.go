@@ -130,13 +130,41 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (*Crossr
 	}
 	workflow.GetLogger(ctx).Info("scholkit crossref s3key:", skOut.S3Key)
 
-	/*
-		bstart := 0
-		chunkSelector := workflow.NewSelector(ctx)
+	// read chunks of ndjson and process
 
-		var chunkErr error
-		entities := []entity{}
-		fCount := 0
+	ao.TaskQueue = viper.GetString("crossref.internal_task_queue")
+	// TODO ok to reuse ctx for this? Should I be creating from the initial ctx before the last WithActivityOptions?
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	//chunkSelector := workflow.NewSelector(ctx)
+	//var chunkErr error
+	//entities := []entity{}
+	//fCount := 0
+	readS3In := readS3LinesInput{
+		S3Key:     skOut.S3Key,
+		ReadStart: 0,
+		ChunkSize: 1024,
+	}
+
+	l := workflow.GetLogger(ctx)
+
+	for {
+		out := readS3LinesOutput{}
+		err = workflow.ExecuteActivity(ctx, readS3Lines, readS3In).Get(ctx, &out)
+		if err != nil {
+			l.Error("readS3Lines failed:", err)
+			return nil, err
+		}
+		l.Info(fmt.Sprintf("read %d lines from %s", len(out.Lines), skOut.S3Key))
+		if len(out.Lines) == 0 {
+			break
+		}
+		// TODO do stuff with out.Lines
+		readS3In.ReadStart = out.NextReadIx
+	}
+
+	/*
+
 		for {
 			result := chunkedS3Result{}
 			err = workflow.ExecuteActivity(ctx, chunkedS3ReadLines, s3Key, bstart).Get(ctx, &result)
@@ -222,15 +250,20 @@ type readS3LinesOutput struct {
 type readS3LinesInput struct {
 	S3Key     string
 	ReadStart int
-	ReadEnd   int
+	ChunkSize int
 }
 
 func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutput, err error) {
-	// TODO
+	// TODO start here thursday
+	// TODO issue a chunked read to S3
+	// TODO split into lines
+	// TODO return the lines, byte offset of last newline in chunk
+	bytesRead := 0 // TODO; can either count this up or just find last newline
+	out.NextReadIx = in.ReadStart + bytesRead
 	return
 }
 
-type skCrossrefInput struct {
+type SKCrossrefInput struct {
 	// Day value in format 2006-01-02
 	Day string
 	// Limit of items to fetch for a day; 0 or less for unlimited

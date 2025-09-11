@@ -100,6 +100,8 @@ func main() {
 		Log:       log.New(os.Stderr, "", log.Lshortfile),
 	}
 
+	cfg.CSVReader.Comma = '\t'
+
 	cfg.Log.Println("starting")
 
 	if err := _main(cfg); err != nil {

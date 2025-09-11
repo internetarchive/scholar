@@ -97,13 +97,15 @@ func main() {
 		panic(err)
 	}
 
-	scrollID := er.ScrollID
 	thumbsFound := 0
 
 	// TODO seems to be a ton of SIM stuff. can i pare down the original query so
 	// i page through less stuff?
 
-	for scrollID != "" {
+	for {
+		if len(er.Hits.Hits) == 0 {
+			break
+		}
 		l.Println(er.ScrollID)
 		for _, hit := range er.Hits.Hits {
 			for _, turl := range hit.Fields.Turl {
@@ -115,7 +117,7 @@ func main() {
 				}
 			}
 		}
-		scrollQuery := `{"scroll": "1m", "scroll_id": "` + scrollID + `"}`
+		scrollQuery := `{"scroll": "1m", "scroll_id": "` + er.ScrollID + `"}`
 		req, err := http.NewRequest("GET", scrollPath, bytes.NewBufferString(scrollQuery))
 		if err != nil {
 			panic(err)
@@ -153,8 +155,6 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-
-		scrollID = er.ScrollID
 	}
 
 	if thumbsFound == 0 {

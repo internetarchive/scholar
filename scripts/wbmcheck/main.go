@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -22,11 +23,12 @@ import (
 )
 
 type config struct {
-	FCDBURL   string
-	CSVReader *csv.Reader
-	Workers   int
-	Out       *csv.Writer
-	Log       *log.Logger
+	FCDBURL     string
+	CSVReader   *csv.Reader
+	Workers     int
+	Out         *csv.Writer
+	Log         *log.Logger
+	WaybackOnly bool
 }
 
 // The full csv had a different structure than the samples.
@@ -91,13 +93,20 @@ AND
 LIMIT 1;
 `
 
+var waybackOnly bool
+
+func init() {
+	flag.BoolVar(&waybackOnly, "wayback-only", false, "only consider wbm pdf urls as worth of output")
+}
+
 func main() {
 	cfg := &config{
-		Workers:   64,
-		FCDBURL:   os.Getenv("FATCAT1_PGURL"),
-		CSVReader: csv.NewReader(os.Stdin),
-		Out:       csv.NewWriter(os.Stdout),
-		Log:       log.New(os.Stderr, "", log.Lshortfile),
+		Workers:     64,
+		FCDBURL:     os.Getenv("FATCAT1_PGURL"),
+		CSVReader:   csv.NewReader(os.Stdin),
+		Out:         csv.NewWriter(os.Stdout),
+		Log:         log.New(os.Stderr, "", log.Lshortfile),
+		WaybackOnly: waybackOnly,
 	}
 
 	cfg.CSVReader.Comma = '\t'
@@ -290,11 +299,11 @@ func worker(ctx context.Context, cfg *config, pool *pgxpool.Pool, jobs <-chan re
 			} else if resp.StatusCode == 301 || resp.StatusCode == 302 {
 				cfg.Log.Printf("%s: got a 30{1,2}", r.ID)
 				loc := resp.Header.Get("Location")
-				if strings.Contains(loc, "web.archive.org") {
+				if cfg.WaybackOnly && !strings.Contains(loc, "web.archive.org") {
+					cfg.Log.Printf("%s: non-wbm link and wayback-only is true: '%s'", r.ID, loc)
+				} else {
 					wbmLink = loc
 					source = "fc2"
-				} else {
-					cfg.Log.Printf("%s: non-wbm link: '%s'", r.ID, loc)
 				}
 			} else if resp.StatusCode == 404 {
 				msgb, err := io.ReadAll(resp.Body)

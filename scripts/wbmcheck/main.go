@@ -29,6 +29,7 @@ type config struct {
 	Out         *csv.Writer
 	Log         *log.Logger
 	WaybackOnly bool
+	Resume      int
 }
 
 // The full csv had a different structure than the samples.
@@ -94,9 +95,11 @@ LIMIT 1;
 `
 
 var waybackOnly bool
+var resume int
 
 func init() {
 	flag.BoolVar(&waybackOnly, "wayback-only", false, "only consider wbm pdf urls as worth of output")
+	flag.IntVar(&resume, "resume", -1, "resume from given ID")
 }
 
 func main() {
@@ -107,6 +110,7 @@ func main() {
 		Out:         csv.NewWriter(os.Stdout),
 		Log:         log.New(os.Stderr, "", log.Lshortfile),
 		WaybackOnly: waybackOnly,
+		Resume:      resume,
 	}
 
 	cfg.CSVReader.Comma = '\t'
@@ -363,10 +367,15 @@ func _main(cfg *config) error {
 
 	go func() {
 		cfg.Out.Write([]string{
+			//"doi",
+			//"source",
+			//"pdfurl",
+			//"wbm",
 			"id",
+			"url",
 			"citation_text",
-			"doi",
-			"type",
+			//"doi",
+			//"type",
 			"source",
 			"wbm",
 		})
@@ -378,10 +387,10 @@ func _main(cfg *config) error {
 			}
 			cfg.Log.Printf("%s: wbm found", r.ID)
 			outLine = []string{
+				//r.DOI,
 				r.ID,
 				r.URL,
 				r.Citation,
-				//r.DOI,
 				//r.Type,
 				r.Source,
 				r.WBM,
@@ -407,11 +416,23 @@ func _main(cfg *config) error {
 		}
 
 		r := record{
+			// wbm_citations.csv
 			ID:       line[0],
 			URL:      line[1],
 			Citation: line[2],
+			//DOI: line[0],
 			//DOI:      line[2],
 			//Type:     line[3],
+		}
+
+		id, err := strconv.Atoi(r.ID)
+		if err != nil {
+			panic(err)
+		}
+
+		if id < cfg.Resume {
+			fmt.Fprintf(os.Stderr, "skipping %d\r", id)
+			continue
 		}
 		jobs <- r
 		cfg.Log.Printf("submitted job for %s", r.ID)

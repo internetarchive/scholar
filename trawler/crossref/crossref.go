@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -143,7 +147,7 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (*Crossr
 	readS3In := readS3LinesInput{
 		S3Key:     skOut.S3Key,
 		ReadStart: 0,
-		ChunkSize: 1024,
+		ChunkSize: 1024 * 20,
 	}
 
 	l := workflow.GetLogger(ctx)
@@ -243,23 +247,86 @@ func crawlForEntity(ctx context.Context, entityID uuid.UUID) (crawlResult, error
 }
 
 type readS3LinesOutput struct {
-	NextReadIx int
+	NextReadIx int64
 	Lines      []string
 }
 
 type readS3LinesInput struct {
 	S3Key     string
-	ReadStart int
-	ChunkSize int
+	ReadStart int64
+	ChunkSize int64
 }
 
 func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutput, err error) {
-	// TODO start here thursday
-	// TODO issue a chunked read to S3
-	// TODO split into lines
-	// TODO return the lines, byte offset of last newline in chunk
-	bytesRead := 0 // TODO; can either count this up or just find last newline
-	out.NextReadIx = in.ReadStart + bytesRead
+	out = readS3LinesOutput{
+		Lines: []string{},
+	}
+	endpoint := viper.GetString("s3.endpoint")
+	accessKeyID := viper.GetString("s3.access_id")
+	secretAccessKey := viper.GetString("s3.secret_key")
+	// useSSL := true
+	useSSL := false // thonk
+
+	// Initialize minio client object.
+	mc, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
+		Secure: useSSL,
+	})
+	if err != nil {
+		return
+	}
+
+	sp := strings.SplitN(in.S3Key, "/", 2)
+	if len(sp) != 2 {
+		return out, errors.New("could not parse s3 key " + in.S3Key)
+	}
+	bucket := sp[0]
+	key := sp[1]
+
+	l := activity.GetLogger(ctx)
+	l.Info(fmt.Sprintf("doing a range read from bucket '%s', key '%s'", bucket, key))
+
+	opts := minio.GetObjectOptions{}
+	// NB it seems that you can _either_ use SetRange _or_ ReadAt. I'm going with ReadAt arbitrarily.
+	//opts.SetRange(in.ReadStart, in.ReadStart+in.ChunkSize)
+	f, err := mc.GetObject(ctx, bucket, key, opts)
+	if err != nil {
+		return out, fmt.Errorf("GetObject failed: %w", err)
+	}
+	defer f.Close()
+
+	// TODO refactor this so it's unit testable
+	b := make([]byte, in.ChunkSize)
+
+	n, err := f.ReadAt(b, in.ReadStart)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return out, fmt.Errorf("range read of '%s' failed: %w", in.S3Key, err)
+	} else {
+		err = nil
+	}
+
+	l.Debug("READ SOME STUFF MAYBE?")
+	l.Debug(fmt.Sprintf("%d", n))
+
+	if n == 0 {
+		return
+	}
+
+	lineBuf := []byte{}
+	var lastNewlineIx int64
+	for x := range len(b) {
+		if b[x] == '\n' {
+			lastNewlineIx = int64(x)
+			out.Lines = append(out.Lines, string(lineBuf))
+			lineBuf = []byte{}
+			continue
+		}
+
+		lineBuf = append(lineBuf, b[x])
+	}
+
+	out.NextReadIx = in.ReadStart + lastNewlineIx
+
 	return
 }
 
@@ -337,7 +404,7 @@ func skCrossref(ctx context.Context, in SKCrossrefInput) (out skCrossrefOutput, 
 
 	l.Info("scholkit uploaded crossref data to s3 key", string(bs))
 
-	out.S3Key = string(bs)
+	out.S3Key = strings.TrimSpace(string(bs))
 	return
 }
 

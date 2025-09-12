@@ -4,6 +4,11 @@
 # - /etc/trawler/config
 # - $HOME/.config/trawler/config
 # - .
+[s3]
+endpoint = "wbgrp-svc314.us.archive.org:8333"
+access_id = ""
+secret_key = ""
+
 [temporal]
 hostport = "" # blank to use temporal sdk default
 

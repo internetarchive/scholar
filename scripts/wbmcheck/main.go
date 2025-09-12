@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 	"github.com/miku/grobidclient/tei"
 )
 
@@ -30,6 +30,16 @@ type config struct {
 	Log         *log.Logger
 	WaybackOnly bool
 	Resume      int
+}
+
+var waybackOnly bool
+var resume int
+var workers int
+
+func init() {
+	flag.BoolVar(&waybackOnly, "wayback-only", false, "only consider wbm pdf urls as worth of output")
+	flag.IntVar(&resume, "resume", -1, "resume from given ID")
+	flag.IntVar(&workers, "workers", 8, "number of workers")
 }
 
 // The full csv had a different structure than the samples.
@@ -94,17 +104,10 @@ AND
 LIMIT 1;
 `
 
-var waybackOnly bool
-var resume int
-
-func init() {
-	flag.BoolVar(&waybackOnly, "wayback-only", false, "only consider wbm pdf urls as worth of output")
-	flag.IntVar(&resume, "resume", -1, "resume from given ID")
-}
-
 func main() {
+	flag.Parse()
 	cfg := &config{
-		Workers:     64,
+		Workers:     workers,
 		FCDBURL:     os.Getenv("FATCAT1_PGURL"),
 		CSVReader:   csv.NewReader(os.Stdin),
 		Out:         csv.NewWriter(os.Stdout),
@@ -113,7 +116,8 @@ func main() {
 		Resume:      resume,
 	}
 
-	cfg.CSVReader.Comma = '\t'
+	// TODO flag for this
+	//cfg.CSVReader.Comma = '\t'
 
 	cfg.Log.Println("starting")
 
@@ -172,7 +176,7 @@ func buildESQuery(title string, year int, authors []string) io.Reader {
 	return bytes.NewBuffer(bs)
 }
 
-func fuzzySearch(ctx context.Context, cfg *config, conn *pgxpool.Conn, r record) string {
+func fuzzySearch(ctx context.Context, cfg *config, conn *pgx.Conn, r record) string {
 	v := url.Values{}
 	v.Set("citations", r.Citation)
 	v.Set("consolidateCitations", "0")
@@ -270,18 +274,20 @@ func fuzzySearch(ctx context.Context, cfg *config, conn *pgxpool.Conn, r record)
 	return wbmLink
 }
 
-func worker(ctx context.Context, cfg *config, pool *pgxpool.Pool, jobs <-chan record, results chan<- record) {
+func worker(ctx context.Context, cfg *config, jobs <-chan record, results chan<- record) {
+	log.Println("worker started")
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	conn, err := pool.Acquire(ctx)
+	conn, err := pgx.Connect(ctx, os.Getenv("FATCAT1_PGURL"))
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to acquire connection: %s", err.Error())
 	}
-	defer conn.Release()
+	defer conn.Close(ctx)
 
+	log.Println("reading jobs...")
 	for r := range jobs {
 		wbmLink := ""
 		source := ""
@@ -345,25 +351,21 @@ func worker(ctx context.Context, cfg *config, pool *pgxpool.Pool, jobs <-chan re
 func _main(cfg *config) error {
 	ctx := context.Background()
 
-	fcpool, err := pgxpool.New(ctx, os.Getenv("FATCAT1_PGURL"))
-	if err != nil {
-		return fmt.Errorf("unable to connect to db: %w", err)
-	}
-	defer fcpool.Close()
-
 	jobs := make(chan record)
 	results := make(chan record)
 
 	var wg sync.WaitGroup
 
+	log.Println("starting workers")
 	for w := 0; w < cfg.Workers; w++ {
 		// 1.25 has wg.Go
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			worker(ctx, cfg, fcpool, jobs, results)
+			worker(ctx, cfg, jobs, results)
 		}()
 	}
+	log.Println("started workers")
 
 	go func() {
 		cfg.Out.Write([]string{
@@ -380,6 +382,7 @@ func _main(cfg *config) error {
 			"wbm",
 		})
 		outLine := []string{}
+		log.Println("reading results...")
 		for r := range results {
 			if r.WBM == "" {
 				cfg.Log.Printf("%s: no wbm found", r.ID)
@@ -399,6 +402,8 @@ func _main(cfg *config) error {
 		}
 		cfg.Out.Flush()
 	}()
+
+	fmt.Println("submitting jobs...")
 
 	var line []string
 	var lineErrs = []error{}

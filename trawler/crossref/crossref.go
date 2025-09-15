@@ -160,12 +160,13 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (*Crossr
 			return nil, err
 		}
 		l.Info(fmt.Sprintf("read %d lines from %s", len(out.Lines), skOut.S3Key))
-		if len(out.Lines) == 0 {
+		if out.EOF {
 			break
 		}
-		// TODO do stuff with out.Lines
 		readS3In.ReadStart = out.NextReadIx
+		readS3In.Partial = out.Partial
 	}
+	// TODO do stuff with out.Lines
 
 	/*
 
@@ -246,15 +247,18 @@ func crawlForEntity(ctx context.Context, entityID uuid.UUID) (crawlResult, error
 	return out, nil
 }
 
-type readS3LinesOutput struct {
-	NextReadIx int64
-	Lines      []string
-}
-
 type readS3LinesInput struct {
 	S3Key     string
 	ReadStart int64
 	ChunkSize int64
+	Partial   []byte
+}
+
+type readS3LinesOutput struct {
+	NextReadIx int64
+	Lines      []string
+	Partial    []byte
+	EOF        bool
 }
 
 func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutput, err error) {
@@ -299,24 +303,28 @@ func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutpu
 	b := make([]byte, in.ChunkSize)
 
 	n, err := f.ReadAt(b, in.ReadStart)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return out, fmt.Errorf("range read of '%s' failed: %w", in.S3Key, err)
-	} else {
+	if errors.Is(err, io.EOF) {
+		l.Debug(fmt.Sprintf("saw %d bytes and also EOF", n))
+		out.EOF = true
 		err = nil
 	}
+	if err != nil {
+		return out, fmt.Errorf("range read of '%s' failed: %w", in.S3Key, err)
+	}
 
-	l.Debug("READ SOME STUFF MAYBE?")
-	l.Debug(fmt.Sprintf("%d", n))
+	l.Debug(fmt.Sprintf("READ %d BYTES", n))
 
 	if n == 0 {
 		return
 	}
 
-	lineBuf := []byte{}
-	var lastNewlineIx int64
+	lineBuf := in.Partial
+	if lineBuf == nil {
+		lineBuf = []byte{}
+	}
+
 	for x := range len(b) {
 		if b[x] == '\n' {
-			lastNewlineIx = int64(x)
 			out.Lines = append(out.Lines, string(lineBuf))
 			lineBuf = []byte{}
 			continue
@@ -325,7 +333,8 @@ func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutpu
 		lineBuf = append(lineBuf, b[x])
 	}
 
-	out.NextReadIx = in.ReadStart + lastNewlineIx
+	out.NextReadIx = in.ReadStart + in.ChunkSize
+	out.Partial = lineBuf
 
 	return
 }

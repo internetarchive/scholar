@@ -43,7 +43,7 @@ func StartInternalWorker() error {
 
 	w.RegisterWorkflow(crossrefCrawlWorkflow)
 	w.RegisterActivity(readS3Lines)
-	//w.RegisterActivity(s3ChunkToFatcat)
+	w.RegisterActivity(handleLine)
 	//w.RegisterActivity(crawlForEntity)
 
 	log.Printf("starting worker")

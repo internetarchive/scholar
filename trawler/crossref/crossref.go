@@ -2,6 +2,7 @@ package crossref
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,9 +22,6 @@ import (
 	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
-
-// TODO temporal connection details in config file
-// TODO defaults in config file
 
 // notes from mike meeting:
 
@@ -139,62 +137,58 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (*Crossr
 	ao.TaskQueue = viper.GetString("crossref.internal_task_queue")
 	// TODO ok to reuse ctx for this? Should I be creating from the initial ctx before the last WithActivityOptions?
 	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	//chunkSelector := workflow.NewSelector(ctx)
-	//var chunkErr error
-	//entities := []entity{}
-	//fCount := 0
-	readS3In := readS3LinesInput{
-		S3Key:     skOut.S3Key,
-		ReadStart: 0,
-		ChunkSize: 1024 * 20,
-	}
-
 	l := workflow.GetLogger(ctx)
 
+	var lout handleLineOutput
+	readS3In := readS3LinesInput{
+		S3Key:     skOut.S3Key,
+		LineStart: 0,
+	}
+
+	parsedSelector := workflow.NewSelector(ctx)
+	var futureCount int
+	var parseErr error
+
+	// TODO should I be considering continueasnew here?
 	for {
-		out := readS3LinesOutput{}
-		err = workflow.ExecuteActivity(ctx, readS3Lines, readS3In).Get(ctx, &out)
+		readS3Out := readS3LinesOutput{}
+		err = workflow.ExecuteActivity(ctx, readS3Lines, readS3In).Get(ctx, &readS3Out)
 		if err != nil {
 			l.Error("readS3Lines failed:", err)
 			return nil, err
 		}
-		l.Info(fmt.Sprintf("read %d lines from %s", len(out.Lines), skOut.S3Key))
-		if out.EOF {
+		if readS3Out.Length == 0 {
 			break
 		}
-		readS3In.ReadStart = out.NextReadIx
-		readS3In.Partial = out.Partial
+
+		lin := handleLineInput{
+			S3Key:     readS3In.S3Key,
+			LineStart: readS3Out.LineStart,
+			Length:    readS3Out.Length,
+		}
+
+		future := workflow.ExecuteActivity(ctx, handleLine, lin)
+		parsedSelector.AddFuture(future, func(f workflow.Future) {
+			parseErr = f.Get(ctx, &lout)
+		})
+		futureCount++
+
+		if readS3Out.EOF {
+			break
+		}
+		readS3In.LineStart = readS3In.LineStart + readS3Out.Length
 	}
-	// TODO do stuff with out.Lines
+
+	for range futureCount {
+		parsedSelector.Select(ctx)
+		if parseErr != nil {
+			l.Error("handleLine failed:", parseErr)
+			return nil, err
+		}
+		// TODO do something with lout
+	}
 
 	/*
-
-		for {
-			result := chunkedS3Result{}
-			err = workflow.ExecuteActivity(ctx, chunkedS3ReadLines, s3Key, bstart).Get(ctx, &result)
-			if err != nil {
-				workflow.GetLogger(ctx).Error("chunkedS3ReadLines failed:", err)
-				return nil, err
-			}
-			// TODO process result.Lines
-			if len(result.Lines) == 0 {
-				break
-			}
-			future := workflow.ExecuteActivity(ctx, s3ChunkToFatcat, result.Lines)
-			chunkSelector.AddFuture(future, func(f workflow.Future) {
-				var chunkEntities []entity
-				chunkErr = f.Get(ctx, &chunkEntities)
-				if chunkErr != nil {
-					return
-				}
-				for _, v := range chunkEntities {
-					entities = append(entities, v)
-				}
-			})
-			fCount++
-			bstart = result.NextReadIx
-		}
 
 		crawlSelector := workflow.NewSelector(ctx)
 
@@ -221,15 +215,6 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (*Crossr
 
 		// TODO handle the outcome of a crawl
 
-		// TODO what if there is one activity to read the s3 file and emit a single jsonl as input to an activity? that, in parallel, is really what I want.
-
-		// so trying to map out how to structure the s3 read -> fatcat writes.
-		// ideally, we:
-		// - stream the s3 value
-		// - decompress a chunk into N lines
-		// - for each line, make a future for a "maybe create in fatcat" activity
-
-		// TODO activity: read results from s3 and create in fatcat, returning fatcat IDs for paper acquisition
 		// TODO activity: for each fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
 		// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
 		// TODO activity: bulk ingestion into ES of parsed stuff
@@ -249,92 +234,147 @@ func crawlForEntity(ctx context.Context, entityID uuid.UUID) (crawlResult, error
 
 type readS3LinesInput struct {
 	S3Key     string
-	ReadStart int64
-	ChunkSize int64
-	Partial   []byte
+	LineStart int64
 }
 
 type readS3LinesOutput struct {
-	NextReadIx int64
-	Lines      []string
-	Partial    []byte
-	EOF        bool
+	LineStart int64
+	Length    int64
+	EOF       bool
 }
 
-func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutput, err error) {
-	out = readS3LinesOutput{
-		Lines: []string{},
-	}
+func getS3Object(ctx context.Context, s3key string) (*minio.Object, error) {
 	endpoint := viper.GetString("s3.endpoint")
 	accessKeyID := viper.GetString("s3.access_id")
 	secretAccessKey := viper.GetString("s3.secret_key")
 	// useSSL := true
 	useSSL := false // thonk
-
-	// Initialize minio client object.
 	mc, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
 		Secure: useSSL,
 	})
-	if err != nil {
-		return
-	}
-
-	sp := strings.SplitN(in.S3Key, "/", 2)
+	sp := strings.SplitN(s3key, "/", 2)
 	if len(sp) != 2 {
-		return out, errors.New("could not parse s3 key " + in.S3Key)
+		return nil, errors.New("could not parse s3 key " + s3key)
 	}
 	bucket := sp[0]
 	key := sp[1]
 
-	l := activity.GetLogger(ctx)
-	l.Info(fmt.Sprintf("doing a range read from bucket '%s', key '%s'", bucket, key))
-
 	opts := minio.GetObjectOptions{}
-	// NB it seems that you can _either_ use SetRange _or_ ReadAt. I'm going with ReadAt arbitrarily.
-	//opts.SetRange(in.ReadStart, in.ReadStart+in.ChunkSize)
 	f, err := mc.GetObject(ctx, bucket, key, opts)
 	if err != nil {
-		return out, fmt.Errorf("GetObject failed: %w", err)
+		return nil, fmt.Errorf("GetObject failed: %w", err)
+	}
+	return f, nil
+}
+
+// synchronously read chunk by chunk
+// fan-out per parsed line
+
+// readS3Lines starts reading the ndjson file at S3Key in chunks until it sees
+// a newline then returns the indices it read between (ie, the start and of a
+// line as byte offsets)
+func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutput, err error) {
+	out = readS3LinesOutput{
+		LineStart: in.LineStart,
+	}
+
+	l := activity.GetLogger(ctx)
+	l.Info(fmt.Sprintf("doing a range read from '%s'", in.S3Key))
+
+	f, err := getS3Object(ctx, in.S3Key)
+	if err != nil {
+		return
 	}
 	defer f.Close()
 
 	// TODO refactor this so it's unit testable
-	b := make([]byte, in.ChunkSize)
+	chunkSize := 1024 * 10
+	readStart := in.LineStart
 
-	n, err := f.ReadAt(b, in.ReadStart)
-	if errors.Is(err, io.EOF) {
-		l.Debug(fmt.Sprintf("saw %d bytes and also EOF", n))
-		out.EOF = true
-		err = nil
+	var length int64
+	var done bool
+
+	for !done {
+		b := make([]byte, chunkSize)
+
+		n, err := f.ReadAt(b, readStart)
+		if errors.Is(err, io.EOF) {
+			l.Debug(fmt.Sprintf("saw %d bytes and also EOF", n))
+			out.EOF = true
+			err = nil
+		}
+		if err != nil {
+			return out, fmt.Errorf("range read of '%s' failed: %w", in.S3Key, err)
+		}
+		if n == 0 {
+			// this is a weird case -- it means we never saw a newline. For now just log and move on.
+			l.Warn(fmt.Sprintf("Read 0 bytes in chunked read of %s", in.S3Key))
+			return out, nil
+		}
+
+		l.Debug(fmt.Sprintf("READ %d BYTES", n))
+
+		for x := range len(b) {
+			length++
+			if b[x] == '\n' {
+				done = true
+				break
+			}
+		}
+		readStart = readStart + int64(n)
 	}
+
+	out.Length = length
+
+	return
+}
+
+type handleLineInput struct {
+	S3Key     string
+	LineStart int64
+	Length    int64
+}
+
+type handleLineOutput struct {
+	FatcatID uuid.UUID
+}
+
+func handleLine(ctx context.Context, in handleLineInput) (out handleLineOutput, err error) {
+	out = handleLineOutput{}
+	f, err := getS3Object(ctx, in.S3Key)
 	if err != nil {
-		return out, fmt.Errorf("range read of '%s' failed: %w", in.S3Key, err)
+		return
+	}
+	defer f.Close()
+
+	lineb := make([]byte, in.Length)
+	n, err := f.ReadAt(lineb, in.LineStart)
+	if err != nil {
+		return
+	}
+	if n == 0 {
+		return out, fmt.Errorf("read 0 bytes, expected %d", len(lineb))
 	}
 
-	l.Debug(fmt.Sprintf("READ %d BYTES", n))
+	l := activity.GetLogger(ctx)
+	l.Debug(string(lineb))
 
-	if n == 0 {
+	// TODO design struct
+	type crossrefDoc struct {
+		Type string
+		DOI  string
+	}
+	var parsed crossrefDoc
+
+	err = json.Unmarshal(lineb, &parsed)
+	if err != nil {
 		return
 	}
 
-	lineBuf := in.Partial
-	if lineBuf == nil {
-		lineBuf = []byte{}
-	}
+	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", parsed.Type, parsed.DOI))
 
-	for x := range len(b) {
-		if b[x] == '\n' {
-			out.Lines = append(out.Lines, string(lineBuf))
-			lineBuf = []byte{}
-			continue
-		}
-
-		lineBuf = append(lineBuf, b[x])
-	}
-
-	out.NextReadIx = in.ReadStart + in.ChunkSize
-	out.Partial = lineBuf
+	// TODO do things
 
 	return
 }

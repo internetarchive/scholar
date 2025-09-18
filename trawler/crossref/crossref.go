@@ -116,7 +116,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	l := activity.GetLogger(ctx)
-	l.Debug(string(lineb))
+	//l.Debug(string(lineb))
 
 	// TODO design struct
 	type crossrefDoc struct {
@@ -131,6 +131,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", parsed.Type, parsed.DOI))
+	out.Ignored++
 
 	// TODO do things
 	return out, nil
@@ -207,7 +208,7 @@ func findLineBatch(ctx context.Context, in findLineBatchInput) (out findLineBatc
 }
 
 func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts, error) {
-	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
+	l := workflow.GetLogger(ctx)
 	out := counts{}
 
 	// fetch crossref metadata from the upstream API and store in s3
@@ -241,9 +242,6 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 	findOutput := findLineBatchOutput{}
 	childSelector := workflow.NewSelector(ctx)
 	var childCount int
-
-	// TODO I want to see logging around how many lines seen so I can compare it
-	// to a given ndjson and make sure it all lines up
 
 	var childErr error
 	var childCounts counts
@@ -283,7 +281,10 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 		out.Added += childCounts.Added
 		out.Ignored += childCounts.Ignored
 		out.Acquired += childCounts.Acquired
+		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Ignored))
 	}
+
+	l.Info(fmt.Sprintf("found and ignored %d lines", out.Ignored))
 
 	return out, nil
 

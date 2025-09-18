@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"slices"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
@@ -25,6 +27,50 @@ import (
 
 // can set up throughput tuning on a taskqueue -- could align this to SPN slots
 
+// TODO design struct
+type crossrefDoc struct {
+	Title []string
+	Type  string
+	DOI   string
+}
+
+var ignoredTypes = []string{
+	"",
+	"journal",
+	"proceedings",
+	"standard-series",
+	"report-series",
+	"book-series",
+	"book-set",
+	"book-track",
+	"proceedings-series",
+}
+
+func (c crossrefDoc) IsSkippable() bool {
+	if c.Title == nil {
+		return true
+	}
+
+	if len(c.Title) < 1 {
+		return true
+	}
+
+	if strings.ToLower(c.Title[0]) == "oup accepted manuscript" {
+		return true
+	}
+
+	if slices.Contains(ignoredTypes, c.Type) {
+		return true
+	}
+
+	if c.DOI == "" {
+		return true
+	}
+
+	return false
+}
+
+/*
 type CrossrefCrawlResult struct {
 	FoundCounts struct {
 		Releases   int
@@ -39,18 +85,16 @@ type CrossrefCrawlResult struct {
 	PDFCount      int
 	IngestedCount int
 }
-
-type entity struct {
-	ID     uuid.UUID
-	flavor string
-}
+*/
 
 type CrossrefCrawlInput struct {
 	SKInput SKCrossrefInput
 }
 
 type counts struct {
-	// Ignored is the count of lines in the upstream metadata we passed on
+	// Skipped is the count of lines in the upstream we knew we would never want
+	Skipped int
+	// Ignored is the count of lines in the upstream metadata we were already aware of
 	Ignored int
 	// Added is the count of lines from the upstream metadata we added to Fatcat
 	Added int
@@ -118,11 +162,6 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	l := activity.GetLogger(ctx)
 	//l.Debug(string(lineb))
 
-	// TODO design struct
-	type crossrefDoc struct {
-		Type string
-		DOI  string
-	}
 	var parsed crossrefDoc
 
 	err = json.Unmarshal(lineb, &parsed)
@@ -131,9 +170,51 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", parsed.Type, parsed.DOI))
-	out.Ignored++
 
-	// TODO do things
+	// Should we skip even checking the DOI?
+
+	if parsed.IsSkippable() {
+		out.Skipped++
+		return out, nil
+	}
+
+	// Check the DOI
+
+	client := &http.Client{}
+	// TODO http client for fatcat2
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/release/lookup", nil)
+	if err != nil {
+		panic(err)
+	}
+	q := req.URL.Query()
+	q.Add("id_type", "doi")
+	q.Add("id_value", parsed.DOI)
+	req.URL.RawQuery = q.Encode()
+	resp, err := client.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 lookup failed for '%s': %w", parsed.DOI, err)
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		// We already know about this DOI; bail. In the future we may attempt updates.
+		out.Ignored++
+		return out, nil
+	}
+
+	if resp.StatusCode != 404 {
+		return out, fmt.Errorf("did not get 200 nor 404 from fc2 api: %d", resp.StatusCode)
+	}
+
+	// TODO create entity for insertion
+	// TODO insert into db (Added++)
+	// TODO wait for spn slot
+	// TODO submit to spn
+	// TODO fetch pdf from wayback
+	// TODO store pdf in seaweed
+	// TODO extract and check PDF metadata
+	// TODO insert file into db
+	// TODO ingest PDF (Acquired++)
 	return out, nil
 }
 

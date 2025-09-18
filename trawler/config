@@ -26,3 +26,6 @@ external_task_queue = "crossref_crawl_external"
 every = "120s"
 sks3bucket = "sk-crossref"
 default_limit = 1000 # for dev; typically would be -1 for unlimited
+
+[fatcat2]
+endpoint = "https://scholar.archive.org/api/fatcat/v2"

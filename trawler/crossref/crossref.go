@@ -25,7 +25,11 @@ import (
 // - create a file entry in fatcat2
 // - extract fulltext and ingest into elasticsearch
 
-// can set up throughput tuning on a taskqueue -- could align this to SPN slots
+// TODO split out into its own package
+type Release struct {
+	Title string
+	// TODO based on djscholar model
+}
 
 // TODO design struct
 type crossrefDoc struct {

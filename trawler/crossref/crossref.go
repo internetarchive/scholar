@@ -25,11 +25,85 @@ import (
 // - create a file entry in fatcat2
 // - extract fulltext and ingest into elasticsearch
 
+var crossrefTypeMap = map[string]string{
+	// CSL types
+	"book":                "book",
+	"book-chapter":        "chapter",
+	"book-part":           "chapter",
+	"book-section":        "chapter",
+	"dataset":             "dataset",
+	"dissertation":        "thesis",
+	"edited-book":         "book",
+	"journal-article":     "article-journal",
+	"monograph":           "book",
+	"other":               "",
+	"posted-content":      "post",
+	"proceedings-article": "paper-conference",
+	"reference-book":      "book",
+	"reference-entry":     "entry",
+	"report":              "report",
+	"standard":            "standard",
+
+	// non-CSL types
+	"component":   "component",
+	"peer-review": "peer_review",
+}
+
+type Abstract struct {
+	// TODO
+}
+
+type ReleaseContrib struct {
+	// TODO
+}
+
+type ExternalID struct {
+	Type  string `json:"id_type"`
+	Value string `json:"id_value"`
+}
+
+type Container struct {
+	// TODO
+}
+
+type Citation struct {
+	// TODO
+}
+
 // TODO split out into its own package
 type Release struct {
-	Title string
-	// TODO based on djscholar model
+	Title         string
+	OriginalTitle string `json:"original_title"`
+	Subtitle      string
+	Type          string    `json:"release_type"`
+	Stage         string    `json:"release_stage"`
+	ReleaseDate   time.Time `json:"release_date"`
+	ReleaseYear   int       `json:"release_year"`
+	Volume        string
+	Issue         string
+	Pages         string
+	Language      string
+	LicenseSlug   string `json:"license_slug"`
+	Extra         map[string]any
+
+	// Foreign keys
+
+	Abstracts   []Abstract
+	Citations   []Citation
+	ContainerID string `json:"container_id"`
+	ExternalIDs []ExternalID
+	Contribs    []ReleaseContrib
+
+	// unused in xref but may want later:
+	// Pages string
+	// WithdrawnStatus string
 }
+
+// TODO abstracts
+// TODO refs
+// TODO extra
+// TODO ext ids
+// TODO contribs
 
 // TODO design struct
 type crossrefDoc struct {

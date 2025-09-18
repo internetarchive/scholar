@@ -42,8 +42,9 @@ func StartInternalWorker() error {
 	w := worker.New(c, viper.GetString("crossref.internal_task_queue"), worker.Options{})
 
 	w.RegisterWorkflow(crossrefCrawlWorkflow)
-	w.RegisterActivity(readS3Lines)
-	w.RegisterActivity(handleLine)
+	w.RegisterWorkflow(lineBatchWorkflow)
+	w.RegisterActivity(processLine)
+	w.RegisterActivity(findLineBatch)
 	//w.RegisterActivity(crawlForEntity)
 
 	log.Printf("starting worker")

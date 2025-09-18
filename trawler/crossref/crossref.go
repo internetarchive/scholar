@@ -15,6 +15,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/spf13/viper"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
@@ -23,12 +24,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-// notes from mike meeting:
-
-// long running activity that marks small amount of state: like byte offset or line offset
-// this makes activity resumable
-// will likely need to use continueasnew to avoid history limits; invoke continueasnew once some threshold of iterations is hit
-// 30k a day activity is probably fine
 // can set up throughput tuning on a taskqueue -- could align this to SPN slots
 
 func ensureNamespace(ctx context.Context, namespace string) error {
@@ -112,236 +107,82 @@ type CrossrefCrawlInput struct {
 	SKInput SKCrossrefInput
 }
 
-func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (*CrossrefCrawlResult, error) {
-	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
-	out := CrossrefCrawlResult{}
+// scrape crossref for a day's worth of metadata: huge ndjson file in s3, each line a paper-like entity
+// for each entity, create an entry in fatcat2
+// for each entity, if there's a suitable URL, try and obtain a PDF
+// for each obtained PDF
+// - extract metadata and make sure it matches the fatcat2 record
+// - create a file entry in fatcat2
+// - extract fulltext and ingest into elasticsearch
 
-	// fetch crossref metadata from the upstream API and store in s3
-
-	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
-		TaskQueue:           viper.GetString("crossref.external_task_queue"),
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	var skOut skCrossrefOutput
-	err := workflow.ExecuteActivity(ctx, skCrossref, in.SKInput).Get(ctx, &skOut)
-	if err != nil {
-		workflow.GetLogger(ctx).Error("scholkit crossref activity failed:", err)
-		return nil, err
-	}
-	workflow.GetLogger(ctx).Info("scholkit crossref s3key:", skOut.S3Key)
-
-	// read chunks of ndjson and process
-
-	ao.TaskQueue = viper.GetString("crossref.internal_task_queue")
-	// TODO ok to reuse ctx for this? Should I be creating from the initial ctx before the last WithActivityOptions?
-	ctx = workflow.WithActivityOptions(ctx, ao)
-	l := workflow.GetLogger(ctx)
-
-	var lout handleLineOutput
-	readS3In := readS3LinesInput{
-		S3Key:     skOut.S3Key,
-		LineStart: 0,
-	}
-
-	parsedSelector := workflow.NewSelector(ctx)
-	var futureCount int
-	var parseErr error
-
-	// TODO should I be considering continueasnew here?
-	for {
-		readS3Out := readS3LinesOutput{}
-		err = workflow.ExecuteActivity(ctx, readS3Lines, readS3In).Get(ctx, &readS3Out)
-		if err != nil {
-			l.Error("readS3Lines failed:", err)
-			return nil, err
-		}
-		if readS3Out.Length == 0 {
-			break
-		}
-
-		lin := handleLineInput{
-			S3Key:     readS3In.S3Key,
-			LineStart: readS3Out.LineStart,
-			Length:    readS3Out.Length,
-		}
-
-		future := workflow.ExecuteActivity(ctx, handleLine, lin)
-		parsedSelector.AddFuture(future, func(f workflow.Future) {
-			parseErr = f.Get(ctx, &lout)
-		})
-		futureCount++
-
-		if readS3Out.EOF {
-			break
-		}
-		readS3In.LineStart = readS3In.LineStart + readS3Out.Length
-	}
-
-	for range futureCount {
-		parsedSelector.Select(ctx)
-		if parseErr != nil {
-			l.Error("handleLine failed:", parseErr)
-			return nil, err
-		}
-		// TODO do something with lout
-	}
-
-	/*
-
-		crawlSelector := workflow.NewSelector(ctx)
-
-		for x := 0; x < fCount; x++ {
-			chunkSelector.Select(ctx)
-			if chunkErr != nil {
-				workflow.GetLogger(ctx).Error("chunk upload to fatcat failed:", chunkErr)
-				return nil, err
-			}
-			for _, e := range entities {
-				switch e.flavor {
-				case "release":
-					future := workflow.ExecuteActivity(ctx, crawlForEntity, e.ID)
-					crawlSelector.AddFuture(future, func(f workflow.Future) {
-						// TODO
-						return
-					})
-				default:
-					// TODO anything? possibly nothing if we switch to PG FTS
-				}
-			}
-			entities = []entity{}
-		}
-
-		// TODO handle the outcome of a crawl
-
-		// TODO activity: for each fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
-		// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
-		// TODO activity: bulk ingestion into ES of parsed stuff
-
-	*/
-	return &out, nil
+// TODO uhhh do i want this actually
+/*
+type chunkParseWorkflowInput struct {
+	Offset  int64
+	Partial []byte
 }
 
-type crawlResult struct {
+type chunkParseWorkflowOutput struct {
 	// TODO
 }
 
-func crawlForEntity(ctx context.Context, entityID uuid.UUID) (crawlResult, error) {
-	out := crawlResult{}
+func chunkParseWorkflow(ctx workflow.Context, in chunkParseWorkflowInput) (*CrossrefCrawlResult, error) {
+
+	return nil, nil
+}
+*/
+
+type lineBatchInput struct {
+	// S3Key is a key to a .ndjson file in s3 storage
+	S3Key string
+	// Offsets is a list of pairs of [ReadOffset, Length]
+	Offsets [][]int64
+}
+
+type counts struct {
+	// Ignored is the count of lines in the upstream metadata we passed on
+	Ignored int
+	// Added is the count of lines from the upstream metadata we added to Fatcat
+	Added int
+	// Acquired is the count of PDFs we acquired from the upstream metadata
+	Acquired int
+}
+
+func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts, error) {
+	out := counts{}
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 8 * 60 * 60 * time.Second,                       // TODO tune, config maybe
+		TaskQueue:           viper.GetString("crossref.internal_task_queue"), // TODO needed?
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	lin := lineInput{
+		S3Key: in.S3Key,
+	}
+	for _, offset := range in.Offsets {
+		lin.LineStart = offset[0]
+		lin.Length = offset[1]
+
+		var c counts
+
+		err := workflow.ExecuteActivity(ctx, processLine, lin).Get(ctx, &c)
+		if err != nil {
+			return out, err
+		}
+		out.Ignored += c.Ignored
+		out.Added += c.Added
+		out.Acquired += c.Acquired
+	}
 	return out, nil
 }
 
-type readS3LinesInput struct {
-	S3Key     string
-	LineStart int64
-}
-
-type readS3LinesOutput struct {
-	LineStart int64
-	Length    int64
-	EOF       bool
-}
-
-func getS3Object(ctx context.Context, s3key string) (*minio.Object, error) {
-	endpoint := viper.GetString("s3.endpoint")
-	accessKeyID := viper.GetString("s3.access_id")
-	secretAccessKey := viper.GetString("s3.secret_key")
-	// useSSL := true
-	useSSL := false // thonk
-	mc, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
-		Secure: useSSL,
-	})
-	sp := strings.SplitN(s3key, "/", 2)
-	if len(sp) != 2 {
-		return nil, errors.New("could not parse s3 key " + s3key)
-	}
-	bucket := sp[0]
-	key := sp[1]
-
-	opts := minio.GetObjectOptions{}
-	f, err := mc.GetObject(ctx, bucket, key, opts)
-	if err != nil {
-		return nil, fmt.Errorf("GetObject failed: %w", err)
-	}
-	return f, nil
-}
-
-// synchronously read chunk by chunk
-// fan-out per parsed line
-
-// readS3Lines starts reading the ndjson file at S3Key in chunks until it sees
-// a newline then returns the indices it read between (ie, the start and of a
-// line as byte offsets)
-func readS3Lines(ctx context.Context, in readS3LinesInput) (out readS3LinesOutput, err error) {
-	out = readS3LinesOutput{
-		LineStart: in.LineStart,
-	}
-
-	l := activity.GetLogger(ctx)
-	l.Info(fmt.Sprintf("doing a range read from '%s'", in.S3Key))
-
-	f, err := getS3Object(ctx, in.S3Key)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	// TODO refactor this so it's unit testable
-	chunkSize := 1024 * 10
-	readStart := in.LineStart
-
-	var length int64
-	var done bool
-
-	for !done {
-		b := make([]byte, chunkSize)
-
-		n, err := f.ReadAt(b, readStart)
-		if errors.Is(err, io.EOF) {
-			l.Debug(fmt.Sprintf("saw %d bytes and also EOF", n))
-			out.EOF = true
-			err = nil
-		}
-		if err != nil {
-			return out, fmt.Errorf("range read of '%s' failed: %w", in.S3Key, err)
-		}
-		if n == 0 {
-			// this is a weird case -- it means we never saw a newline. For now just log and move on.
-			l.Warn(fmt.Sprintf("Read 0 bytes in chunked read of %s", in.S3Key))
-			return out, nil
-		}
-
-		l.Debug(fmt.Sprintf("READ %d BYTES", n))
-
-		for x := range len(b) {
-			length++
-			if b[x] == '\n' {
-				done = true
-				break
-			}
-		}
-		readStart = readStart + int64(n)
-	}
-
-	out.Length = length
-
-	return
-}
-
-type handleLineInput struct {
+type lineInput struct {
 	S3Key     string
 	LineStart int64
 	Length    int64
 }
 
-type handleLineOutput struct {
-	FatcatID uuid.UUID
-}
-
-func handleLine(ctx context.Context, in handleLineInput) (out handleLineOutput, err error) {
-	out = handleLineOutput{}
+func processLine(ctx context.Context, in lineInput) (out counts, err error) {
+	out = counts{}
 	f, err := getS3Object(ctx, in.S3Key)
 	if err != nil {
 		return
@@ -375,8 +216,223 @@ func handleLine(ctx context.Context, in handleLineInput) (out handleLineOutput, 
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", parsed.Type, parsed.DOI))
 
 	// TODO do things
+	return out, nil
+}
+
+type findLineBatchInput struct {
+	S3Key  string
+	Offset int64
+}
+
+type findLineBatchOutput struct {
+	Offsets   [][]int64
+	BytesRead int64
+	EOF       bool
+}
+
+func findLineBatch(ctx context.Context, in findLineBatchInput) (out findLineBatchOutput, err error) {
+	out = findLineBatchOutput{}
+
+	l := activity.GetLogger(ctx)
+	l.Info(fmt.Sprintf("doing a range read from '%s'", in.S3Key))
+
+	f, err := getS3Object(ctx, in.S3Key)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	batchSize := 1000 // TODO set in config
+
+	// TODO refactor this so it's unit testable
+	chunkSize := 1024 * 100 // TODO set in config
+	out.BytesRead = in.Offset
+	curLineStart := in.Offset
+
+	var done bool
+	var curLineLength int64
+
+	for !done {
+		b := make([]byte, chunkSize)
+		n, err := f.ReadAt(b, out.BytesRead)
+		l.Debug(fmt.Sprintf("read %d bytes", n))
+		if errors.Is(err, io.EOF) {
+			l.Debug("saw EOF")
+			out.EOF = true
+			err = nil
+		}
+		if err != nil {
+			return out, fmt.Errorf("range read of '%s' failed: %w", in.S3Key, err)
+		}
+		if n == 0 {
+			return out, nil
+		}
+		for x := range n {
+			out.BytesRead++
+			curLineLength++
+			if b[x] == '\n' {
+				out.Offsets = append(out.Offsets, []int64{curLineStart, curLineLength})
+				if len(out.Offsets) == batchSize {
+					done = true
+					break
+				}
+				curLineStart = out.BytesRead
+				curLineLength = 0
+			}
+		}
+
+		if out.EOF {
+			done = true
+		}
+	}
 
 	return
+}
+
+func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts, error) {
+	workflow.GetLogger(ctx).Info("CrossrefCrawlWorkflow started.", "StartTime", workflow.Now(ctx))
+	out := counts{}
+
+	// fetch crossref metadata from the upstream API and store in s3
+
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
+		TaskQueue:           viper.GetString("crossref.external_task_queue"),
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	var skOut skCrossrefOutput
+	err := workflow.ExecuteActivity(ctx, skCrossref, in.SKInput).Get(ctx, &skOut)
+	if err != nil {
+		workflow.GetLogger(ctx).Error("scholkit crossref activity failed:", err)
+		return out, err
+	}
+	workflow.GetLogger(ctx).Info("scholkit crossref s3key:", skOut.S3Key)
+
+	ao = workflow.ActivityOptions{
+		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
+		TaskQueue:           viper.GetString("crossref.internal_task_queue"),
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	batchInput := lineBatchInput{
+		S3Key: skOut.S3Key,
+	}
+	findInput := findLineBatchInput{
+		S3Key: skOut.S3Key,
+	}
+	findOutput := findLineBatchOutput{}
+	childSelector := workflow.NewSelector(ctx)
+	var childCount int
+
+	var childErr error
+	var childCounts counts
+	for {
+		err := workflow.ExecuteActivity(ctx, findLineBatch, findInput).Get(ctx, &findOutput)
+		if err != nil {
+			return out, err
+		}
+		if len(findOutput.Offsets) > 0 {
+			findInput.Offset = findOutput.BytesRead
+			batchInput.Offsets = findOutput.Offsets
+			childWorkflowOptions := workflow.ChildWorkflowOptions{
+				ParentClosePolicy: enums.PARENT_CLOSE_POLICY_ABANDON,
+			}
+			ctx = workflow.WithChildOptions(ctx, childWorkflowOptions)
+			fut := workflow.ExecuteChildWorkflow(ctx, lineBatchWorkflow, batchInput)
+			var cwe workflow.Execution
+			err := fut.GetChildWorkflowExecution().Get(ctx, &cwe)
+			if err != nil {
+				return out, err
+			}
+			childSelector.AddFuture(fut, func(f workflow.Future) {
+				childErr = f.Get(ctx, &childCounts)
+			})
+			childCount++
+		}
+		if findOutput.EOF {
+			break
+		}
+	}
+
+	for range childCount {
+		childSelector.Select(ctx)
+		if childErr != nil {
+			return out, err
+		}
+		out.Added += childCounts.Added
+		out.Ignored += childCounts.Ignored
+		out.Acquired += childCounts.Acquired
+	}
+
+	return out, nil
+	/*
+
+			crawlSelector := workflow.NewSelector(ctx)
+
+			for x := 0; x < fCount; x++ {
+				chunkSelector.Select(ctx)
+				if chunkErr != nil {
+					workflow.GetLogger(ctx).Error("chunk upload to fatcat failed:", chunkErr)
+					return nil, err
+				}
+				for _, e := range entities {
+					switch e.flavor {
+					case "release":
+						future := workflow.ExecuteActivity(ctx, crawlForEntity, e.ID)
+						crawlSelector.AddFuture(future, func(f workflow.Future) {
+							// TODO
+							return
+						})
+					default:
+						// TODO anything? possibly nothing if we switch to PG FTS
+					}
+				}
+				entities = []entity{}
+			}
+
+			// TODO handle the outcome of a crawl
+
+			// TODO activity: for each fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
+			// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
+			// TODO activity: bulk ingestion into ES of parsed stuff
+
+		return &out, nil
+	*/
+}
+
+type crawlResult struct {
+	// TODO
+}
+
+func crawlForEntity(ctx context.Context, entityID uuid.UUID) (crawlResult, error) {
+	out := crawlResult{}
+	return out, nil
+}
+
+func getS3Object(ctx context.Context, s3key string) (*minio.Object, error) {
+	endpoint := viper.GetString("s3.endpoint")
+	accessKeyID := viper.GetString("s3.access_id")
+	secretAccessKey := viper.GetString("s3.secret_key")
+	// useSSL := true
+	useSSL := false // thonk
+	mc, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
+		Secure: useSSL,
+	})
+	sp := strings.SplitN(s3key, "/", 2)
+	if len(sp) != 2 {
+		return nil, errors.New("could not parse s3 key " + s3key)
+	}
+	bucket := sp[0]
+	key := sp[1]
+
+	opts := minio.GetObjectOptions{}
+	f, err := mc.GetObject(ctx, bucket, key, opts)
+	if err != nil {
+		return nil, fmt.Errorf("GetObject failed: %w", err)
+	}
+	return f, nil
 }
 
 type SKCrossrefInput struct {

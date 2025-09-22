@@ -27,7 +27,14 @@ import (
 // - create a file entry in fatcat2
 // - extract fulltext and ingest into elasticsearch
 
-var crossrefTypeMap = map[string]string{
+// containerTypeMap maps from fatcat release types to their assumed parent container type
+var containerTypeMap = map[string]string{
+	"article-journal":  "journal",
+	"paper-conference": "conference",
+	"book":             "book-series",
+}
+
+var releaseTypeMap = map[string]string{
 	// CSL types
 	"book":                "book",
 	"book-chapter":        "chapter",
@@ -68,17 +75,12 @@ type ExternalID struct {
 	Type  string `json:"id_type"`
 	Value string `json:"id_value"`
 }
-
-/*
-CONTAINER_TYPE_MAP: Dict[str, str] = {
-    "article-journal": "journal",
-    "paper-conference": "conference",
-    "book": "book-series",
-}
-*/
-
 type Container struct {
-	// TODO
+	ID        uuid.UUID
+	Name      string
+	Type      string `json:"container_type"`
+	Publisher string
+	ISSNL     string
 }
 
 type Citation struct {
@@ -122,11 +124,12 @@ type Release struct {
 
 // TODO design struct
 type crossrefDoc struct {
-	Title          []string
-	Type           string
+	ContainerTitle []string `json:"container-title"`
 	DOI            string
 	ISSN           []string
-	ContainerTitle []string `json:"container-title"`
+	Publisher      string
+	Title          []string
+	Type           string
 }
 
 var ignoredTypes = []string{
@@ -297,6 +300,11 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	// if things get weird we'll put some stuff in here
 	extra := map[string]any{}
+	var releaseType string
+	releaseType, ok := releaseTypeMap[record.Type]
+	if !ok {
+		return out, fmt.Errorf("found unknown crossref type '%s'", record.Type)
+	}
 
 	var containerTitle string
 
@@ -327,12 +335,19 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	if containerID == uuid.Nil {
 		if containerTitle != "" && issnl != "" {
-			c := Container{}
-			// TODO create container
+			c := Container{
+				Name:      containerTitle,
+				ISSNL:     issnl,
+				Publisher: record.Publisher,
+				Type:      containerTypeMap[releaseType],
+			}
+			containerID, err = createContainer(client, c)
 		} else if containerTitle != "" {
 			extra["container_name"] = containerTitle
 		}
 	}
+
+	fmt.Println(containerID)
 
 	// TODO create entity for insertion
 	// TODO insert into db (Added++)
@@ -344,6 +359,13 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// TODO insert file into db
 	// TODO ingest PDF (Acquired++)
 	return out, nil
+}
+
+// createContainer creates a new container in fc2 and returns its ID
+func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
+	// TODO set up auth
+	// TODO do post
+	return uuid.Nil, nil
 }
 
 func lookupContainer(c *http.Client, issnl string) (uuid.UUID, error) {

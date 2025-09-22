@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/issn"
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
@@ -36,17 +38,22 @@ var crossrefTypeMap = map[string]string{
 	"edited-book":         "book",
 	"journal-article":     "article-journal",
 	"monograph":           "book",
-	"other":               "",
 	"posted-content":      "post",
 	"proceedings-article": "paper-conference",
-	"reference-book":      "book",
-	"reference-entry":     "entry",
 	"report":              "report",
-	"standard":            "standard",
+
+	// considering switching to ignored types pending Jefferson convo/research
+
+	// looking at releases with no types and "crossref" in the extra_json in
+	// fatcat1, this seems to often describe figures
+	// TODO waiting on jefferson's call
+	"other":           "",
+	"reference-book":  "book",
+	"reference-entry": "entry",
+	"standard":        "standard",
 
 	// non-CSL types
-	"component":   "component",
-	"peer-review": "peer_review",
+	"component": "component",
 }
 
 type Abstract struct {
@@ -61,6 +68,14 @@ type ExternalID struct {
 	Type  string `json:"id_type"`
 	Value string `json:"id_value"`
 }
+
+/*
+CONTAINER_TYPE_MAP: Dict[str, str] = {
+    "article-journal": "journal",
+    "paper-conference": "conference",
+    "book": "book-series",
+}
+*/
 
 type Container struct {
 	// TODO
@@ -107,9 +122,11 @@ type Release struct {
 
 // TODO design struct
 type crossrefDoc struct {
-	Title []string
-	Type  string
-	DOI   string
+	Title          []string
+	Type           string
+	DOI            string
+	ISSN           []string
+	ContainerTitle []string `json:"container-title"`
 }
 
 var ignoredTypes = []string{
@@ -122,6 +139,7 @@ var ignoredTypes = []string{
 	"book-set",
 	"book-track",
 	"proceedings-series",
+	"peer-review",
 }
 
 func (c crossrefDoc) IsSkippable() bool {
@@ -180,6 +198,15 @@ type counts struct {
 	Acquired int
 }
 
+func (c counts) Add(other counts) counts {
+	return counts{
+		Skipped:  c.Skipped + other.Skipped,
+		Ignored:  c.Ignored + other.Ignored,
+		Added:    c.Added + other.Added,
+		Acquired: c.Acquired + other.Acquired,
+	}
+}
+
 type lineBatchInput struct {
 	// S3Key is a key to a .ndjson file in s3 storage
 	S3Key string
@@ -207,9 +234,7 @@ func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts, error) 
 		if err != nil {
 			return out, err
 		}
-		out.Ignored += c.Ignored
-		out.Added += c.Added
-		out.Acquired += c.Acquired
+		out = out.Add(c)
 	}
 	return out, nil
 }
@@ -220,6 +245,7 @@ type lineInput struct {
 	Length    int64
 }
 
+// TODO split this up into smaller activities
 func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	out = counts{}
 	f, err := getS3Object(ctx, in.S3Key)
@@ -240,18 +266,18 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	l := activity.GetLogger(ctx)
 	//l.Debug(string(lineb))
 
-	var parsed crossrefDoc
+	var record crossrefDoc
 
-	err = json.Unmarshal(lineb, &parsed)
+	err = json.Unmarshal(lineb, &record)
 	if err != nil {
 		return
 	}
 
-	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", parsed.Type, parsed.DOI))
+	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", record.Type, record.DOI))
 
 	// Should we skip even checking the DOI?
 
-	if parsed.IsSkippable() {
+	if record.IsSkippable() {
 		out.Skipped++
 		return out, nil
 	}
@@ -259,29 +285,53 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// Check the DOI
 
 	client := &http.Client{}
-	// TODO http client for fatcat2
-	fc2url := viper.GetString("fatcat2.endpoint")
-	req, err := http.NewRequest("GET", fc2url+"/release/lookup", nil)
+	found, err := isExistingDOI(client, record.DOI)
 	if err != nil {
-		panic(err)
-	}
-	q := req.URL.Query()
-	q.Add("id_type", "doi")
-	q.Add("id_value", parsed.DOI)
-	req.URL.RawQuery = q.Encode()
-	resp, err := client.Do(req)
-	if err != nil {
-		return out, fmt.Errorf("fc2 lookup failed for '%s': %w", parsed.DOI, err)
+		return out, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		// We already know about this DOI; bail. In the future we may attempt updates.
+	if found {
 		out.Ignored++
 		return out, nil
 	}
 
-	if resp.StatusCode != 404 {
-		return out, fmt.Errorf("did not get 200 nor 404 from fc2 api: %d", resp.StatusCode)
+	// if things get weird we'll put some stuff in here
+	extra := map[string]any{}
+
+	var containerTitle string
+
+	if len(record.ContainerTitle) > 0 {
+		// TODO fatcat importer is using ftfy to clean this value up; we can do
+		// that on the server side on container creation.
+		// TODO fatcat importer was arbitrarily using the first container title in
+		// the list so I've continued that practice but it feels weird
+		containerTitle = record.ContainerTitle[0]
+	}
+
+	var issnl string
+	for _, i := range record.ISSN {
+		issnl = issn.ISSN2ISSNL(i)
+		if issnl != "" {
+			break
+		}
+	}
+
+	containerID := uuid.Nil
+
+	if issnl != "" {
+		containerID, err = lookupContainer(client, issnl)
+		if err != nil {
+			return out, err
+		}
+	}
+
+	if containerID == uuid.Nil {
+		if containerTitle != "" && issnl != "" {
+			c := Container{}
+			// TODO create container
+		} else if containerTitle != "" {
+			extra["container_name"] = containerTitle
+		}
 	}
 
 	// TODO create entity for insertion
@@ -294,6 +344,75 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// TODO insert file into db
 	// TODO ingest PDF (Acquired++)
 	return out, nil
+}
+
+func lookupContainer(c *http.Client, issnl string) (uuid.UUID, error) {
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/container/lookup", nil)
+	if err != nil {
+		panic(err)
+	}
+
+	q := req.URL.Query()
+	q.Add("id_type", "issnl")
+	q.Add("id_value", issnl)
+	req.URL.RawQuery = q.Encode()
+	resp, err := c.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", issnl, err)
+	}
+
+	if resp.StatusCode == 404 {
+		return uuid.Nil, nil
+	}
+
+	if resp.StatusCode != 200 {
+		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
+			issnl, resp.StatusCode)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	var p struct {
+		ID uuid.UUID
+	}
+
+	err = json.Unmarshal(bs, &p)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", issnl, err)
+	}
+
+	return p.ID, nil
+}
+
+func isExistingDOI(c *http.Client, doi string) (bool, error) {
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/release/lookup", nil)
+	if err != nil {
+		panic(err)
+	}
+	q := req.URL.Query()
+	q.Add("id_type", "doi")
+	q.Add("id_value", doi)
+	req.URL.RawQuery = q.Encode()
+	resp, err := c.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("fc2 lookup failed for '%s': %w", doi, err)
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		return true, nil
+	}
+
+	if resp.StatusCode != 404 {
+		err = fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
+			doi, resp.StatusCode)
+	}
+
+	return false, err
 }
 
 type findLineBatchInput struct {
@@ -437,9 +556,7 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 		if childErr != nil {
 			return out, err
 		}
-		out.Added += childCounts.Added
-		out.Ignored += childCounts.Ignored
-		out.Acquired += childCounts.Acquired
+		out = out.Add(childCounts)
 		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Ignored))
 	}
 

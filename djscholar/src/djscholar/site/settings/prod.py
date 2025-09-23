@@ -25,7 +25,7 @@ DATABASES = {
 }
 
 sentry_sdk.init(
-    dsn="https://a24be9d783154fd88ce7c386e7165d2b@sentry.archive-it.org/28",
+    dsn="https://c318626d530b3320948be1032ae0546f@sentry.archive.org/52",
     integrations=[DjangoIntegration()],
     environment="production",
 

@@ -23,6 +23,7 @@ DATABASES = {
         'PASSWORD': os.environ["FATCAT_DB_PASSWORD"],
         'NAME': 'fatcat2',
         'HOST': 'pg.scholar.archive.org',
+        'DISABLE_SERVER_SIDE_CURSORS': True,
     }
 }
 

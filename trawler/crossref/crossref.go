@@ -1,6 +1,7 @@
 package crossref
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -76,11 +77,14 @@ type ExternalID struct {
 	Value string `json:"id_value"`
 }
 type Container struct {
-	ID        uuid.UUID
-	Name      string
-	Type      string `json:"container_type"`
-	Publisher string
-	ISSNL     string
+	ID        uuid.UUID `json:"id"`
+	Created   time.Time `json:"created"`
+	Updated   time.Time `json:"updated"`
+	Name      string    `json:"name"`
+	Type      string    `json:"container_type"`
+	Publisher string    `json:"publisher"`
+	ISSNL     string    `json:"issnl"`
+	Source    string    `json:"source"`
 }
 
 type Citation struct {
@@ -190,7 +194,7 @@ type CrossrefCrawlInput struct {
 	SKInput SKCrossrefInput
 }
 
-type counts struct {
+type releaseCounts struct {
 	// Skipped is the count of lines in the upstream we knew we would never want
 	Skipped int
 	// Ignored is the count of lines in the upstream metadata we were already aware of
@@ -201,12 +205,32 @@ type counts struct {
 	Acquired int
 }
 
+type containerCounts struct {
+	// Ignored is the count of containers fatcat already knew about
+	Ignored int
+	// Added is the count of containers we created in fatcat
+	Added int
+	// Skipped is the count of containers we did not create because of data issues
+	Skipped int
+}
+
+type counts struct {
+	Releases   releaseCounts
+	Containers containerCounts
+}
+
 func (c counts) Add(other counts) counts {
 	return counts{
-		Skipped:  c.Skipped + other.Skipped,
-		Ignored:  c.Ignored + other.Ignored,
-		Added:    c.Added + other.Added,
-		Acquired: c.Acquired + other.Acquired,
+		Releases: releaseCounts{
+			Skipped:  c.Releases.Skipped + other.Releases.Skipped,
+			Ignored:  c.Releases.Ignored + other.Releases.Ignored,
+			Added:    c.Releases.Added + other.Releases.Added,
+			Acquired: c.Releases.Acquired + other.Releases.Acquired,
+		},
+		Containers: containerCounts{
+			Ignored: c.Containers.Ignored + other.Containers.Ignored,
+			Added:   c.Containers.Added + other.Containers.Added,
+		},
 	}
 }
 
@@ -281,7 +305,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// Should we skip even checking the DOI?
 
 	if record.IsSkippable() {
-		out.Skipped++
+		out.Releases.Skipped++
 		return out, nil
 	}
 
@@ -294,7 +318,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	if found {
-		out.Ignored++
+		out.Releases.Ignored++
 		return out, nil
 	}
 
@@ -342,12 +366,23 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 				Type:      containerTypeMap[releaseType],
 			}
 			containerID, err = createContainer(client, c)
+			if err != nil {
+				return out, err
+			}
+			out.Containers.Added++
 		} else if containerTitle != "" {
 			extra["container_name"] = containerTitle
+			out.Containers.Skipped++
 		}
+	} else {
+		out.Containers.Ignored++
 	}
 
 	fmt.Println(containerID)
+
+	// TODO api seems to not be setting created properly
+	// TODO why are updated/created even required?
+	// TODO how on earth is legacy_rev getting set?
 
 	// TODO create entity for insertion
 	// TODO insert into db (Added++)
@@ -363,10 +398,39 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 // createContainer creates a new container in fc2 and returns its ID
 func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
-	// TODO set up auth
-	// TODO do post
-	return uuid.Nil, nil
+	// TODO consult fc1 db first
+	// if found, insert that data and return the ID
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	c.Source = "dev" // TODO
+	c.ID = uuid.New()
+
+	bs, err := json.Marshal(c)
+
+	body := bytes.NewBuffer(bs)
+	req, err := http.NewRequest("POST", fc2url+"/container", body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
+	}
+
+	if resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", c, resp.StatusCode, b)
+	}
+
+	return c.ID, nil
 }
+
+// TODO make a client wrapper
+//type FC2Client http.Client
 
 func lookupContainer(c *http.Client, issnl string) (uuid.UUID, error) {
 	fc2url := viper.GetString("fatcat2.endpoint")
@@ -579,10 +643,10 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 			return out, err
 		}
 		out = out.Add(childCounts)
-		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Ignored))
+		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Releases.Ignored))
 	}
 
-	l.Info(fmt.Sprintf("found and ignored %d lines", out.Ignored))
+	l.Info(fmt.Sprintf("found and ignored %d lines", out.Releases.Ignored))
 
 	return out, nil
 

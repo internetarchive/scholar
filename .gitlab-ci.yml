@@ -1,0 +1,23 @@
+---
+build-grobid:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: always
+    - when: never
+  variables:
+    BUILD_DIR: ia_grobid_build
+    GROBID_VERSION: 0.8.2
+    GROBID_REPO: https://github.com/kermitt2/grobid.git
+  script:
+    - mkdir $BUILD_DIR
+    - git clone --branch $GROBID_VERSION --single-branch $GROBID_REPO
+    - cd grobid
+    - chmod +x gradlew
+    - ./gradlew assemble
+    - mv grobid-service/build/distributions/*.zip ../$BUILD_DIR
+    - mv grobid-home/build/distributions/*.zip ../$BUILD_DIR
+    - cd ..
+    - rm -fr grobid
+  artifacts:
+    paths:
+      - $BUILD_DIR/*.zip

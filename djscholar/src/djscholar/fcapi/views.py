@@ -17,8 +17,10 @@ from ninja_apikey.security import APIKeyAuth
 import djscholar.fcapi.models as m
 from djscholar.fcapi.fcid import fcid2uuid
 
-COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra",
-                        "hidden_reason", "hidden_when"]
+COMMON_ENTITY_FIELDS = ["id", "source", "hidden_reason", "hidden_when"]
+
+COMMON_ENTITY_OPTIONAL_FIELDS = ["created", "updated", "extra", "hidden_reason",
+                                 "hidden_when"]
 
 v2api = NinjaAPI()
 api_auth = APIKeyAuth()  # NB: uses X-API-Key header. use admin to create keys.
@@ -149,10 +151,12 @@ class ReleaseSchema(ModelSchema):
     class Meta:
         model = m.Release
         fields = COMMON_ENTITY_FIELDS + ["title", "original_title", "subtitle", "release_type",
-                                       "release_stage", "release_date", "release_year",
-                                       "volume", "issue", "pages", "number", "version",
-                                       "publisher", "language", "license_slug",
-                                       "withdrawn_status", "refs",]
+                                         "release_stage", "release_date", "release_year",
+                                         "volume", "issue", "pages", "number", "version",
+                                         "publisher", "language", "license_slug",
+                                         "withdrawn_status", "refs",]
+        optional_fields = COMMON_ENTITY_OPTIONAL_FIELDS
+
 
 # TODO annoying name thing
 class WebcaptureCDXSchema(ModelSchema):
@@ -160,8 +164,9 @@ class WebcaptureCDXSchema(ModelSchema):
 
     class Meta:
         model = m.WebcaptureCDX
-        fields=["surt", "captured", "url", "mimetype", "status_code",
-                "sha1", "sha256", "size_bytes"]
+        fields = ["surt", "captured", "url", "mimetype", "status_code",
+                  "sha1", "sha256", "size_bytes"]
+
 
 # TODO annoying name thing
 class WebcaptureURLSchema(ModelSchema):
@@ -181,6 +186,7 @@ class WebcaptureSchema(ModelSchema):
     class Meta:
         model = m.Webcapture
         fields = COMMON_ENTITY_FIELDS + ["original_url", "captured"]
+        optional_fields = COMMON_ENTITY_OPTIONAL_FIELDS
 
 
 ContainerSchema = create_schema(m.Container,
@@ -188,11 +194,13 @@ ContainerSchema = create_schema(m.Container,
                                 + ["name", "container_type", "publisher",
                                    "issnl", "issne", "issnp", "wikidata_qid",])
 
-WorkSchema = create_schema(m.Work, fields=COMMON_ENTITY_FIELDS)
+WorkSchema = create_schema(m.Work, fields=COMMON_ENTITY_FIELDS,
+                           optional_fields=COMMON_ENTITY_OPTIONAL_FIELDS)
 
 CreatorSchema = create_schema(m.Creator, fields=COMMON_ENTITY_FIELDS
                               + ["display_name", "given_name", "surname",
-                                 "orcid"])
+                                 "orcid"],
+                              optional_fields=COMMON_ENTITY_OPTIONAL_FIELDS)
 
 
 class FileURLSchema(ModelSchema):
@@ -211,6 +219,7 @@ class FileSchema(ModelSchema):
         model = m.File
         fields = COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256", "md5",
                                          "mimetype"]
+        optional_fields = COMMON_ENTITY_OPTIONAL_FIELDS
 
 
 type EntitySchema = ReleaseSchema\

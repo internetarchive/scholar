@@ -51,8 +51,7 @@ class Entity(models.Model):
     extra = models.JSONField(
             help_text="arbitrary storage for additional key/value data found in upstream sources",
             null=True, blank=True)
-    # TODO will I want an index on this?
-    legacy_rev = models.UUIDField(default=uuid.uuid4, editable=False)
+    legacy_rev = models.UUIDField(default=None, null=True, blank=True)
 
     class Meta:
         abstract = True

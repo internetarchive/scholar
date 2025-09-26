@@ -1298,6 +1298,7 @@ class TestWebcaptureRoutes(EntityCRUDTestCase):
 
         self.assertEqual(m.Webcapture.objects.filter(id=self.entity.id).count(), 0)
 
+
 class ChangelogTests(TestCase):
     def _run(self, model_name: str, model_factory: DjangoModelFactory) -> None:
         today = []
@@ -1368,7 +1369,7 @@ class ChangelogTests(TestCase):
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertSetEqual(
                 set([e["id"] for e in response.data["items"]]),
-                set([str(e.id) for e in past])|set([str(e.id) for e in today]))
+                set([str(e.id) for e in past]) | set([str(e.id) for e in today]))
 
     def test_release_changelog(self):
         self._run("release", ReleaseFactory)

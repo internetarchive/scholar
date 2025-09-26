@@ -17,7 +17,8 @@ from ninja_apikey.security import APIKeyAuth
 import djscholar.fcapi.models as m
 from djscholar.fcapi.fcid import fcid2uuid
 
-COMMON_ENTITY_FIELDS = ["id", "source", "hidden_reason", "hidden_when"]
+COMMON_ENTITY_FIELDS = ["id", "created", "updated", "extra", "source",
+                        "hidden_reason", "hidden_when"]
 
 COMMON_ENTITY_OPTIONAL_FIELDS = ["created", "updated", "extra", "hidden_reason",
                                  "hidden_when"]

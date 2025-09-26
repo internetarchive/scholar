@@ -17,10 +17,11 @@ from ninja_apikey.security import APIKeyAuth
 import djscholar.fcapi.models as m
 from djscholar.fcapi.fcid import fcid2uuid
 
-COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra", "hidden_reason", "hidden_when"]
+COMMON_ENTITY_FIELDS = ["id", "created", "updated", "source", "extra",
+                        "hidden_reason", "hidden_when"]
 
 v2api = NinjaAPI()
-api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
+api_auth = APIKeyAuth()  # NB: uses X-API-Key header. use admin to create keys.
 
 # crawl MVP
 # TODO touch update column whenever an update route called
@@ -35,9 +36,11 @@ api_auth = APIKeyAuth() # NB: uses X-API-Key header. use admin to create keys.
 # TODO should support the creation of creators via release creation/update?
 # TODO use tags to split auth/unauth sections out in docs
 
-# NB I hate that I have to use response= in addition to a return type. the latter should imply the former.
+# NB I hate that I have to use response= in addition to a return type. the
+# latter should imply the former.
 
 # In/Out schemas
+
 
 class ContainerLookup(Schema):
     id_type: Literal["issnl", "issne", "issnp", "wikidata_qid", "legacy_ident"]
@@ -59,7 +62,9 @@ class FileLookup(Schema):
 
 
 class ReleaseLookup(Schema):
-    id_type: Literal[*[t[0] for t in m.RELEASE_EXT_ID_TYPES] + ["legacy_ident"]]
+    id_type: Literal[*[t[0]
+                       for t
+                       in m.RELEASE_EXT_ID_TYPES] + ["legacy_ident"]]
     id_value: str
 
 
@@ -80,10 +85,11 @@ class LegacyLookup(Schema):
 # upstream the option to just explicitly name things when using the class based
 # definition via the meta class.
 
+
 class ReleaseExtIdSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.
-    release_id: UUID|None
+    release_id: UUID | None
 
     class Meta:
         model = m.ReleaseExtId
@@ -93,23 +99,24 @@ class ReleaseExtIdSchema(ModelSchema):
 class ReleaseContribSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.
-    release_id: UUID|None
-    creator_id: UUID|None
+    release_id: UUID | None
+    creator_id: UUID | None
 
     class Meta:
         model = m.ReleaseContrib
-        fields = ["raw_name", "given_name", "surname", "role", "raw_affiliation", "position",
-                  "extra"]
+        fields = ["raw_name", "given_name", "surname", "role",
+                  "raw_affiliation", "position", "extra"]
 
 
 class ReleaseAbstractSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.
-    release_id: UUID|None
+    release_id: UUID | None
 
     class Meta:
         model = m.ReleaseAbstract
         fields = ["sha1", "content", "language", "mimetype"]
+
 
 class ReleaseRefSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
@@ -174,15 +181,17 @@ class WebcaptureSchema(ModelSchema):
         model = m.Webcapture
         fields = COMMON_ENTITY_FIELDS + ["original_url", "captured"]
 
+
 ContainerSchema = create_schema(m.Container,
-                                fields=COMMON_ENTITY_FIELDS\
-                                       + ["name", "container_type", "publisher", "issnl",
-                                          "issne", "issnp", "wikidata_qid",])
+                                fields=COMMON_ENTITY_FIELDS
+                                + ["name", "container_type", "publisher",
+                                   "issnl", "issne", "issnp", "wikidata_qid",])
 
 WorkSchema = create_schema(m.Work, fields=COMMON_ENTITY_FIELDS)
 
-CreatorSchema = create_schema(m.Creator, fields=COMMON_ENTITY_FIELDS+["display_name", "given_name",
-                                                                    "surname", "orcid"])
+CreatorSchema = create_schema(m.Creator, fields=COMMON_ENTITY_FIELDS
+                              + ["display_name", "given_name", "surname",
+                                 "orcid"])
 
 
 class FileURLSchema(ModelSchema):
@@ -203,7 +212,10 @@ class FileSchema(ModelSchema):
                                          "mimetype"]
 
 
-type EntitySchema = ReleaseSchema|CreatorSchema|ContainerSchema|WorkSchema|FileSchema|WebcaptureSchema
+type EntitySchema = ReleaseSchema\
+        | CreatorSchema | ContainerSchema\
+        | WorkSchema | FileSchema | WebcaptureSchema
+
 
 @v2api.api_operation(["HEAD", "GET"], "/health")
 def status(request) -> HttpResponse:
@@ -216,6 +228,7 @@ def status(request) -> HttpResponse:
     return HttpResponse(status=HTTPStatus.OK)
 
 # Container routes
+
 
 @v2api.get("/container/lookup")
 def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema:
@@ -230,10 +243,12 @@ def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema
         raise Http404(f"no container found with {lookup.id_type} of {lookup.id_value}")
     return ContainerSchema.from_orm(cs[0])
 
+
 @v2api.get("/container/{ident}")
 def get_container(request, ident: UUID) -> ContainerSchema:
     """Get a single container by its ID."""
     return ContainerSchema.from_orm(get_object_or_404(m.Container, id=ident))
+
 
 @v2api.get("/container/{ident}/releases", response=list[ReleaseSchema])
 @paginate
@@ -253,12 +268,14 @@ def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     m.Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=HTTPStatus.CREATED)
 
+
 @v2api.post("/containers", auth=api_auth)
 def bulk_create_containers(request, containers_in: list[ContainerSchema]) -> HttpResponse:
     """Bulk create a list of containers. Functionally equivalent to calling
     POST /container repeatedly."""
     m.Container.objects.bulk_create([m.Container(**cin.dict()) for cin in containers_in])
     return v2api.create_response(request, "containers created", status=HTTPStatus.CREATED)
+
 
 @v2api.put("/container", auth=api_auth)
 def update_container(request, container_in: ContainerSchema) -> HttpResponse:
@@ -282,6 +299,7 @@ def update_container(request, container_in: ContainerSchema) -> HttpResponse:
     entity.save()
 
     return v2api.create_response(request, "release replaced with new content", status=code)
+
 
 @v2api.delete("/container/{ident}", auth=api_auth)
 def delete_container(request, ident: UUID) -> ContainerSchema:
@@ -355,6 +373,7 @@ def get_release(request, ident: UUID) -> ReleaseSchema:
     """Get a single release by its ID."""
     return ReleaseSchema.from_orm(get_object_or_404(m.Release, id=ident))
 
+
 @v2api.post("/release", auth=api_auth)
 def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """Create a new release."""
@@ -388,6 +407,7 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
 
     return v2api.create_response(request, "release created", status=HTTPStatus.CREATED)
 
+
 @v2api.get("/release/{ident}/container")
 def get_release_container(request, ident: UUID) -> ContainerSchema:
     """Get a release's container (ie, journal)"""
@@ -396,6 +416,7 @@ def get_release_container(request, ident: UUID) -> ContainerSchema:
         raise Http404(f"release {ident} has no associated container")
     return ContainerSchema.from_orm(cs[0])
 
+
 @v2api.get("/release/{ident}/work")
 def get_release_work(request, ident: UUID) -> WorkSchema:
     """Get a the work that represents the platonic version of this release."""
@@ -403,10 +424,14 @@ def get_release_work(request, ident: UUID) -> WorkSchema:
     # do not need to check length; work_id is required in schema
     return WorkSchema.from_orm(ws[0])
 
+
 @v2api.get("/release/{ident}/files", response=list[FileSchema])
 @paginate
 def get_release_files(request, ident: UUID) -> list[FileSchema]:
-    return [FileSchema.from_orm(e) for e in m.File.objects.filter(releasefile__release_id=ident)]
+    return [FileSchema.from_orm(e)
+            for e
+            in m.File.objects.filter(releasefile__release_id=ident)]
+
 
 @v2api.get("/release/{ident}/contribs", response=list[ReleaseContribSchema])
 @paginate
@@ -418,10 +443,14 @@ def get_release_contribs(request, ident: UUID) -> list[ReleaseContribSchema]:
     return [ReleaseContribSchema.from_orm(rc)
             for rc in m.ReleaseContrib.objects.filter(release_id=ident)]
 
+
 @v2api.get("/release/{ident}/webcaptures", response=list[WebcaptureSchema])
 @paginate
 def get_release_webcaptures(request, ident: UUID) -> list[WebcaptureSchema]:
-    return [WebcaptureSchema.from_orm(wc) for wc in m.Webcapture.objects.filter(release_id=ident)]
+    return [WebcaptureSchema.from_orm(wc)
+            for wc
+            in m.Webcapture.objects.filter(release_id=ident)]
+
 
 @v2api.delete("/release/{ident}", auth=api_auth)
 def delete_release(request, ident: UUID) -> ReleaseSchema:
@@ -430,6 +459,7 @@ def delete_release(request, ident: UUID) -> ReleaseSchema:
     out = ReleaseSchema.from_orm(r)
     r.delete()
     return out
+
 
 @v2api.put("/release", auth=api_auth)
 def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
@@ -480,6 +510,7 @@ def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
 
     return v2api.create_response(request, "release replaced with new content", status=code)
 
+
 @v2api.post("/releases", auth=api_auth)
 def bulk_create_releases(request, releases_in: list[ReleaseSchema]) -> HttpResponse:
     """Bulk create a list of releases. Functionally equivalent to calling
@@ -523,10 +554,12 @@ def lookup_work(request, lookup: Query[LegacyLookup]) -> WorkSchema:
     else:
         raise NotImplementedError()
 
+
 @v2api.get("/work/{ident}")
 def get_work(request, ident: UUID) -> WorkSchema:
     """Get a work (collection of releases) by its ID"""
     return WorkSchema.from_orm(get_object_or_404(m.Work, id=ident))
+
 
 @v2api.get("/work/{ident}/releases", response=list[ReleaseSchema])
 @paginate
@@ -538,9 +571,11 @@ def get_work_releases(request, ident: UUID) -> list[ReleaseSchema]:
 def create_work(request) -> HttpResponse:
     return v2api.create_response(request, "create not supported for works; works are created via releases", status=HTTPStatus.METHOD_NOT_ALLOWED)
 
+
 @v2api.post("/works", auth=api_auth, include_in_schema=False)
 def bulk_create_works(request) -> HttpResponse:
     return v2api.create_response(request, "bulk create not supported for works; works are created via releases", status=HTTPStatus.METHOD_NOT_ALLOWED)
+
 
 @v2api.delete("/work/{ident}", auth=api_auth)
 def delete_work(request, ident: UUID) -> WorkSchema:
@@ -549,6 +584,7 @@ def delete_work(request, ident: UUID) -> WorkSchema:
     out = WorkSchema.from_orm(entity)
     entity.delete()
     return out
+
 
 @v2api.put("/work", auth=api_auth)
 def update_work(request, work_in: WorkSchema) -> HttpResponse:
@@ -585,6 +621,7 @@ def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
         raise Http404(f"no creator found with {lookup.id_type} of {lookup.id_value}")
     return CreatorSchema.from_orm(es[0])
 
+
 @v2api.get("/creator/{ident}/releases", response=list[ReleaseSchema])
 @paginate
 def get_creator_releases(request, ident: UUID) -> list[ReleaseSchema]:
@@ -594,9 +631,11 @@ def get_creator_releases(request, ident: UUID) -> list[ReleaseSchema]:
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
             contribs__creator_id=ident)]
 
+
 @v2api.get("/creator/{ident}")
 def get_creator(request, ident: UUID) -> CreatorSchema:
     return CreatorSchema.from_orm(get_object_or_404(m.Creator, id=ident))
+
 
 @v2api.post("/creator", auth=api_auth)
 def create_creator(request, creator_in: CreatorSchema) -> HttpResponse:
@@ -608,6 +647,7 @@ def create_creator(request, creator_in: CreatorSchema) -> HttpResponse:
                                      status=HTTPStatus.BAD_REQUEST)
     m.Creator(**creator_in.dict()).save()
     return v2api.create_response(request, "creator created", status=HTTPStatus.CREATED)
+
 
 @v2api.put("/creator", auth=api_auth)
 def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
@@ -628,6 +668,7 @@ def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
 
     return v2api.create_response(request, "creator replaced with new content", status=code)
 
+
 @v2api.post("/creators", auth=api_auth)
 def bulk_create_creators(request, creators_in: list[CreatorSchema]) -> HttpResponse:
     m.Creator.objects.bulk_create([m.Creator(**cin.dict()) for cin in creators_in])
@@ -645,6 +686,7 @@ def delete_creator(request, ident: UUID) -> HttpResponse:
 
 # File routes
 
+
 @v2api.get("/file/lookup")
 def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
     """Look up a file by checksum."""
@@ -657,6 +699,7 @@ def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
         raise Http404(f"no file found with {lookup.id_type} of {lookup.id_value}")
     return FileSchema.from_orm(es[0])
 
+
 @v2api.get("/file/{ident}/releases", response=list[ReleaseSchema])
 @paginate
 def get_file_releases(request, ident: UUID) -> list[ReleaseSchema]:
@@ -664,9 +707,11 @@ def get_file_releases(request, ident: UUID) -> list[ReleaseSchema]:
     return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
         releasefile__file_id=ident)]
 
+
 @v2api.get("/file/{ident}")
 def get_file(request, ident: UUID) -> FileSchema:
     return FileSchema.from_orm(get_object_or_404(m.File, id=ident))
+
 
 @v2api.post("/file", auth=api_auth)
 def create_file(request, file_in: FileSchema) -> HttpResponse:
@@ -721,6 +766,7 @@ def update_file(request, file_in: FileSchema) -> HttpResponse:
 
     return v2api.create_response(request, "file replaced with new content", status=code)
 
+
 @v2api.post("/files", auth=api_auth)
 def bulk_create_files(request, files_in: list[FileSchema]) -> HttpResponse:
     file_kwargs = []
@@ -739,6 +785,7 @@ def bulk_create_files(request, files_in: list[FileSchema]) -> HttpResponse:
                 [m.ReleaseFile(**rfile) for rfile in rfiles])
     return v2api.create_response(request, "files created", status=HTTPStatus.CREATED)
 
+
 @v2api.delete("/file/{ident}", auth=api_auth)
 def delete_file(request, ident: UUID) -> HttpResponse:
     """Delete a file record. Does not delete associated releases. Actual
@@ -750,6 +797,7 @@ def delete_file(request, ident: UUID) -> HttpResponse:
 
 # Webcapture routes
 
+
 @v2api.get("/webcapture/lookup")
 def lookup_webcapture(request, lookup: Query[LegacyLookup]) -> WebcaptureSchema:
     """Look up a webcapture by its legacy ID."""
@@ -759,13 +807,16 @@ def lookup_webcapture(request, lookup: Query[LegacyLookup]) -> WebcaptureSchema:
     else:
         raise NotImplementedError()
 
+
 @v2api.get("/webcapture/{ident}/release")
 def get_webcapture_release(request, ident: UUID) -> ReleaseSchema:
     return ReleaseSchema.from_orm(get_object_or_404(m.Webcapture, id=ident).release)
 
+
 @v2api.get("/webcapture/{ident}")
 def get_webcapture(request, ident: UUID) -> WebcaptureSchema:
     return WebcaptureSchema.from_orm(get_object_or_404(m.Webcapture, id=ident))
+
 
 @v2api.post("/webcapture", auth=api_auth)
 def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
@@ -786,6 +837,7 @@ def create_webcapture(request, webcapture_in: WebcaptureSchema) -> HttpResponse:
                 [m.WebcaptureCDX(**line|{"webcapture_id":wc.id}) for line in cdx_lines])
     return v2api.create_response(request, "webcapture created", status=HTTPStatus.CREATED)
 
+
 @v2api.post("/webcaptures", auth=api_auth)
 def bulk_create_webcaptures(request, webcaptures_in: list[WebcaptureSchema]) -> HttpResponse:
     webcapture_kwargs = []
@@ -803,6 +855,7 @@ def bulk_create_webcaptures(request, webcaptures_in: list[WebcaptureSchema]) -> 
         m.WebcaptureCDX.objects.bulk_create([m.WebcaptureCDX(**line) for line in cdx_lines])
 
     return v2api.create_response(request, "webcaptures created", status=HTTPStatus.CREATED)
+
 
 @v2api.put("/webcapture", auth=api_auth)
 def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
@@ -832,6 +885,7 @@ def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
 
     return v2api.create_response(request, "webcapture replaced with new content", status=code)
 
+
 @v2api.delete("/webcapture/{ident}", auth=api_auth)
 def delete_webcapture(request, ident: UUID) -> WebcaptureSchema:
     entity = get_object_or_404(m.Webcapture, id=ident)
@@ -841,9 +895,10 @@ def delete_webcapture(request, ident: UUID) -> WebcaptureSchema:
 
 # Changelog routes
 
+
 class ChangelogQuery(pydantic.BaseModel):
     start: Annotated[datetime.date, pydantic.Field(default_factory=datetime.date.today)]
-    window: datetime.timedelta|None = datetime.timedelta(days=1)
+    window: datetime.timedelta | None = datetime.timedelta(days=1)
 
     @pydantic.field_validator("window", mode="after")
     @classmethod
@@ -851,7 +906,6 @@ class ChangelogQuery(pydantic.BaseModel):
         if value > datetime.timedelta(days=30):
             raise ValueError("max window size is 30d")
         return value
-
 
 
 def changelog(cq: ChangelogQuery, model: m.Entity, es: EntitySchema) -> list[EntitySchema]:
@@ -864,6 +918,7 @@ def changelog(cq: ChangelogQuery, model: m.Entity, es: EntitySchema) -> list[Ent
                 updated__range=[
                     start_dt-cq.window,
                     start_dt+datetime.timedelta(days=1)]).order_by("-updated")]
+
 
 @v2api.get("/changelog/releases", response=list[ReleaseSchema])
 @paginate
@@ -883,6 +938,7 @@ def release_changelog(request, cq: Query[ChangelogQuery]) -> list[ReleaseSchema]
     """
     return changelog(cq, m.Release, ReleaseSchema)
 
+
 @v2api.get("/changelog/creators", response=list[CreatorSchema])
 @paginate
 def creator_changelog(request, cq: Query[ChangelogQuery]) -> list[CreatorSchema]:
@@ -900,6 +956,7 @@ def creator_changelog(request, cq: Query[ChangelogQuery]) -> list[CreatorSchema]
     NB: all date handling assumes UTC.
     """
     return changelog(cq, m.Creator, CreatorSchema)
+
 
 @v2api.get("/changelog/containers", response=list[ContainerSchema])
 @paginate
@@ -919,6 +976,7 @@ def container_changelog(request, cq: Query[ChangelogQuery]) -> list[ContainerSch
     """
     return changelog(cq, m.Container, ContainerSchema)
 
+
 @v2api.get("/changelog/works", response=list[WorkSchema])
 @paginate
 def work_changelog(request, cq: Query[ChangelogQuery]) -> list[WorkSchema]:
@@ -937,6 +995,7 @@ def work_changelog(request, cq: Query[ChangelogQuery]) -> list[WorkSchema]:
     """
     return changelog(cq, m.Work, WorkSchema)
 
+
 @v2api.get("/changelog/files", response=list[FileSchema])
 @paginate
 def file_changelog(request, cq: Query[ChangelogQuery]) -> list[FileSchema]:
@@ -954,6 +1013,7 @@ def file_changelog(request, cq: Query[ChangelogQuery]) -> list[FileSchema]:
     NB: all date handling assumes UTC.
     """
     return changelog(cq, m.File, FileSchema)
+
 
 @v2api.get("/changelog/webcaptures", response=list[WebcaptureSchema])
 @paginate

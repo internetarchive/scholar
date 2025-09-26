@@ -1,5 +1,6 @@
 ---
 build-grobid:
+  image: gradle:jre11-slim
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: always

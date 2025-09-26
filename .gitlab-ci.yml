@@ -8,6 +8,8 @@ build-grobid:
     BUILD_DIR: ia_grobid_build
     GROBID_VERSION: 0.8.2
     GROBID_REPO: https://github.com/kermitt2/grobid.git
+    NEXUS_URL: http://nexus.us.archive.org
+    NEXUS_BASICAUTH: "$NEXUS_USER:$NEXUS_PASSWORD"
   script:
     - mkdir $BUILD_DIR
     - git clone --branch $GROBID_VERSION --single-branch $GROBID_REPO
@@ -18,6 +20,5 @@ build-grobid:
     - mv grobid-home/build/distributions/*.zip ../$BUILD_DIR
     - cd ..
     - rm -fr grobid
-  artifacts:
-    paths:
-      - $BUILD_DIR/*.zip
+    - curl --user $NEXUS_BASICAUTH --upload-file $BUILD_DIR/grobid-home-$GROBID-VERSION.zip $NEXUS_URL/repository/raw-internal/grobid/grobid-home-$GROBID-VERSION.zip
+    - curl --user $NEXUS_BASICAUTH --upload-file $BUILD_DIR/grobid-service-$GROBID-VERSION.zip $NEXUS_URL/repository/raw-internal/grobid/grobid-service-$GROBID-VERSION.zip

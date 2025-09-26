@@ -121,7 +121,7 @@ class ReleaseAbstractSchema(ModelSchema):
 class ReleaseRefSchema(ModelSchema):
     # NB not really optional; this is for creation of releases where a list of
     # this model is embedded.
-    release_id: UUID|None
+    release_id: UUID | None
     target_release_id: UUID
 
     class Meta:
@@ -131,8 +131,8 @@ class ReleaseRefSchema(ModelSchema):
 
 class ReleaseSchema(ModelSchema):
     # will be created automatically if none
-    work_id: UUID|None
-    container_id: UUID|None
+    work_id: UUID | None
+    container_id: UUID | None
     extids: list[ReleaseExtIdSchema] = []
     contribs: list[ReleaseContribSchema] = []
     abstracts: list[ReleaseAbstractSchema] = []
@@ -156,7 +156,7 @@ class ReleaseSchema(ModelSchema):
 
 # TODO annoying name thing
 class WebcaptureCDXSchema(ModelSchema):
-    webcapture_id: UUID|None
+    webcapture_id: UUID | None
 
     class Meta:
         model = m.WebcaptureCDX
@@ -165,7 +165,7 @@ class WebcaptureCDXSchema(ModelSchema):
 
 # TODO annoying name thing
 class WebcaptureURLSchema(ModelSchema):
-    webcapture_id: UUID|None
+    webcapture_id: UUID | None
 
     class Meta:
         model = m.WebcaptureURL

@@ -10,6 +10,8 @@ I have included my (nate's) personal thoughts about each one.
   - martin's scratch space
 - nsmith/scratch
   - nate's scratch space
+- webgroup/arabesque
+  - I have yet to use this but it's related to crawl log analysis
 - webgroup/chocula
   - I remain not fully clear on this project but it has to do with finding out about journals that exist. It should be consumed by the monorepo.
 - webgroup/dcdump

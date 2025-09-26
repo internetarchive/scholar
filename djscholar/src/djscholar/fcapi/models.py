@@ -4,7 +4,7 @@ from django.db import models
 from django.db.models.functions import Now
 
 
-URL_MAX_LENGTH = 100000 # we have some weird URLs.
+URL_MAX_LENGTH = 100000  # we have some weird URLs.
 SHA1_MAX_LENGTH = 40
 SHA256_MAX_LENGTH = 64
 MD5_MAX_LENGTH = 32
@@ -23,7 +23,6 @@ RELEASE_EXT_ID_TYPES = [
         ("jstor", "jstor"),
         ("mag", "mag"),
 ]
-
 
 
 class Entity(models.Model):
@@ -93,13 +92,13 @@ class Container(Entity):
     # enforcing uniqueness however since the legacy database had some
     # duplication and, purportedly, ISSNs can be recycled sometimes.
     issnl = models.CharField(
-            help_text="an ISSN-L, or linking ISSN. This is a grouping ISSN for publications that print in various media (eg, print and digital",
+            help_text="an ISSN-L, or linking ISSN. This is a grouping ISSN for publications that print in various media (eg, print and digital",  # noqa:W291
             null=True, blank=True)
     issne = models.CharField(
-            help_text="an e-ISSN, or electronic ISSN. for digital versions of publications. This can be linked to a p-ISSN (issnp column) via an ISSN-L.",
+            help_text="an e-ISSN, or electronic ISSN. for digital versions of publications. This can be linked to a p-ISSN (issnp column) via an ISSN-L.",  # noqa:W291
             null=True, blank=True)
     issnp = models.CharField(
-            help_text="a p-ISSN, or print ISSN. for print versions of publications. This can be linked to an e-ISSN (issne column) via an ISSN-L.",
+            help_text="a p-ISSN, or print ISSN. for print versions of publications. This can be linked to an e-ISSN (issne column) via an ISSN-L.",  # noqa:W291
             null=True, blank=True)
 
     # This ID might at first glance seem like something that should be unique;

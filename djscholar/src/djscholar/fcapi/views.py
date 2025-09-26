@@ -171,6 +171,7 @@ class WebcaptureURLSchema(ModelSchema):
         model = m.WebcaptureURL
         fields = ["url", "rel"]
 
+
 # TODO annoying name thing
 class WebcaptureSchema(ModelSchema):
     release_id: UUID

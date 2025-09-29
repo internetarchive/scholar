@@ -77,14 +77,12 @@ type ExternalID struct {
 	Value string `json:"id_value"`
 }
 type Container struct {
-	ID        uuid.UUID `json:"id"`
-	Created   time.Time `json:"created"`
-	Updated   time.Time `json:"updated"`
-	Name      string    `json:"name"`
-	Type      string    `json:"container_type"`
-	Publisher string    `json:"publisher"`
-	ISSNL     string    `json:"issnl"`
-	Source    string    `json:"source"`
+	ID        uuid.UUID `json:"id,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	Type      string    `json:"container_type,omitempty"`
+	Publisher string    `json:"publisher,omitempty"`
+	ISSNL     string    `json:"issnl,omitempty"`
+	Source    string    `json:"source,omitempty"`
 }
 
 type Citation struct {

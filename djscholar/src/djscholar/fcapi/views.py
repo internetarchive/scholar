@@ -193,7 +193,8 @@ class WebcaptureSchema(ModelSchema):
 ContainerSchema = create_schema(m.Container,
                                 fields=COMMON_ENTITY_FIELDS
                                 + ["name", "container_type", "publisher",
-                                   "issnl", "issne", "issnp", "wikidata_qid",])
+                                   "issnl", "issne", "issnp", "wikidata_qid",],
+                                optional_fields=COMMON_ENTITY_OPTIONAL_FIELDS)
 
 WorkSchema = create_schema(m.Work, fields=COMMON_ENTITY_FIELDS,
                            optional_fields=COMMON_ENTITY_OPTIONAL_FIELDS)

@@ -175,7 +175,7 @@ class APIKeyFactory(DjangoModelFactory):
 
 
 class EntityCRUDTestCase(TestCase):
-    base = "" # e.g. /release
+    base = ""  # e.g. /release
 
     # NB I wanted to ensure auth on the CUD endpoints and thought it would be
     # nice to have that in a parent class. pytest, of course, finds the parent
@@ -328,7 +328,8 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         response = client.get(f"{self.get}/{self.entity.id}/files")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], len(es))
-        self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(e.id) for e in es]))
+        self.assertSetEqual(set([d['id'] for d in response.data["items"]]),
+                            set([str(e.id) for e in es]))
 
     def test_get_contribs(self):
         contribs = []
@@ -792,7 +793,8 @@ class TestContainerRoutes(EntityCRUDTestCase):
         response = client.get(f"{self.get}/{self.entity.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], len(rs))
-        self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
+        self.assertSetEqual(set([d['id'] for d in response.data["items"]]),
+                            set([str(r.id) for r in rs]))
 
     def test_create(self):
         c = ContainerFactory.build()

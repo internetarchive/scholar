@@ -37,7 +37,7 @@ class Entity(models.Model):
     """
     # what used to be ident_id in the legacy DB
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    created = models.DateTimeField(db_default=Now())
+    created = models.DateTimeField(db_default=Now(), auto_add_now=True)
     updated = models.DateTimeField(db_default=Now(), auto_now=True)
     source = models.CharField(
             help_text="an arbitrary string denoting the data source whence a record was found")

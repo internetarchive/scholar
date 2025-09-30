@@ -115,7 +115,7 @@ type Release struct {
 
 	Abstracts   []Abstract
 	Citations   []Citation
-	ContainerID string `json:"container_id"`
+	ContainerID uuid.UUID `json:"container_id"`
 	ExternalIDs []ExternalID
 	Contribs    []ReleaseContrib
 
@@ -131,10 +131,16 @@ type Release struct {
 // TODO contribs
 
 // TODO design struct
+type crossrefLicense struct {
+	URL            string
+	ContentVersion string `json:"content-version"`
+}
+
 type crossrefDoc struct {
 	ContainerTitle []string `json:"container-title"`
 	DOI            string
 	ISSN           []string
+	License        []crossrefLicense
 	Publisher      string
 	Title          []string
 	Type           string
@@ -355,6 +361,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	containerID := uuid.Nil
 
 	if issnl != "" {
+		// TODO could build a map of issnl->cid somewhere to save on requests
 		containerID, err = lookupContainer(client, issnl)
 		if err != nil {
 			return out, err
@@ -382,7 +389,26 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		out.Containers.Ignored++
 	}
 
-	fmt.Println(containerID)
+	r := Release{
+		ContainerID: containerID,
+		// TODO fill in other stuff
+	}
+
+	// licenses
+
+	for _, lic := range record.License {
+		// the original fatcat code iterated over every license running code like
+		// this; that means it would only ever take the last license in a list of
+		// licenses. i've preserved that side effect here.
+		if lic.ContentVersion != "vor" && lic.ContentVersion != "unspecified" {
+			continue
+		}
+		r.LicenseSlug = licenseSlugLookup(lic.URL)
+	}
+
+	// references
+
+	fmt.Println(r)
 
 	// TODO create entity for insertion
 	// TODO insert into db (Added++)
@@ -396,11 +422,22 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	return out, nil
 }
 
-/*
-Name      string    `json:"name,omitempty"`
-ISSNL     string    `json:"issnl,omitempty"`
-Source    string    `json:"source,omitempty"`
-*/
+func licenseSlugLookup(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+
+	rawURL = strings.ToLower(rawURL)
+	rawURL = strings.TrimSuffix(rawURL, "/")
+	rawURL = strings.ReplaceAll(rawURL, "https://", "//")
+	rawURL = strings.ReplaceAll(rawURL, "http://", "//")
+	if strings.Contains(rawURL, "creativecommons.org") {
+		rawURL = strings.ReplaceAll(rawURL, "/legalcode", "")
+		rawURL = strings.ReplaceAll(rawURL, "/uk", "")
+	}
+	return licenseSlugMap[rawURL]
+}
+
 const contQ = `
 SELECT
   ident.id,

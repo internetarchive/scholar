@@ -209,8 +209,7 @@ def make_frame(jsonl_path: pathlib.Path) -> pd.DataFrame:
         if col != 'datetime':
             df[col+'_diff'] = df[col].diff()
             df[col+'_pct'] = df[col].pct_change()
-    df.set_index("datetime", inplace=True)
-    df.index = [pd.to_datetime(date).date() for date in df.index]
+    df.index = pd.DatetimeIndex(df['datetime'])
 
     return df
 
@@ -245,10 +244,10 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     # sandcrawler
 
     plot_args = default_plot_args | {
-            "title": "SPN PDF requests",
+            "title": "Weekly SPN PDF requests",
             "stacked": True}
     ax = df[["sandcrawler_pdf_misses_diff",
-             "sandcrawler_pdf_hits_diff"]].plot.bar(**plot_args)
+             "sandcrawler_pdf_hits_diff"]].resample("7D").mean().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     ctx["sc_graph_b64"] = plot_to_b64()
 
@@ -262,9 +261,9 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
 
     if len(spn_error_cols) > 0:
         plot_args = default_plot_args | {
-            "title": "SPN errors (mean diff >50)"
+            "title": "Weekly SPN errors (mean diff >50)"
             }
-        ax = df[spn_error_cols].plot(**plot_args)
+        ax = df[spn_error_cols].resample("7D").sum().plot(**plot_args)
         ax.legend(framealpha=0.5)
         ctx["sc_pdf_errors_graph_b64"] = plot_to_b64()
 
@@ -281,9 +280,9 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
             }
 
     plot_args = default_plot_args | {
-            "title": "scholar releases indexed per day",
+            "title": "scholar releases indexed per week",
             }
-    ax = df["elasticsearch_scholar_indexed_pdfs_diff"].plot.bar(**plot_args)
+    ax = df["elasticsearch_scholar_indexed_pdfs_diff"].resample("7D").sum().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
     ctx["ias_releases_diff_graph_b64"] = plot_to_b64()
@@ -293,9 +292,9 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     # ES queries
 
     plot_args = default_plot_args | {
-            "title": "scholar searches per day",
+            "title": "average scholar searches per week",
             }
-    ax = df["elasticsearch_scholar_searches_diff"].plot.bar(**plot_args)
+    ax = df["elasticsearch_scholar_searches"].resample("7D").mean().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
     ctx["ias_searches_diff_graph_b64"] = plot_to_b64()
@@ -303,9 +302,9 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     plot_clear()
 
     plot_args = default_plot_args | {
-            "title": "fatcat searches per day",
+            "title": "average fatcat searches per week",
             }
-    ax = df["elasticsearch_fatcat_searches_diff"].plot.bar(**plot_args)
+    ax = df["elasticsearch_fatcat_searches"].resample("7D").mean().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
     ctx["fc_searches_diff_graph_b64"] = plot_to_b64()
@@ -325,10 +324,10 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
             }
 
     plot_args = default_plot_args | {
-            "title": "fatcat release totals",
+            "title": "fatcat release totals (month to month)",
             }
     ax = df[["fatcat_releases", "fatcat_papers",
-             "fatcat_papers_in_web"]].plot.bar(**plot_args)
+             "fatcat_papers_in_web"]].resample("30D").max().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
     ctx["fc_release_graph_b64"] = plot_to_b64()
@@ -336,10 +335,10 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     plot_clear()
 
     plot_args = default_plot_args | {
-            "title": "fatcat release change per day",
+            "title": "fatcat release change per week",
             }
     ax = df[["fatcat_releases_diff", "fatcat_papers_diff",
-             "fatcat_papers_in_web_diff"]].plot.bar(**plot_args)
+             "fatcat_papers_in_web_diff"]].resample("7D").sum().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
     ctx["fc_release_diff_graph_b64"] = plot_to_b64()
@@ -347,9 +346,9 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     plot_clear()
 
     plot_args = default_plot_args | {
-            "title": "fatcat contribs change per day",
+            "title": "fatcat contribs change per week",
             }
-    ax = df.fatcat_refs_diff.plot.bar(**plot_args)
+    ax = df.fatcat_refs_diff.resample("7D").sum().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
     ctx["fc_refs_diff_graph_b64"] = plot_to_b64()
@@ -357,9 +356,9 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     plot_clear()
 
     plot_args = default_plot_args | {
-            "title": "fatcat containers change per day",
+            "title": "fatcat containers change per week",
             }
-    ax = df["fatcat_containers_diff"].plot.bar(**plot_args)
+    ax = df["fatcat_containers_diff"].resample("7D").sum().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)
     plt.ticklabel_format(style='plain', axis='y')
     ctx["fc_containers_diff_graph_b64"] = plot_to_b64()

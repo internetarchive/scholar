@@ -8,15 +8,10 @@
     <code>wbgrp-svc500.us.archive.org</code> and can be found on <a
     href="https://git.archive.org/webgroup/scholar/-/tree/trunk/python/scholstats">gitlab</a>.
     </p>
-    <p>
-    As of right now the graphs are largely plotted day by day. Once we have
-    more data (&gt;60 days worth) I'll tweak the graphs to show different
-    scales of time.
-    </p>
 
     <h2>Sandcrawler (SPN)</h2>
     <p>
-    These two graphs reflect daily use of Save Page Now. The first graph shows
+    These two graphs reflect weekly use of Save Page Now. The first graph shows
     the total requests made to SPN per day broken down by successes (PDF
     acquired) and misses; the second graph shows a breakdown of the most common
     errors that lead to missed PDFs. Right now errors are included if they
@@ -62,7 +57,7 @@
 
     <h2>Scholar holdings</h2>
     <p>
-    The table shows overall totals in IAS's index; the graph shows daily
+    The table shows overall totals in IAS's index; the graph shows weekly
     full text IAS indexing counts.
     </p>
 
@@ -94,8 +89,10 @@
 
     <h2>User searches</h2>
     <p>
-    Daily search counts. The scholar graph shows daily IAS searches; the Fatcat
-    graph is a roll-up of release, file, and container searches.
+    Daily search counts. The scholar graph shows weekly IAS searches; the Fatcat
+    graph is a roll-up of release, file, and container searches. These numbers
+    are from elasticsearch which means they include internal use. Big script
+    runs can pump these numbers significantly.
     </p>
 
     <img src="data:image/png;base64, {{ias_searches_diff_graph_b64}}">
@@ -135,7 +132,7 @@
     <img src="data:image/png;base64, {{fc_release_graph_b64}}">
 
     <p>
-    These graph show daily changes in Fatcat holdings.
+    These graph show weekly changes in Fatcat holdings.
     </p>
     <img src="data:image/png;base64, {{fc_release_diff_graph_b64}}">
     <img src="data:image/png;base64, {{fc_refs_diff_graph_b64}}">

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -77,12 +79,16 @@ type ExternalID struct {
 	Value string `json:"id_value"`
 }
 type Container struct {
-	ID        uuid.UUID `json:"id,omitempty"`
-	Name      string    `json:"name,omitempty"`
-	Type      string    `json:"container_type,omitempty"`
-	Publisher string    `json:"publisher,omitempty"`
-	ISSNL     string    `json:"issnl,omitempty"`
-	Source    string    `json:"source,omitempty"`
+	ID          uuid.UUID      `json:"id,omitempty"`
+	Name        string         `json:"name,omitempty"`
+	Type        string         `json:"container_type,omitempty"`
+	LegacyRevID uuid.UUID      `json:"legacy_rev_id,omitempty"`
+	Publisher   string         `json:"publisher,omitempty"`
+	ISSNL       string         `json:"issnl,omitempty"`
+	ISSNE       string         `json:"issne,omitempty"`
+	ISSNP       string         `json:"issnp,omitempty"`
+	Source      string         `json:"source,omitempty"`
+	Extra       map[string]any `json:"extra"`
 }
 
 type Citation struct {
@@ -378,10 +384,6 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	fmt.Println(containerID)
 
-	// TODO api seems to not be setting created properly
-	// TODO why are updated/created even required?
-	// TODO how on earth is legacy_rev getting set?
-
 	// TODO create entity for insertion
 	// TODO insert into db (Added++)
 	// TODO wait for spn slot
@@ -394,15 +396,50 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	return out, nil
 }
 
+/*
+Name      string    `json:"name,omitempty"`
+ISSNL     string    `json:"issnl,omitempty"`
+Source    string    `json:"source,omitempty"`
+*/
+const contQ = `
+SELECT
+  ident.id,
+	ident.rev_id AS legacy_rev_id,
+	rev.issne,
+	rev.issnp,
+	rev.extra_json AS extra
+FROM container_ident ident
+JOIN container_rev rev ON rev.id = ident.rev_id
+WHERE rev.issnl = $1
+LIMIT 1;
+`
+
 // createContainer creates a new container in fc2 and returns its ID
 func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
-	// TODO consult fc1 db first
+	c.Source = "dev" // TODO thread this value through from invocation of workflow
+	c.ID = uuid.New()
+
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, viper.GetString("fatcat1.pgurl"))
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to connect to legacy fatcat: %w", err)
+	}
+
+	err = conn.QueryRow(ctx, contQ, c.ISSNL).Scan(
+		&c.ID,
+		&c.LegacyRevID,
+		&c.ISSNE,
+		&c.ISSNP,
+		&c.Extra,
+	)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("failed to talk to old fatcat db: %w", err)
+	}
+
 	// if found, insert that data and return the ID
 	fc2url := viper.GetString("fatcat2.endpoint")
 	fc2key := viper.GetString("fatcat2.key")
-
-	c.Source = "dev" // TODO
-	c.ID = uuid.New()
 
 	bs, err := json.Marshal(c)
 
@@ -644,7 +681,7 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Releases.Ignored))
 	}
 
-	l.Info(fmt.Sprintf("found and ignored %d lines", out.Releases.Ignored))
+	l.Info(fmt.Sprintf("%#v", out))
 
 	return out, nil
 

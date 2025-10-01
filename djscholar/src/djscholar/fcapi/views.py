@@ -392,8 +392,8 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     rs = m.Release.objects.filter(id=release_in.id)
     if len(rs) != 0:
         return v2api.create_response(request,
-                                    f"release with id {release_in.id} already exists",
-                                    status=HTTPStatus.BAD_REQUEST)
+                                     f"release with id {release_in.id} already exists",
+                                     status=HTTPStatus.BAD_REQUEST)
     data = release_in.dict()
     extids = data.pop("extids")
     contribs = data.pop("contribs")
@@ -406,16 +406,16 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
             work.save()
             work_id = work.id
 
-        r = m.Release(**data|{"work_id":work_id})
+        r = m.Release(**data | {"work_id": work_id})
         r.save()
-        m.ReleaseExtId.objects.bulk_create([m.ReleaseExtId(**ext_id|{"release_id":r.id})
-                                                           for ext_id in extids])
-        m.ReleaseContrib.objects.bulk_create([m.ReleaseContrib(**c|{"release_id":r.id})
+        m.ReleaseExtId.objects.bulk_create([m.ReleaseExtId(**ext_id | {"release_id": r.id})
+                                            for ext_id in extids])
+        m.ReleaseContrib.objects.bulk_create([m.ReleaseContrib(**c | {"release_id": r.id})
                                               for c in contribs])
-        m.ReleaseAbstract.objects.bulk_create([m.ReleaseAbstract(**a|{"release_id":r.id})
+        m.ReleaseAbstract.objects.bulk_create([m.ReleaseAbstract(**a | {"release_id": r.id})
                                               for a in abstracts])
-        m.ReleaseRef.objects.bulk_create([m.ReleaseRef(**c|{"release_id":r.id})
-                                              for c in citations])
+        m.ReleaseRef.objects.bulk_create([m.ReleaseRef(**c | {"release_id": r.id})
+                                          for c in citations])
 
     return v2api.create_response(request, "release created", status=HTTPStatus.CREATED)
 

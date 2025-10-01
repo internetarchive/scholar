@@ -374,7 +374,8 @@ class ReleaseContrib(models.Model):
     creator = models.ForeignKey(Creator, on_delete=models.CASCADE,
                                 null=True, blank=True, db_index=False)
     raw_name = models.CharField(
-            help_text="Name of the author as listed in the reference. If this reference is matched to an author in our database, this value might differ from the linked author's display name.", null=True, blank=True)
+            help_text="Name of the author as listed in the reference. If this reference is matched to an author in our database, this value might differ from the linked author's display name.",  # noqa:E501
+            null=True, blank=True)
     given_name = models.CharField(
             help_text="'first' name of a human depending on context",
             null=True, blank=True)

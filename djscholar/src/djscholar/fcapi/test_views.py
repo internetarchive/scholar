@@ -430,7 +430,6 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         r = m.Release.objects.filter(id=entity.id)[0]
         self.assertTrue(r.work is not None)
 
-
     def test_bulk_create_without_work(self):
         rin = []
         for x in range(100):

@@ -362,6 +362,19 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         self.assertEqual(len(response.data["items"][0]["urls"]), 2)
         self.assertEqual(len(response.data["items"][0]["cdx_lines"]), 4)
 
+    def test_create_with_refs(self):
+        entity = ReleaseFactory.build()
+        entity.container.save()
+        entity.work = None
+        entity.refs = {"foo": "bar", "baz": [{"quux": "florp"}]}
+
+        data = v.ReleaseSchema.from_orm(entity).model_dump_json()
+        response = client.post(self.create, data=data, headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+
+        r = m.Release.objects.filter(id=entity.id)[0]
+        self.assertTrue(r.refs == {"foo": "bar", "baz": [{"quux": "florp"}]})
+
     def test_create_with_work(self):
         entity = ReleaseFactory.build()
         entity.container.save()

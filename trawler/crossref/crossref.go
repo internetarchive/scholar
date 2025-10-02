@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -91,7 +92,8 @@ type Container struct {
 	Extra       map[string]any `json:"extra"`
 }
 
-type Citation struct {
+// ReleaseRef is a link from a citing release to a cited release
+type ReleaseRef struct {
 	// TODO
 }
 
@@ -113,8 +115,9 @@ type Release struct {
 
 	// Foreign keys
 
+	Refs        []RawRef
 	Abstracts   []Abstract
-	Citations   []Citation
+	Citations   []ReleaseRef
 	ContainerID uuid.UUID `json:"container_id"`
 	ExternalIDs []ExternalID
 	Contribs    []ReleaseContrib
@@ -130,7 +133,51 @@ type Release struct {
 // TODO ext ids
 // TODO contribs
 
-// TODO design struct
+// RawRef is stored in fatcat2's database as a json value in a release row
+type RawRef struct {
+	// TODO I don't like how this is structured (wayyy too much shoved in extra)
+	// but just maintaining parity for now with legacy fatcat
+
+	// NB no indication TargetReleaseID is ever set
+	Title           string         `json:"title,omitempty"`
+	TargetReleaseID uuid.UUID      `json:"target_release_id,omitempty"`
+	Index           int            `json:"index,omitempty"`
+	Key             string         `json:"key,omitempty"`
+	Year            int            `json:"year,omitempty"`
+	ContainerName   string         `json:"container_name,omitempty"`
+	Locator         string         `json:"locator,omitempty"`
+	Extra           map[string]any `json:"extra,omitempty"`
+}
+
+// TODO crossref structs
+type crossrefRef struct {
+	Year            string
+	Key             string
+	JournalTitle    string `json:"journal-title"`
+	VolumeTitle     string `json:"volume-title"`
+	DOI             string
+	Author          string
+	Editor          string
+	Edition         string
+	Authority       string
+	Version         string
+	Genre           string
+	URL             string `json:"url"`
+	Event           string
+	ArticleTitle    string `json:"article-title"`
+	FirstPage       string `json:"first-page"`
+	Issue           string
+	Volume          string
+	Date            string
+	AccessedDate    string `json:"accessed_date"`
+	Issued          string
+	Page            string
+	Medium          string
+	CollectionTitle string `json:"collection_title"`
+	ChapterNumber   string `json:"chapter_number"`
+	Unstructured    string
+	SeriesTitle     string `json:"series-title"`
+}
 type crossrefLicense struct {
 	URL            string
 	ContentVersion string `json:"content-version"`
@@ -141,6 +188,7 @@ type crossrefDoc struct {
 	DOI            string
 	ISSN           []string
 	License        []crossrefLicense
+	Reference      []crossrefRef
 	Publisher      string
 	Title          []string
 	Type           string
@@ -407,6 +455,108 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	// references
+	r.Refs = []RawRef{}
+
+	for i, cref := range record.Reference {
+		rawRef := RawRef{
+			Index:   i,
+			Locator: cref.FirstPage,
+			Title:   cref.ArticleTitle,
+			Extra:   map[string]any{},
+		}
+
+		year, err := strconv.Atoi(cref.Year)
+		if err == nil {
+			rawRef.Year = year
+		}
+
+		if cref.Key != "" {
+			key := strings.TrimPrefix(cref.Key, strings.ToUpper(record.DOI)+"-")
+			key = strings.TrimPrefix(cref.Key, strings.ToUpper(record.DOI))
+			rawRef.Key = key
+		}
+
+		rawRef.ContainerName = cref.VolumeTitle
+		if rawRef.ContainerName == "" {
+			rawRef.ContainerName = cref.JournalTitle
+		}
+
+		// "extra" stuff (i hate this)
+
+		if cref.JournalTitle != "" {
+			rawRef.Extra["journal-title"] = cref.JournalTitle
+		}
+
+		if cref.DOI != "" {
+			rawRef.Extra["DOI"] = cref.DOI
+		}
+
+		if cref.Author != "" {
+			// why is this a list?
+			rawRef.Extra["authors"] = []string{cref.Author}
+		}
+
+		if cref.Editor != "" {
+			rawRef.Extra["editor"] = cref.Editor
+		}
+		if cref.Edition != "" {
+			rawRef.Extra["edition"] = cref.Edition
+		}
+		if cref.Authority != "" {
+			rawRef.Extra["authority"] = cref.Authority
+		}
+		if cref.Version != "" {
+			rawRef.Extra["version"] = cref.Version
+		}
+		if cref.Genre != "" {
+			rawRef.Extra["genre"] = cref.Genre
+		}
+		if cref.URL != "" {
+			rawRef.Extra["url"] = cref.URL
+		}
+		if cref.Event != "" {
+			rawRef.Extra["event"] = cref.Event
+		}
+		if cref.Issue != "" {
+			rawRef.Extra["issue"] = cref.Issue
+		}
+		if cref.Volume != "" {
+			rawRef.Extra["volume"] = cref.Volume
+		}
+		if cref.Date != "" {
+			rawRef.Extra["date"] = cref.Date
+		}
+		if cref.AccessedDate != "" {
+			rawRef.Extra["accessed_date"] = cref.AccessedDate
+		}
+		if cref.Issue != "" {
+			rawRef.Extra["issue"] = cref.Issue
+		}
+		if cref.Page != "" {
+			rawRef.Extra["page"] = cref.Page
+		}
+		if cref.Medium != "" {
+			rawRef.Extra["medium"] = cref.Medium
+		}
+		if cref.CollectionTitle != "" {
+			rawRef.Extra["collection_title"] = cref.CollectionTitle
+		}
+		if cref.ChapterNumber != "" {
+			rawRef.Extra["chapter_number"] = cref.ChapterNumber
+		}
+		if cref.Unstructured != "" {
+			rawRef.Extra["unstructured"] = cref.Unstructured
+		}
+		if cref.SeriesTitle != "" {
+			rawRef.Extra["series-title"] = cref.SeriesTitle
+		}
+		if cref.VolumeTitle != "" {
+			rawRef.Extra["volume-title"] = cref.VolumeTitle
+		}
+
+		r.Refs = append(r.Refs, rawRef)
+
+	}
 
 	fmt.Println(r)
 

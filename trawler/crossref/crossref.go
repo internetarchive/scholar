@@ -185,12 +185,27 @@ type crossrefRef struct {
 type crossrefLicense struct {
 	URL            string
 	ContentVersion string `json:"content-version"`
+	Start          struct {
+		DateTime string `json:"date-time"`
+	}
+	DelayInDays int `json:"delay-in-days"`
+}
+
+type crossrefContributor struct {
+	ORCID       string
+	Family      string
+	Given       string
+	Sequence    string
+	Affiliation []struct {
+		Name string
+	}
 }
 
 type crossrefDoc struct {
 	ContainerTitle []string `json:"container-title"`
 	DOI            string
 	ISSN           []string
+	ISBN           []string
 	License        []crossrefLicense
 	Reference      []crossrefRef
 	Publisher      string
@@ -198,6 +213,17 @@ type crossrefDoc struct {
 	Type           string
 	Abstract       string
 	Language       string
+	AlternativeID  []string
+	Archive        []string
+	Author         []crossrefContributor
+	Editor         []crossrefContributor
+	Translator     []crossrefContributor
+	Funder         []struct {
+		Name  string
+		Award []string
+	}
+	// in fatcat but didn't see in sample xref json
+	// Subject     string
 }
 
 var ignoredTypes = []string{
@@ -234,25 +260,18 @@ func (c crossrefDoc) IsSkippable() bool {
 		return true
 	}
 
+	if len(c.Abstract) > 100 {
+		return true
+	}
+
+	if len(c.Reference) > 5000 {
+		return true
+	}
+
+	// TODO contribs check
+
 	return false
 }
-
-/*
-type CrossrefCrawlResult struct {
-	FoundCounts struct {
-		Releases   int
-		Containers int
-		Creators   int
-	}
-	CreatedCounts struct {
-		Releases   int
-		Containers int
-		Creators   int
-	}
-	PDFCount      int
-	IngestedCount int
-}
-*/
 
 type CrossrefCrawlInput struct {
 	SKInput SKCrossrefInput
@@ -355,28 +374,29 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	l := activity.GetLogger(ctx)
-	//l.Debug(string(lineb))
 
-	var record crossrefDoc
+	var xrefdoc crossrefDoc
 
-	err = json.Unmarshal(lineb, &record)
+	err = json.Unmarshal(lineb, &xrefdoc)
 	if err != nil {
 		return
 	}
 
-	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", record.Type, record.DOI))
+	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", xrefdoc.Type, xrefdoc.DOI))
 
 	// Should we skip even checking the DOI?
 
-	if record.IsSkippable() {
+	if xrefdoc.IsSkippable() {
 		out.Releases.Skipped++
 		return out, nil
 	}
 
 	// Check the DOI
 
+	xrefDOI := strings.ToLower(xrefdoc.DOI)
+
 	client := &http.Client{}
-	found, err := isExistingDOI(client, record.DOI)
+	found, err := isExistingDOI(client, xrefDOI)
 	if err != nil {
 		return out, err
 	}
@@ -389,23 +409,23 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// if things get weird we'll put some stuff in here
 	extra := map[string]any{}
 	var releaseType string
-	releaseType, ok := releaseTypeMap[record.Type]
+	releaseType, ok := releaseTypeMap[xrefdoc.Type]
 	if !ok {
-		return out, fmt.Errorf("found unknown crossref type '%s'", record.Type)
+		return out, fmt.Errorf("found unknown crossref type '%s'", xrefdoc.Type)
 	}
 
 	var containerTitle string
 
-	if len(record.ContainerTitle) > 0 {
+	if len(xrefdoc.ContainerTitle) > 0 {
 		// TODO fatcat importer is using ftfy to clean this value up; we can do
 		// that on the server side on container creation.
 		// TODO fatcat importer was arbitrarily using the first container title in
 		// the list so I've continued that practice but it feels weird
-		containerTitle = record.ContainerTitle[0]
+		containerTitle = xrefdoc.ContainerTitle[0]
 	}
 
 	var issnl string
-	for _, i := range record.ISSN {
+	for _, i := range xrefdoc.ISSN {
 		issnl = issn.ISSN2ISSNL(i)
 		if issnl != "" {
 			break
@@ -427,7 +447,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 			c := Container{
 				Name:      containerTitle,
 				ISSNL:     issnl,
-				Publisher: record.Publisher,
+				Publisher: xrefdoc.Publisher,
 				Type:      containerTypeMap[releaseType],
 			}
 			containerID, err = createContainer(client, c)
@@ -443,27 +463,29 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		out.Containers.Ignored++
 	}
 
-	r := Release{
+	release := Release{
 		ContainerID: containerID,
+		ExternalIDs: []ExternalID{},
+		Extra:       map[string]any{},
 		// TODO fill in other stuff
 	}
 
 	// licenses
 
-	for _, lic := range record.License {
+	for _, lic := range xrefdoc.License {
 		// the original fatcat code iterated over every license running code like
 		// this; that means it would only ever take the last license in a list of
 		// licenses. i've preserved that side effect here.
 		if lic.ContentVersion != "vor" && lic.ContentVersion != "unspecified" {
 			continue
 		}
-		r.LicenseSlug = licenseSlugLookup(lic.URL)
+		release.LicenseSlug = licenseSlugLookup(lic.URL)
 	}
 
 	// references
-	r.Refs = []RawRef{}
+	release.Refs = []RawRef{}
 
-	for i, cref := range record.Reference {
+	for i, cref := range xrefdoc.Reference {
 		rawRef := RawRef{
 			Index:   i,
 			Locator: cref.FirstPage,
@@ -477,8 +499,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 
 		if cref.Key != "" {
-			key := strings.TrimPrefix(cref.Key, strings.ToUpper(record.DOI)+"-")
-			key = strings.TrimPrefix(cref.Key, strings.ToUpper(record.DOI))
+			key := strings.TrimPrefix(cref.Key, strings.ToUpper(xrefdoc.DOI)+"-")
+			key = strings.TrimPrefix(cref.Key, strings.ToUpper(xrefdoc.DOI))
 			rawRef.Key = key
 		}
 
@@ -560,24 +582,79 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 			rawRef.Extra["volume-title"] = cref.VolumeTitle
 		}
 
-		r.Refs = append(r.Refs, rawRef)
+		release.Refs = append(release.Refs, rawRef)
 	}
 
 	// abstracts
 
 	// TODO find out if any release has more than one abstract
-	r.Abstracts = []Abstract{}
-	if len(record.Abstract) > 10 {
-		h := sha1.Sum([]byte(record.Abstract))
-		r.Abstracts = append(r.Abstracts, Abstract{
+	release.Abstracts = []Abstract{}
+	if len(xrefdoc.Abstract) > 10 {
+		h := sha1.Sum([]byte(xrefdoc.Abstract))
+		release.Abstracts = append(release.Abstracts, Abstract{
 			MIMEType: "application/xml+jats",
-			Content:  record.Abstract,
-			Language: record.Language,
+			Content:  xrefdoc.Abstract,
+			Language: xrefdoc.Language,
 			SHA1:     fmt.Sprintf("%x", h),
 		})
 	}
 
-	fmt.Println(r)
+	// "extra" stuff (ugh)
+	if release.ContainerID == uuid.Nil && len(xrefdoc.ContainerTitle) > 1 {
+		release.Extra["container_name"] = xrefdoc.ContainerTitle[0]
+	}
+
+	xrefExtra := map[string]any{}
+	if len(xrefdoc.AlternativeID) > 0 {
+		xrefExtra["alternative-id"] = xrefdoc.AlternativeID
+	}
+	if xrefdoc.Type != "" {
+		xrefExtra["type"] = xrefdoc.Type
+	}
+	if len(xrefdoc.Title) > 1 {
+		xrefExtra["aliases"] = xrefdoc.Title[1:]
+	}
+	if len(xrefdoc.Archive) > 0 {
+		xrefExtra["archive"] = xrefdoc.Archive
+	}
+	if len(xrefdoc.Funder) > 0 {
+		xrefExtra["funder"] = xrefdoc.Funder
+	}
+	if len(xrefdoc.License) > 0 {
+		// in original fatcat this value was added to the license key in crossref
+		// extra but with the start key overwritten with its date-time subkey. i've
+		// stopped that flattening and just left the start key only containing
+		// date-time.
+		xrefExtra["license"] = xrefdoc.License
+	}
+	release.Extra["crossref"] = xrefExtra
+
+	// external IDs
+
+	release.ExternalIDs = append(release.ExternalIDs, ExternalID{
+		Type:  "doi",
+		Value: xrefDOI,
+	})
+	if len(xrefdoc.ISBN) > 0 {
+		for _, isbn := range xrefdoc.ISBN {
+			if len(isbn) == 17 {
+				release.ExternalIDs = append(release.ExternalIDs, ExternalID{
+					Type:  "isbn13",
+					Value: isbn,
+				})
+				break
+			}
+		}
+	}
+
+	// release status
+	if slices.Contains([]string{
+		"journal-article", "conference-proceedings", "book",
+		"dissertation", "book-chapter"}, xrefdoc.Type) {
+		release.Stage = "published"
+	}
+
+	fmt.Println(release)
 
 	// TODO create entity for insertion
 	// TODO insert into db (Added++)

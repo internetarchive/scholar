@@ -76,7 +76,14 @@ type Abstract struct {
 }
 
 type ReleaseContrib struct {
-	// TODO
+	CreatorID      uuid.UUID      `json:"creator"`
+	Position       int            `json:"position"`
+	RawName        string         `json:"raw_name"`
+	GivenName      string         `json:"given_name"`
+	Surname        string         `json:"surname"`
+	RawAffiliation string         `json:"raw_affiliation"`
+	Role           string         `json:"role"`
+	Extra          map[string]any `json:"extra"`
 }
 
 type ExternalID struct {
@@ -96,11 +103,6 @@ type Container struct {
 	Extra       map[string]any `json:"extra"`
 }
 
-// ReleaseRef is a link from a citing release to a cited release
-type ReleaseRef struct {
-	// TODO
-}
-
 // TODO split out into its own package
 type Release struct {
 	Title         string
@@ -110,9 +112,11 @@ type Release struct {
 	Stage         string    `json:"release_stage"`
 	ReleaseDate   time.Time `json:"release_date"`
 	ReleaseYear   int       `json:"release_year"`
+	Source        string
 	Volume        string
 	Issue         string
 	Pages         string
+	Publisher     string
 	Language      string
 	LicenseSlug   string `json:"license_slug"`
 	Extra         map[string]any
@@ -121,7 +125,6 @@ type Release struct {
 
 	Refs        []RawRef
 	Abstracts   []Abstract
-	Citations   []ReleaseRef
 	ContainerID uuid.UUID `json:"container_id"`
 	ExternalIDs []ExternalID
 	Contribs    []ReleaseContrib
@@ -129,13 +132,9 @@ type Release struct {
 	// unused in xref but may want later:
 	// Pages string
 	// WithdrawnStatus string
+	// TODO
+	// understand when the structured ReleaseRefs are added in the old system
 }
-
-// TODO abstracts
-// TODO refs
-// TODO extra
-// TODO ext ids
-// TODO contribs
 
 // RawRef is stored in fatcat2's database as a json value in a release row
 type RawRef struct {
@@ -193,12 +192,58 @@ type crossrefLicense struct {
 
 type crossrefContributor struct {
 	ORCID       string
+	Name        string
 	Family      string
 	Given       string
 	Sequence    string
 	Affiliation []struct {
 		Name string
 	}
+}
+
+func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (ReleaseContrib, error) {
+	out := ReleaseContrib{
+		GivenName: cc.Given,
+		Surname:   cc.Family,
+	}
+	if cc.ORCID != "" {
+		sp := strings.Split(cc.ORCID, "/")
+		orcid := sp[len(sp)-1]
+		id, err := lookupCreator(client, orcid)
+		if err != nil {
+			return out, err
+		}
+		out.CreatorID = id
+	}
+
+	out.RawName = cc.Given
+	if cc.Family != "" && cc.Given != "" {
+		out.RawName = fmt.Sprintf("%s %s", cc.Given, cc.Family)
+	} else if cc.Family != "" {
+		out.RawName = cc.Family
+	} else if cc.Name != "" {
+		out.RawName = cc.Name
+	}
+
+	for _, a := range cc.Affiliation {
+		if a.Name != "" {
+			out.RawAffiliation = a.Name
+			break
+		}
+	}
+
+	// sigh
+	extra := map[string]any{}
+
+	if len(cc.Affiliation) > 1 {
+		extra["more_affiliations"] = cc.Affiliation[1:]
+	}
+
+	if cc.Sequence != "" && cc.Sequence != "additional" {
+		extra["seq"] = cc.Sequence
+	}
+
+	return out, nil
 }
 
 type crossrefDoc struct {
@@ -209,16 +254,24 @@ type crossrefDoc struct {
 	License        []crossrefLicense
 	Reference      []crossrefRef
 	Publisher      string
+	OriginalTitle  []string
 	Title          []string
+	Subtitle       []string
 	Type           string
 	Abstract       string
 	Language       string
 	AlternativeID  []string
 	Archive        []string
+	Volume         string
+	Issue          string
+	Page           string
 	Author         []crossrefContributor
 	Editor         []crossrefContributor
 	Translator     []crossrefContributor
-	Funder         []struct {
+	Issued         struct {
+		DateParts [][]int `json:"date-parts"`
+	}
+	Funder []struct {
 		Name  string
 		Award []string
 	}
@@ -240,11 +293,11 @@ var ignoredTypes = []string{
 }
 
 func (c crossrefDoc) IsSkippable() bool {
-	if c.Title == nil {
+	if len(c.Title) == 0 {
 		return true
 	}
 
-	if len(c.Title) < 1 {
+	if len(c.Title[0]) < 2 {
 		return true
 	}
 
@@ -268,7 +321,9 @@ func (c crossrefDoc) IsSkippable() bool {
 		return true
 	}
 
-	// TODO contribs check
+	if len(c.Author)+len(c.Editor)+len(c.Translator) > 2000 {
+		return true
+	}
 
 	return false
 }
@@ -406,13 +461,25 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, nil
 	}
 
+	release := Release{
+		Contribs:    []ReleaseContrib{},
+		ExternalIDs: []ExternalID{},
+		Extra:       map[string]any{},
+		Publisher:   xrefdoc.Publisher,
+		Volume:      xrefdoc.Volume,
+		Issue:       xrefdoc.Issue,
+		Pages:       xrefdoc.Page,
+		Language:    xrefdoc.Language,
+		Source:      "dev", // TODO thread through from args
+	}
+
 	// if things get weird we'll put some stuff in here
-	extra := map[string]any{}
 	var releaseType string
 	releaseType, ok := releaseTypeMap[xrefdoc.Type]
 	if !ok {
 		return out, fmt.Errorf("found unknown crossref type '%s'", xrefdoc.Type)
 	}
+	release.Type = releaseType
 
 	var containerTitle string
 
@@ -456,18 +523,12 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 			}
 			out.Containers.Added++
 		} else if containerTitle != "" {
-			extra["container_name"] = containerTitle
+			release.Extra["container_name"] = containerTitle
 			out.Containers.Skipped++
 		}
 	} else {
 		out.Containers.Ignored++
-	}
-
-	release := Release{
-		ContainerID: containerID,
-		ExternalIDs: []ExternalID{},
-		Extra:       map[string]any{},
-		// TODO fill in other stuff
+		release.ContainerID = containerID
 	}
 
 	// licenses
@@ -654,6 +715,66 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		release.Stage = "published"
 	}
 
+	// contribs
+
+	for i, a := range xrefdoc.Author {
+		contrib, err := a.ToReleaseContrib(client)
+		if err != nil {
+			return out, err
+		}
+		contrib.Position = i
+		contrib.Role = "author"
+		release.Contribs = append(release.Contribs, contrib)
+	}
+	for _, a := range xrefdoc.Editor {
+		contrib, err := a.ToReleaseContrib(client)
+		if err != nil {
+			return out, err
+		}
+		contrib.Role = "editor"
+		release.Contribs = append(release.Contribs, contrib)
+	}
+	for _, a := range xrefdoc.Translator {
+		contrib, err := a.ToReleaseContrib(client)
+		if err != nil {
+			return out, err
+		}
+		contrib.Role = "translator"
+		release.Contribs = append(release.Contribs, contrib)
+	}
+
+	// title, subtitle, original title
+
+	if len(xrefdoc.Title) > 0 {
+		release.Title = xrefdoc.Title[0]
+	}
+
+	if len(xrefdoc.Subtitle) > 0 {
+		if len(xrefdoc.Subtitle[0]) > 1 {
+			release.Subtitle = xrefdoc.Subtitle[0]
+		}
+	}
+
+	if len(xrefdoc.OriginalTitle) > 0 {
+		release.OriginalTitle = xrefdoc.OriginalTitle[0]
+	}
+
+	// date/year
+	if len(xrefdoc.Issued.DateParts) > 0 {
+		rawDate := xrefdoc.Issued.DateParts[0]
+		if len(rawDate) == 3 {
+			d, err := time.Parse("2006-01-02",
+				fmt.Sprintf("%d-%d-%d", rawDate[0], rawDate[1], rawDate[2]))
+			if err == nil {
+				release.ReleaseDate = d
+			}
+		} else if len(rawDate) > 0 {
+			release.ReleaseYear = rawDate[0]
+		}
+	}
+
+	// TODO
+
 	fmt.Println(release)
 
 	// TODO create entity for insertion
@@ -749,6 +870,49 @@ func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
 
 // TODO make a client wrapper
 //type FC2Client http.Client
+
+// TODO generalize lookup functions
+func lookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/creator/lookup", nil)
+	if err != nil {
+		panic(err)
+	}
+
+	q := req.URL.Query()
+	q.Add("id_type", "orcid")
+	q.Add("id_value", orcid)
+	req.URL.RawQuery = q.Encode()
+	resp, err := c.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", orcid, err)
+	}
+
+	if resp.StatusCode == 404 {
+		return uuid.Nil, nil
+	}
+
+	if resp.StatusCode != 200 {
+		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
+			orcid, resp.StatusCode)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	var p struct {
+		ID uuid.UUID
+	}
+
+	err = json.Unmarshal(bs, &p)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", orcid, err)
+	}
+
+	return p.ID, nil
+}
 
 func lookupContainer(c *http.Client, issnl string) (uuid.UUID, error) {
 	fc2url := viper.GetString("fatcat2.endpoint")

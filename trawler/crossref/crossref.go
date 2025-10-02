@@ -3,6 +3,7 @@ package crossref
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,7 +69,10 @@ var releaseTypeMap = map[string]string{
 }
 
 type Abstract struct {
-	// TODO
+	Content  string `json:"content"`
+	SHA1     string `json:"sha1"`
+	Language string `json:"language"`
+	MIMEType string `json:"mimetype"`
 }
 
 type ReleaseContrib struct {
@@ -192,6 +196,8 @@ type crossrefDoc struct {
 	Publisher      string
 	Title          []string
 	Type           string
+	Abstract       string
+	Language       string
 }
 
 var ignoredTypes = []string{
@@ -555,7 +561,20 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 
 		r.Refs = append(r.Refs, rawRef)
+	}
 
+	// abstracts
+
+	// TODO find out if any release has more than one abstract
+	r.Abstracts = []Abstract{}
+	if len(record.Abstract) > 10 {
+		h := sha1.Sum([]byte(record.Abstract))
+		r.Abstracts = append(r.Abstracts, Abstract{
+			MIMEType: "application/xml+jats",
+			Content:  record.Abstract,
+			Language: record.Language,
+			SHA1:     fmt.Sprintf("%x", h),
+		})
 	}
 
 	fmt.Println(r)

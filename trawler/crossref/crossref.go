@@ -105,6 +105,7 @@ type Container struct {
 
 // TODO split out into its own package
 type Release struct {
+	ID            uuid.UUID
 	Title         string
 	OriginalTitle string `json:"original_title"`
 	Subtitle      string
@@ -118,6 +119,7 @@ type Release struct {
 	Pages         string
 	Publisher     string
 	Language      string
+	LegacyRevID   uuid.UUID
 	LicenseSlug   string `json:"license_slug"`
 	Extra         map[string]any
 
@@ -470,7 +472,6 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		Issue:       xrefdoc.Issue,
 		Pages:       xrefdoc.Page,
 		Language:    xrefdoc.Language,
-		Source:      "dev", // TODO thread through from args
 	}
 
 	// if things get weird we'll put some stuff in here
@@ -773,11 +774,15 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 	}
 
-	// TODO
+	id, err := createRelease(client, release)
+	if err != nil {
+		return out, err
+	}
 
-	fmt.Println(release)
+	out.Releases.Added++
 
-	// TODO create entity for insertion
+	l.Debug("created release", id)
+
 	// TODO insert into db (Added++)
 	// TODO wait for spn slot
 	// TODO submit to spn
@@ -805,21 +810,16 @@ func licenseSlugLookup(rawURL string) string {
 	return licenseSlugMap[rawURL]
 }
 
-const contQ = `
+// createContainer creates a new container in fc2 and returns its ID
+func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
+	const contQ = `
 SELECT
   ident.id,
 	ident.rev_id AS legacy_rev_id,
-	rev.issne,
-	rev.issnp,
-	rev.extra_json AS extra
-FROM container_ident ident
-JOIN container_rev rev ON rev.id = ident.rev_id
-WHERE rev.issnl = $1
-LIMIT 1;
+FROM container_ident ident JOIN container_rev rev ON rev.id = ident.rev_id
+WHERE rev.issnl = $1 LIMIT 1;
 `
 
-// createContainer creates a new container in fc2 and returns its ID
-func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
 	c.Source = "dev" // TODO thread this value through from invocation of workflow
 	c.ID = uuid.New()
 
@@ -832,16 +832,12 @@ func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
 	err = conn.QueryRow(ctx, contQ, c.ISSNL).Scan(
 		&c.ID,
 		&c.LegacyRevID,
-		&c.ISSNE,
-		&c.ISSNP,
-		&c.Extra,
 	)
 
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return uuid.Nil, fmt.Errorf("failed to talk to old fatcat db: %w", err)
 	}
 
-	// if found, insert that data and return the ID
 	fc2url := viper.GetString("fatcat2.endpoint")
 	fc2key := viper.GetString("fatcat2.key")
 
@@ -866,6 +862,68 @@ func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
 	}
 
 	return c.ID, nil
+}
+
+// createRelease creates a new release in fc2 and returns its ID
+func createRelease(client *http.Client, r Release) (uuid.UUID, error) {
+	const relQ = `
+SELECT
+  ident.id,
+	ident.rev_id AS legacy_rev_id,
+FROM release_ident ident JOIN release_rev rev ON rev.id = ident.rev_id
+WHERE rev.doi = $1 LIMIT 1;
+`
+	r.Source = "dev" // TODO thread this value through from invocation of workflow
+	r.ID = uuid.New()
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, viper.GetString("fatcat1.pgurl"))
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to connect to legacy fatcat: %w", err)
+	}
+
+	var doi string
+	for _, eid := range r.ExternalIDs {
+		if eid.Type == "doi" {
+			doi = eid.Value
+			break
+		}
+	}
+	if doi == "" {
+		panic("nothing without a doi should get to this point")
+	}
+
+	err = conn.QueryRow(ctx, relQ, doi).Scan(
+		&r.ID,
+		&r.LegacyRevID,
+	)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("failed to talk to old fatcat db: %w", err)
+	}
+
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	bs, err := json.Marshal(r)
+
+	body := bytes.NewBuffer(bs)
+	req, err := http.NewRequest("POST", fc2url+"/release", body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("release POST failed for '%#v': %w", r, err)
+	}
+
+	if resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", r, resp.StatusCode, b)
+	}
+
+	return r.ID, nil
 }
 
 // TODO make a client wrapper

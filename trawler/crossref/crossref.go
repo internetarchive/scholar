@@ -58,6 +58,8 @@ var releaseTypeMap = map[string]string{
 	// looking at releases with no types and "crossref" in the extra_json in
 	// fatcat1, this seems to often describe figures
 	// TODO waiting on jefferson's call
+	"journal-issue":   "",
+	"journal-volume":  "",
 	"other":           "",
 	"reference-book":  "book",
 	"reference-entry": "entry",
@@ -294,6 +296,7 @@ type crossrefDoc struct {
 
 var ignoredTypes = []string{
 	"",
+	"database",
 	"journal",
 	"proceedings",
 	"standard-series",
@@ -540,6 +543,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 	} else {
 		out.Containers.Ignored++
+	}
+
+	if containerID != uuid.Nil {
 		release.ContainerID = &containerID
 	}
 
@@ -779,9 +785,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	if len(xrefdoc.Issued.DateParts) > 0 {
 		rawDate := xrefdoc.Issued.DateParts[0]
 		if len(rawDate) == 3 {
-			// TODO getting 0001-01-01 dates
 			d, err := time.Parse("2006-01-02",
-				fmt.Sprintf("%d-%d-%d", rawDate[0], rawDate[1], rawDate[2]))
+				fmt.Sprintf("%d-%02d-%02d", rawDate[0], rawDate[1], rawDate[2]))
 			if err == nil {
 				release.ReleaseDate = d
 			}

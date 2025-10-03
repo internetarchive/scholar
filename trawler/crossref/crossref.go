@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"encoding/base32"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,8 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"github.com/google/uuid"
@@ -783,7 +782,6 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	l.Debug("created release", id)
 
-	// TODO insert into db (Added++)
 	// TODO wait for spn slot
 	// TODO submit to spn
 	// TODO fetch pdf from wayback
@@ -812,30 +810,17 @@ func licenseSlugLookup(rawURL string) string {
 
 // createContainer creates a new container in fc2 and returns its ID
 func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
-	const contQ = `
-SELECT
-  ident.id,
-	ident.rev_id AS legacy_rev_id,
-FROM container_ident ident JOIN container_rev rev ON rev.id = ident.rev_id
-WHERE rev.issnl = $1 LIMIT 1;
-`
-
 	c.Source = "dev" // TODO thread this value through from invocation of workflow
 	c.ID = uuid.New()
 
-	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, viper.GetString("fatcat1.pgurl"))
+	legacy, err := lookupLegacyContainer(client, c.ISSNL)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("failed to connect to legacy fatcat: %w", err)
+		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
 	}
 
-	err = conn.QueryRow(ctx, contQ, c.ISSNL).Scan(
-		&c.ID,
-		&c.LegacyRevID,
-	)
-
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, fmt.Errorf("failed to talk to old fatcat db: %w", err)
+	if legacy != nil {
+		c.ID = legacy.Ident
+		c.LegacyRevID = legacy.Revision
 	}
 
 	fc2url := viper.GetString("fatcat2.endpoint")
@@ -866,20 +851,8 @@ WHERE rev.issnl = $1 LIMIT 1;
 
 // createRelease creates a new release in fc2 and returns its ID
 func createRelease(client *http.Client, r Release) (uuid.UUID, error) {
-	const relQ = `
-SELECT
-  ident.id,
-	ident.rev_id AS legacy_rev_id,
-FROM release_ident ident JOIN release_rev rev ON rev.id = ident.rev_id
-WHERE rev.doi = $1 LIMIT 1;
-`
 	r.Source = "dev" // TODO thread this value through from invocation of workflow
 	r.ID = uuid.New()
-	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, viper.GetString("fatcat1.pgurl"))
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("failed to connect to legacy fatcat: %w", err)
-	}
 
 	var doi string
 	for _, eid := range r.ExternalIDs {
@@ -892,12 +865,14 @@ WHERE rev.doi = $1 LIMIT 1;
 		panic("nothing without a doi should get to this point")
 	}
 
-	err = conn.QueryRow(ctx, relQ, doi).Scan(
-		&r.ID,
-		&r.LegacyRevID,
-	)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, fmt.Errorf("failed to talk to old fatcat db: %w", err)
+	legacy, err := lookupLegacyRelease(client, doi)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
+	}
+
+	if legacy != nil {
+		r.ID = legacy.Ident
+		r.LegacyRevID = legacy.Revision
 	}
 
 	fc2url := viper.GetString("fatcat2.endpoint")
@@ -930,6 +905,82 @@ WHERE rev.doi = $1 LIMIT 1;
 //type FC2Client http.Client
 
 // TODO generalize lookup functions
+type LegacyData struct {
+	Ident    uuid.UUID
+	Revision uuid.UUID
+}
+
+func fc2uuid(fatcatIdent string) (uuid.UUID, error) {
+	i := strings.ToUpper(fatcatIdent + "======")
+	decoded, err := base32.StdEncoding.DecodeString(i)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	return uuid.FromBytes(decoded)
+}
+
+func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData, error) {
+	fc1url := viper.GetString("fatcat1.endpoint")
+	req, err := http.NewRequest("GET", fc1url+"/"+endpoint, nil)
+	if err != nil {
+		panic(err)
+	}
+	q := req.URL.Query()
+	q.Add("extid_type", idtype)
+	q.Add("extid_value", idvalue)
+	req.URL.RawQuery = q.Encode()
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fc1 lookup failed for %s of '%s': %w", idtype, idvalue, err)
+	}
+	if resp.StatusCode == 404 {
+		return nil, nil
+	}
+
+	if resp.StatusCode != 200 {
+		// NB invalid issnls crash the server (500). if we get bad data from
+		// crossref it will stop the activity cold. might have to patch fc1 to
+		// return a 400.
+		return nil, fmt.Errorf(
+			"did not get 200 nor 404 from fc1 for %s of '%s' lookup: %d",
+			idtype, idvalue, resp.StatusCode)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var p struct {
+		Ident    string
+		Revision uuid.UUID
+	}
+
+	err = json.Unmarshal(bs, &p)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal failed for %s of '%s': %w", idtype, idvalue, err)
+	}
+
+	ident, err := fc2uuid(p.Ident)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LegacyData{
+		Ident:    ident,
+		Revision: p.Revision,
+	}, nil
+}
+
+func lookupLegacyContainer(c *http.Client, issnl string) (*LegacyData, error) {
+	return lookupLegacy(c, "lookup_container", "issnl", issnl)
+}
+
+func lookupLegacyRelease(c *http.Client, doi string) (*LegacyData, error) {
+	return lookupLegacy(c, "lookup_release", "doi", doi)
+}
+
 func lookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
 	fc2url := viper.GetString("fatcat2.endpoint")
 	req, err := http.NewRequest("GET", fc2url+"/creator/lookup", nil)

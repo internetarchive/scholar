@@ -68,14 +68,16 @@ var releaseTypeMap = map[string]string{
 }
 
 type Abstract struct {
-	Content  string `json:"content"`
-	SHA1     string `json:"sha1"`
-	Language string `json:"language"`
-	MIMEType string `json:"mimetype"`
+	ReleaseID *uuid.UUID `json:"release_id"`
+	Content   string     `json:"content"`
+	SHA1      string     `json:"sha1"`
+	Language  string     `json:"language"`
+	MIMEType  string     `json:"mimetype"`
 }
 
 type ReleaseContrib struct {
-	CreatorID      uuid.UUID      `json:"creator"`
+	CreatorID      *uuid.UUID     `json:"creator_id"`
+	ReleaseID      *uuid.UUID     `json:"release_id"`
 	Position       int            `json:"position"`
 	RawName        string         `json:"raw_name"`
 	GivenName      string         `json:"given_name"`
@@ -86,8 +88,9 @@ type ReleaseContrib struct {
 }
 
 type ExternalID struct {
-	Type  string `json:"id_type"`
-	Value string `json:"id_value"`
+	ReleaseID *uuid.UUID `json:"release_id"`
+	Type      string     `json:"id_type"`
+	Value     string     `json:"id_value"`
 }
 type Container struct {
 	ID          uuid.UUID      `json:"id,omitempty"`
@@ -104,31 +107,32 @@ type Container struct {
 
 // TODO split out into its own package
 type Release struct {
-	ID            uuid.UUID
-	Title         string
-	OriginalTitle string `json:"original_title"`
-	Subtitle      string
-	Type          string    `json:"release_type"`
-	Stage         string    `json:"release_stage"`
-	ReleaseDate   time.Time `json:"release_date"`
-	ReleaseYear   int       `json:"release_year"`
-	Source        string
-	Volume        string
-	Issue         string
-	Pages         string
-	Publisher     string
-	Language      string
-	LegacyRevID   uuid.UUID
-	LicenseSlug   string `json:"license_slug"`
-	Extra         map[string]any
+	ID            uuid.UUID      `json:"id"`
+	WorkID        *uuid.UUID     `json:"work_id"`
+	Title         string         `json:"title,omitempty"`
+	OriginalTitle string         `json:"original_title,omitempty"`
+	Subtitle      string         `json:"subtitle,omitempty"`
+	Type          string         `json:"release_type,omitempty"`
+	Stage         string         `json:"release_stage,omitempty"`
+	ReleaseDate   time.Time      `json:"release_date"`
+	ReleaseYear   int            `json:"release_year,omitempty"`
+	Source        string         `json:"source,omitempty"`
+	Volume        string         `json:"volume,omitempty"`
+	Issue         string         `json:"issue,omitempty"`
+	Pages         string         `json:"pages,omitempty"`
+	Publisher     string         `json:"publisher,omitempty"`
+	Language      string         `json:"language,omitempty"`
+	LegacyRevID   uuid.UUID      `json:"legacy_rev_id,omitempty"`
+	LicenseSlug   string         `json:"license_slug,omitempty"`
+	Extra         map[string]any `json:"extra,omitempty"`
 
 	// Foreign keys
 
-	Refs        []RawRef
-	Abstracts   []Abstract
-	ContainerID uuid.UUID `json:"container_id"`
-	ExternalIDs []ExternalID
-	Contribs    []ReleaseContrib
+	Refs        []RawRef         `json:"refs,omitempty"`
+	Abstracts   []Abstract       `json:"abstracts,omitempty"`
+	ContainerID *uuid.UUID       `json:"container_id"`
+	ExternalIDs []ExternalID     `json:"extids,omitempty"`
+	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 
 	// unused in xref but may want later:
 	// Pages string
@@ -137,20 +141,26 @@ type Release struct {
 	// understand when the structured ReleaseRefs are added in the old system
 }
 
+func (r Release) DOI() string {
+	// TODO
+	return ""
+}
+
 // RawRef is stored in fatcat2's database as a json value in a release row
 type RawRef struct {
 	// TODO I don't like how this is structured (wayyy too much shoved in extra)
 	// but just maintaining parity for now with legacy fatcat
 
 	// NB no indication TargetReleaseID is ever set
-	Title           string         `json:"title,omitempty"`
-	TargetReleaseID uuid.UUID      `json:"target_release_id,omitempty"`
-	Index           int            `json:"index,omitempty"`
-	Key             string         `json:"key,omitempty"`
-	Year            int            `json:"year,omitempty"`
-	ContainerName   string         `json:"container_name,omitempty"`
-	Locator         string         `json:"locator,omitempty"`
-	Extra           map[string]any `json:"extra,omitempty"`
+	// TODO this is ending up as uuid.Nil
+	//TargetReleaseID *uuid.UUID     `json:"target_release_id,omitempty"`
+	Title         string         `json:"title,omitempty"`
+	Index         int            `json:"index,omitempty"`
+	Key           string         `json:"key,omitempty"`
+	Year          int            `json:"year,omitempty"`
+	ContainerName string         `json:"container_name,omitempty"`
+	Locator       string         `json:"locator,omitempty"`
+	Extra         map[string]any `json:"extra,omitempty"`
 }
 
 // TODO crossref structs
@@ -214,7 +224,9 @@ func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (ReleaseCont
 		if err != nil {
 			return out, err
 		}
-		out.CreatorID = id
+		if id != uuid.Nil {
+			out.CreatorID = &id
+		}
 	}
 
 	out.RawName = cc.Given
@@ -528,7 +540,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 	} else {
 		out.Containers.Ignored++
-		release.ContainerID = containerID
+		release.ContainerID = &containerID
 	}
 
 	// licenses
@@ -660,8 +672,12 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		})
 	}
 
+	// TODO noticed this as the entire content of an abstract, should filter out stuff like this:
+	// Dieser Artikel ist nur als PDF-Dokument verfügbar.
+	// (This article is only available as a PDF document.)
+
 	// "extra" stuff (ugh)
-	if release.ContainerID == uuid.Nil && len(xrefdoc.ContainerTitle) > 1 {
+	if release.ContainerID == nil && len(xrefdoc.ContainerTitle) > 1 {
 		release.Extra["container_name"] = xrefdoc.ContainerTitle[0]
 	}
 
@@ -763,6 +779,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	if len(xrefdoc.Issued.DateParts) > 0 {
 		rawDate := xrefdoc.Issued.DateParts[0]
 		if len(rawDate) == 3 {
+			// TODO getting 0001-01-01 dates
 			d, err := time.Parse("2006-01-02",
 				fmt.Sprintf("%d-%d-%d", rawDate[0], rawDate[1], rawDate[2]))
 			if err == nil {
@@ -895,7 +912,8 @@ func createRelease(client *http.Client, r Release) (uuid.UUID, error) {
 
 	if resp.StatusCode != 201 {
 		b, _ := io.ReadAll(resp.Body)
-		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", r, resp.StatusCode, b)
+		return uuid.Nil, fmt.Errorf("unexpected status code for '%s' (%s) POST: %d; body '%s'",
+			doi, r.LegacyRevID, resp.StatusCode, b)
 	}
 
 	return r.ID, nil

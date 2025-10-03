@@ -116,7 +116,7 @@ type Release struct {
 	Subtitle      string         `json:"subtitle,omitempty"`
 	Type          string         `json:"release_type,omitempty"`
 	Stage         string         `json:"release_stage,omitempty"`
-	ReleaseDate   time.Time      `json:"release_date"`
+	ReleaseDate   *time.Time     `json:"release_date"`
 	ReleaseYear   int            `json:"release_year,omitempty"`
 	Source        string         `json:"source,omitempty"`
 	Volume        string         `json:"volume,omitempty"`
@@ -199,7 +199,7 @@ type crossrefLicense struct {
 	ContentVersion string `json:"content-version"`
 	Start          struct {
 		DateTime string `json:"date-time"`
-	}
+	} `json:"start"`
 	DelayInDays int `json:"delay-in-days"`
 }
 
@@ -788,7 +788,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 			d, err := time.Parse("2006-01-02",
 				fmt.Sprintf("%d-%02d-%02d", rawDate[0], rawDate[1], rawDate[2]))
 			if err == nil {
-				release.ReleaseDate = d
+				release.ReleaseDate = &d
 			}
 		} else if len(rawDate) > 0 {
 			release.ReleaseYear = rawDate[0]

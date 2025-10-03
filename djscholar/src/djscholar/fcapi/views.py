@@ -156,7 +156,7 @@ class ReleaseSchema(ModelSchema):
                                          "volume", "issue", "pages", "number", "version",
                                          "publisher", "language", "license_slug",
                                          "withdrawn_status", "refs",]
-        optional_fields = COMMON_ENTITY_OPTIONAL_FIELDS
+        fields_optional = COMMON_ENTITY_OPTIONAL_FIELDS
 
 
 # TODO annoying name thing
@@ -187,7 +187,7 @@ class WebcaptureSchema(ModelSchema):
     class Meta:
         model = m.Webcapture
         fields = COMMON_ENTITY_FIELDS + ["original_url", "captured"]
-        optional_fields = COMMON_ENTITY_OPTIONAL_FIELDS
+        fields_optional = COMMON_ENTITY_OPTIONAL_FIELDS
 
 
 ContainerSchema = create_schema(m.Container,
@@ -221,7 +221,7 @@ class FileSchema(ModelSchema):
         model = m.File
         fields = COMMON_ENTITY_FIELDS + ["size_bytes", "sha1", "sha256", "md5",
                                          "mimetype"]
-        optional_fields = COMMON_ENTITY_OPTIONAL_FIELDS
+        fields_optional = COMMON_ENTITY_OPTIONAL_FIELDS
 
 
 type EntitySchema = ReleaseSchema\

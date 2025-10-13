@@ -897,6 +897,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 // isCrawlWanted returns true if we feel this release is worthy of a crawl attempt
 func isCrawlWanted(release Release) bool {
+	// TODO consider adding this to Release type
 	doi := release.DOI()
 
 	if doi == "" {
@@ -917,6 +918,38 @@ func isCrawlWanted(release Release) bool {
 	if len(release.FulltextURLs()) == 0 {
 		return false
 	}
+
+	// TODO this check would only ever apply to releases that we already have
+	// files for (see the is_preserved property) so I'm punting on it because it
+	// doesn't make much sense. I think it's for processing a fatcat changelog in
+	// a world where humans are updating things.
+	/*
+		  if (
+		    es.get("publisher_type") == "big5"
+		    and es.get("is_preserved")
+		    and not (es["is_oa"] or in_acceptlist)
+		):
+		    return False
+	*/
+
+	// TODO these two checks seem to apply for datacite and arxiv, respectively. Punting on them for now:
+	/*
+	 # figshare
+	 if doi and (doi.startswith("10.6084/") or doi.startswith("10.25384/")):
+	     # don't crawl "most recent version" (aka "group") DOIs
+	     if not release.version:
+	         return False
+
+	 # zenodo
+	 if doi and doi.startswith("10.5281/"):
+	     # if this is a "grouping" DOI of multiple "version" DOIs, do not crawl (will crawl the versioned DOIs)
+	     if release.extra and release.extra.get("relations"):
+	         for rel in release.extra["relations"]:
+	             if rel.get("relationType") == "HasVersion" and rel.get(
+	                 "relatedIdentifier", ""
+	             ).startswith("10.5281/"):
+	                 return False
+	*/
 
 	return false
 }

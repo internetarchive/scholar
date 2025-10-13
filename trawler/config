@@ -56,4 +56,8 @@ doi_prefix_blocklist = [
   "10.2307/",
   # arxiv: duplicates with arxiv identifiers (temporary)
   "10.48550/",
+  # figshare: including until I understand where and how version is set
+  "10.6084/",
+  "10.25384/",
+
 ]

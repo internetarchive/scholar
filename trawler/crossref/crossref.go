@@ -144,8 +144,80 @@ type Release struct {
 }
 
 func (r Release) DOI() string {
-	// TODO
+	for _, eid := range r.ExternalIDs {
+		if eid.Type == "doi" {
+			return eid.Value
+		}
+	}
 	return ""
+}
+
+func (r Release) IsPaperlike() bool {
+	paperLikeTypes := []string{
+		"article-journal",
+		"book",
+		"paper-conference",
+		"chapter",
+		"report",
+		"thesis",
+	}
+
+	return slices.Contains(paperLikeTypes, r.Type)
+}
+
+// FulltextURLs returns a list of possible locations for this release's
+// fulltext PDF. These are generated from known URL patterns for the different
+// external ID types. Should upstream patterns change, the URLs generated here
+// might become useless. The URLs are sorted roughly by preference (IE,
+// likelihood of success).
+func (r Release) FulltextURLs() []string {
+	// TODO this approach smells to me; I'm mostly just preserving what we were
+	// doing in fatcat's entity worker. This is important code (drives our daily
+	// crawling attempts) _and_ is volatile as it depends on upstream url
+	// patterns. I'm keeping it like this for the first pass but having URL
+	// templates in config per upstream might be useful to expose.
+	/*
+	   Relevant fatcat code (python/fatcat_tools/transforms/ingest.py):
+	   # generate a URL where we expect to find fulltext
+	   url = None
+	   link_source = None
+	   link_source_id = None
+	   if release.ext_ids.arxiv and ingest_type == "pdf":
+	       url = "https://arxiv.org/pdf/{}.pdf".format(release.ext_ids.arxiv)
+	       link_source = "arxiv"
+	       link_source_id = release.ext_ids.arxiv
+	   elif release.ext_ids.pmcid and ingest_type == "pdf":
+	       # TODO: how to tell if an author manuscript in PMC vs. published?
+	       # url = "https://www.ncbi.nlm.nih.gov/pmc/articles/{}/pdf/".format(release.ext_ids.pmcid)
+	       url = "http://europepmc.org/backend/ptpmcrender.fcgi?accid={}&blobtype=pdf".format(
+	           release.ext_ids.pmcid
+	       )
+	       link_source = "pmc"
+	       link_source_id = release.ext_ids.pmcid
+	   elif release.ext_ids.doi:
+	       url = "https://doi.org/{}".format(release.ext_ids.doi.lower())
+	       link_source = "doi"
+	       link_source_id = release.ext_ids.doi.lower()
+	   elif release.ext_ids.doaj:
+	       url = "https://doaj.org/article/{}".format(release.ext_ids.doaj.lower())
+	       link_source = "doaj"
+	       link_source_id = release.ext_ids.doaj.lower()
+	   elif release.ext_ids.hdl:
+	       url = "https://hdl.handle.net/{}".format(release.ext_ids.hdl.lower())
+	       link_source = "hdl"
+	       link_source_id = release.ext_ids.hdl.lower()
+	*/
+
+	out := []string{}
+	if r.DOI() != "" {
+		out = append(out, fmt.Sprintf("https://doi.org/%s", r.DOI()))
+	}
+
+	// TODO arxiv (NB cross reference with the hack i added to sandcrawler)
+	// TODO pmcid (NB it used ncbi but switched to europepmc which mostly fails, now
+	// TODO doaj
+	// TODO hdl
+	return out
 }
 
 // RawRef is stored in fatcat2's database as a json value in a release row
@@ -355,6 +427,8 @@ type releaseCounts struct {
 	Ignored int
 	// Added is the count of lines from the upstream metadata we added to Fatcat
 	Added int
+	// CrawlWanted is the count of how many releases we tried to get from the web
+	CrawlWanted int
 	// Acquired is the count of PDFs we acquired from the upstream metadata
 	Acquired int
 }
@@ -376,10 +450,11 @@ type counts struct {
 func (c counts) Add(other counts) counts {
 	return counts{
 		Releases: releaseCounts{
-			Skipped:  c.Releases.Skipped + other.Releases.Skipped,
-			Ignored:  c.Releases.Ignored + other.Releases.Ignored,
-			Added:    c.Releases.Added + other.Releases.Added,
-			Acquired: c.Releases.Acquired + other.Releases.Acquired,
+			Skipped:     c.Releases.Skipped + other.Releases.Skipped,
+			Ignored:     c.Releases.Ignored + other.Releases.Ignored,
+			Added:       c.Releases.Added + other.Releases.Added,
+			CrawlWanted: c.Releases.CrawlWanted + other.Releases.CrawlWanted,
+			Acquired:    c.Releases.Acquired + other.Releases.Acquired,
 		},
 		Containers: containerCounts{
 			Ignored: c.Containers.Ignored + other.Containers.Ignored,
@@ -804,6 +879,12 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	l.Debug("created release", id)
 
+	if !isCrawlWanted(release) {
+		return out, err
+	}
+
+	out.Releases.CrawlWanted++
+
 	// TODO wait for spn slot
 	// TODO submit to spn
 	// TODO fetch pdf from wayback
@@ -812,6 +893,32 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// TODO insert file into db
 	// TODO ingest PDF (Acquired++)
 	return out, nil
+}
+
+// isCrawlWanted returns true if we feel this release is worthy of a crawl attempt
+func isCrawlWanted(release Release) bool {
+	doi := release.DOI()
+
+	if doi == "" {
+		return false
+	}
+
+	if !release.IsPaperlike() {
+		return false
+	}
+
+	doiPrefixBlocklist := viper.GetStringSlice("crawling.doi_prefix_blocklist")
+	for _, prefix := range doiPrefixBlocklist {
+		if strings.HasPrefix(doi, prefix) {
+			return false
+		}
+	}
+
+	if len(release.FulltextURLs()) == 0 {
+		return false
+	}
+
+	return false
 }
 
 func licenseSlugLookup(rawURL string) string {

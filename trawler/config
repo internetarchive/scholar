@@ -27,5 +27,33 @@ every = "120s"
 sks3bucket = "sk-crossref"
 default_limit = 1000 # for dev; typically would be -1 for unlimited
 
-[fatcat2]
-endpoint = "https://scholar.archive.org/api/fatcat/v2"
+[fatcat1]
+endpoint = "https://scholar.archive.org/api/fatcat/v1"
+
+[crawling]
+doi_prefix_blocklist = [
+  # gbif.org: many DOIs, not PDF fulltext
+  "10.15468/",
+  # ssl.fao.org: gene data
+  "10.18730/",
+  # plutof.ut.ee: gene data
+  "10.15156/",
+  # ba.e-pics.ethz.ch: swiss image (photo) archive
+  "10.3932/",
+  # ccdc.cam.ac.uk: crystal structures
+  "10.5517/",
+  # researchgate: mostly blocks our crawler
+  "10.13140/",
+  # springerlink: mostly blocks crawler
+  "10.1007/",
+  # nature group: mostly blocks crawler
+  "10.1038/",
+  # SAGE: mostly blocks crawler
+  "10.1177/",
+  # IOP: mostly blocks crawler
+  "10.1088/",
+  # JSTOR: mostly blocks crawler
+  "10.2307/",
+  # arxiv: duplicates with arxiv identifiers (temporary)
+  "10.48550/",
+]

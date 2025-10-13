@@ -67,58 +67,58 @@ url_blocklist = [
 
   # generally unwanted patterns
 
-  "://localhost/",
-  "://127.0.0.1/",
+  "//localhost/",
+  "//127.0.0.1/",
   # robot blocking / rate-limited
-  "://hkvalidate.perfdrive.com/",
-  "://ieeexplore.ieee.org/",
+  "//hkvalidate.perfdrive.com/",
+  "//ieeexplore.ieee.org/",
   # temporary, until we implement specific fetch and 'petabox' output
-  "://archive.org/",
-  "://www.archive.org/",
-  "://web.archive.org/web/",
+  "//archive.org/",
+  "//www.archive.org/",
+  "//web.archive.org/web/",
   # out of scope
-  "://openlibrary.org/",
-  "://www.openlibrary.org/",
-  "://fatcat.wiki/",
-  "://scholar.archive.org/",
-  "://orcid.org/",
+  "//openlibrary.org/",
+  "//www.openlibrary.org/",
+  "//fatcat.wiki/",
+  "//scholar.archive.org/",
+  "//orcid.org/",
   # Domain squats
-  "://bartandjones.com",
-  "://ijretm.com",
-  "://ijrcemas.com",
-  "://jist.net.in",
-  "://croisements-revue.org",
+  "//bartandjones.com",
+  "//ijretm.com",
+  "//ijrcemas.com",
+  "//jist.net.in",
+  "//croisements-revue.org",
   # all stubs/previews, not full papers
-  "://page-one.live.cf.public.springer.com",
+  "//page-one.live.cf.public.springer.com",
   # large datasets-only (no PDF expected)
   "plutof.ut.ee/",
   "www.gbif.org/",
   "doi.pangaea.de/",
   "www.plate-archive.org/",
-  "://apex.ipk-gatersleben.de/",
+  "//apex.ipk-gatersleben.de/",
   "fao.org/glis/",
   # Historical non-paper content:
   "dhz.uni-passau.de/",  # newspapers
   "digital.ucd.ie/",  # ireland national historical
   # deprecated domain (doesn't redirect correctly)
-  "://edoc.mpg.de/",
+  "//edoc.mpg.de/",
   # bogus/spam PDFs
-  "://isiarticles.com/",
+  "//isiarticles.com/",
   # requested to be not crawled in 2023
-  "://unsworks.unsw.edu.au/",
+  "//unsworks.unsw.edu.au/",
 
   # loginwall patterns
 
-  "://profile.thieme.de/HTML/sso/ejournals/login.htm",
-  "://login.bepress.com/",
+  "//profile.thieme.de/HTML/sso/ejournals/login.htm",
+  "//login.bepress.com/",
   "?SAMLRequest=",
-  "://osapublishing.org/captcha/",
+  "//osapublishing.org/captcha/",
   "/password-login",
-  "://gateway.isiknowledge.com/",
+  "//gateway.isiknowledge.com/",
   "/login?TARGET=",
   "jstage.jst.go.jp/sblogin",
-  "://acw.elsevier.com/SSOCore",
-  "://acw.sciencedirect.com/SSOCore",
+  "//acw.elsevier.com/SSOCore",
+  "//acw.sciencedirect.com/SSOCore",
   "/login?source=",
 
   # cookiewall patterns
@@ -127,5 +127,5 @@ url_blocklist = [
   "cookieSet=1",
   "error=cookies_not_supported",
   # SPNv2 seems to work (not end up here), but heritrix fails
-  "://secure.jbs.elsevierhealth.com/",
+  "//secure.jbs.elsevierhealth.com/",
 ]

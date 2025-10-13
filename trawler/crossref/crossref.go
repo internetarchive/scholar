@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -884,6 +885,17 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	out.Releases.CrawlWanted++
+
+	// porting the monster that is process_file from sandcrawler:python/sandcrawler/ingest_file.py
+	for _, u := range release.FulltextURLs() {
+		// TODO attempt crawl
+		parsed, err := url.Parse(u)
+		if err != nil {
+			return out, fmt.Errorf("failed to parse url '%s': %w", u, err)
+		}
+		// TODO check u.String() against the blocklist in config
+		l.Debug(fmt.Sprintf("%#v", parsed))
+	}
 
 	// TODO wait for spn slot
 	// TODO submit to spn

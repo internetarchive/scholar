@@ -887,14 +887,21 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	out.Releases.CrawlWanted++
 
 	// porting the monster that is process_file from sandcrawler:python/sandcrawler/ingest_file.py
+	gopts := getOpts{
+		Blocklist:     viper.GetStringSlice("crawling.url_blocklist"),
+		SimpleGetList: viper.GetStringSlice("crawling.simple_get_list"),
+	}
+
 	for _, u := range release.FulltextURLs() {
-		// TODO attempt crawl
-		parsed, err := url.Parse(u)
+		gopts.RawURL = u
+		res, err := getURL(gopts)
+
 		if err != nil {
-			return out, fmt.Errorf("failed to parse url '%s': %w", u, err)
+			l.Info(fmt.Sprintf("%s: get failed: %s", release.ID, err.Error()))
+			continue
 		}
-		// TODO check u.String() against the blocklist in config
-		l.Debug(fmt.Sprintf("%#v", parsed))
+
+		l.Debug(fmt.Sprintf("%s: got result %v", release.ID, res))
 	}
 
 	// TODO wait for spn slot
@@ -904,6 +911,71 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// TODO extract and check PDF metadata
 	// TODO insert file into db
 	// TODO ingest PDF (Acquired++)
+	return out, nil
+}
+
+type getOpts struct {
+	RawURL        string
+	Blocklist     []string
+	SimpleGetList []string
+}
+
+type getResult struct {
+	// TODO
+}
+
+type blockedError struct {
+	RawURL    string
+	ParsedURL string
+	Pattern   string
+}
+
+func (e blockedError) Error() string {
+	return fmt.Sprintf("blocked '%s' due to pattern '%s'", e.ParsedURL, e.Pattern)
+}
+
+// maybeRewriteURL looks for known patterns we can rewrite into direct PDF
+// access. This would ideally be captured in the config file perhaps as sets of
+// regular expressions with capture groups but is for now in a function for
+// expediency.
+func maybeRewriteURL(u string) string {
+	if strings.HasPrefix(u, "https://arxiv.org/pdf/") && strings.HasSuffix(u, ".pdf") {
+		return u[:len(u)-4]
+	}
+	if strings.HasPrefix(u, "https://onlinelibrary.wiley.com/doi/") {
+		return strings.Replace(u, "doi", "doi/pdf", 1)
+	}
+	return u
+}
+
+func getURL(opts getOpts) (getResult, error) {
+	out := getResult{}
+	u := opts.RawURL
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return out, fmt.Errorf("failed to parse url '%s': %w", u, err)
+	}
+	for _, p := range opts.Blocklist {
+		if strings.Contains(parsed.String(), p) {
+			return out, blockedError{
+				RawURL:    opts.RawURL,
+				ParsedURL: parsed.String(),
+				Pattern:   p,
+			}
+		}
+	}
+	u = maybeRewriteURL(u)
+
+	// NB sandcrawler had a notion of "force_recrawl" which skipped the wayback
+	// check. However, the daily crawls have force_recrawl set to false. I only
+	// saw use of force_recrawl in a one-off script. It's unclear how often Bryan
+	// may have relied on it in scripts not captured in git but I can't produce a
+	// solid argument for having it. For now I'm always checking wayback. We can
+	// introduce a "skip_wayback" type of argument to the workflow definition
+	// when we find that we need it.
+
+	// TODO wayback check
+
 	return out, nil
 }
 

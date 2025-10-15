@@ -129,3 +129,9 @@ url_blocklist = [
   # SPNv2 seems to work (not end up here), but heritrix fails
   "//secure.jbs.elsevierhealth.com/",
 ]
+
+# these URL patterns imply a direct PDF download we can obtain with a "simple"
+# get in SPN
+simple_get_list = [
+  # TODO
+]

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/issn"
+	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
@@ -887,14 +888,24 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	out.Releases.CrawlWanted++
 
 	// porting the monster that is process_file from sandcrawler:python/sandcrawler/ingest_file.py
-	gopts := getOpts{
-		Blocklist:     viper.GetStringSlice("crawling.url_blocklist"),
-		SimpleGetList: viper.GetStringSlice("crawling.simple_get_list"),
+	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
+		AccessKey: viper.GetString("spn.access_key"),
+		SecretKey: viper.GetString("spn.secret_ket"),
+		Endpoint:  viper.GetString("spn.endpoint"),
+	})
+	if err != nil {
+		panic(err)
 	}
 
 	for _, u := range release.FulltextURLs() {
-		gopts.RawURL = u
-		res, err := getURL(gopts)
+		crawler := PDFCrawler{
+			SPNClient:  spnClient,
+			MaxHops:    8,
+			SimpleGets: viper.GetStringSlice("crawling.simple_get_list"),
+			Blocklist:  viper.GetStringSlice("crawling.url_blocklist"),
+		}
+
+		res, err := crawler.Crawl(u)
 
 		if err != nil {
 			l.Info(fmt.Sprintf("%s: get failed: %s", release.ID, err.Error()))
@@ -902,26 +913,23 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 
 		l.Debug(fmt.Sprintf("%s: got result %v", release.ID, res))
+		// TODO check result -- if success, break and continue. otherwise..?
+		// results we care about later are going to be in the slog
+		// question is if we should only use result for success and errors for failure
 	}
 
-	// TODO wait for spn slot
-	// TODO submit to spn
+	if err != nil {
+		return out, nil
+	}
+
 	// TODO fetch pdf from wayback
-	// TODO store pdf in seaweed
-	// TODO extract and check PDF metadata
-	// TODO insert file into db
-	// TODO ingest PDF (Acquired++)
+	// TODO store pdf in seaweed? might not, might just shunt bytes to blobproc actually
+	// TODO hand off to blob proc
+	// TODO poll for blobproc result
+	// TODO check metadata against FC record
+	// TODO insert file into db (Acquired++)
+	// TODO ingest PDF (Ingested++)
 	return out, nil
-}
-
-type getOpts struct {
-	RawURL        string
-	Blocklist     []string
-	SimpleGetList []string
-}
-
-type getResult struct {
-	// TODO
 }
 
 type blockedError struct {
@@ -932,6 +940,16 @@ type blockedError struct {
 
 func (e blockedError) Error() string {
 	return fmt.Sprintf("blocked '%s' due to pattern '%s'", e.ParsedURL, e.Pattern)
+}
+
+type SPNError struct {
+	Message string
+	JobID   string
+	URL     string
+}
+
+func (e SPNError) Error() string {
+	return fmt.Sprintf("SPN job %s failed for '%s': %s", e.JobID, e.URL, e.Message)
 }
 
 // maybeRewriteURL looks for known patterns we can rewrite into direct PDF
@@ -948,23 +966,181 @@ func maybeRewriteURL(u string) string {
 	return u
 }
 
-func getURL(opts getOpts) (getResult, error) {
-	out := getResult{}
-	u := opts.RawURL
-	parsed, err := url.Parse(u)
-	if err != nil {
-		return out, fmt.Errorf("failed to parse url '%s': %w", u, err)
-	}
-	for _, p := range opts.Blocklist {
-		if strings.Contains(parsed.String(), p) {
-			return out, blockedError{
-				RawURL:    opts.RawURL,
-				ParsedURL: parsed.String(),
-				Pattern:   p,
+type PDFCrawler struct {
+	SPNClient  spnclient.Client
+	MaxHops    int
+	SimpleGets []string
+	Blocklist  []string
+}
+
+type CrawlResult struct {
+	// TODO
+}
+
+// TODO decide on CrawlResult
+// TODO implement slog for crawl results
+
+func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
+	out := CrawlResult{}
+
+	chain := []string{startURL}
+
+	for len(chain) < c.MaxHops {
+		u := chain[len(chain)-1]
+		parsed, err := url.Parse(u)
+		if err != nil {
+			// TODO in the historical sandcrawler data there are a lot of URLs that
+			// fail to parse -- none of them ever led to a hit. Thus, a fail here
+			// should just give up on the PDF attempt and not bother with SPN.
+			return out, fmt.Errorf("failed to parse url '%s': %w", startURL, err)
+		}
+		for _, p := range c.Blocklist {
+			if strings.Contains(parsed.String(), p) {
+				return out, blockedError{
+					RawURL:    startURL,
+					ParsedURL: parsed.String(),
+					Pattern:   p,
+				}
 			}
 		}
+
+		u = c.maybeRewrite(u)
+
+		// TODO keep filling in simple get list
+		var simpleGet bool
+		for _, prefix := range c.SimpleGets {
+			if strings.HasPrefix(u, prefix) {
+				simpleGet = true
+				break
+			}
+		}
+
+		req := spnclient.SaveRequest{
+			URL:                u,
+			CaptureAll:         true,
+			ForceGet:           simpleGet,
+			SkipFirstArchive:   true,
+			DelayForJavascript: !simpleGet,
+			JavascriptTimeout:  30,
+		}
+
+		// poll until we obtain a slot
+		var jobID string
+		for jobID == "" {
+			resp, err := c.SPNClient.Save(req)
+			if err != nil {
+				// TODO slog
+				return out, fmt.Errorf("spn api failure: %w", err)
+			}
+
+			if strings.Contains(resp.Message, "reached the limit of active sessions") {
+				// TODO should we bail after N attempts?
+				time.Sleep(6 * time.Second)
+				continue
+			}
+
+			if strings.Contains(resp.Message, "The same snapshot had been made") {
+				// TODO attempt to look up via cdx? or error?
+			}
+
+			if resp.JobID == "" {
+				// TODO slog
+				return out, SPNError{
+					Message: resp.Message,
+					URL:     resp.URL,
+				}
+			}
+
+			jobID = resp.JobID
+		}
+
+		// poll until job completes
+		var status spnclient.JobStatus
+		for {
+			status, err = c.SPNClient.StatusJob(jobID)
+			if err != nil {
+				// TODO slog
+				return out, fmt.Errorf("could not get spn job status: %w", err)
+			}
+
+			if status.Status == "pending" {
+				continue
+			}
+
+			break
+		}
+
+		if status.Status != "success" {
+			// TODO slog
+			return out, SPNError{
+				Message: status.Message,
+				URL:     status.OriginalURL,
+				JobID:   status.JobID,
+			}
+		}
+
+		// TODO status == success
+
+		// TODO  original code had a check for 'original_url' starting with /; did
+		// not see that coming up in the last month+ of sc logs so i'm leaving it
+		// out. There was an additional check seeing if :// was not in a url; this
+		// used a status called spn2-success-partial-url but I didn't see any cases
+		// of that in the sc db
+
+		// TODO evaluate this elsevier hack:
+		/*
+		   if "://pdf.sciencedirectassets.com/" in spn_result.request_url:
+		   elsevier_pdf_cdx = wayback_client.cdx_client.lookup_best(
+		       spn_result.request_url,
+		       best_mimetype="application/pdf",
+		   )
+		   if elsevier_pdf_cdx and elsevier_pdf_cdx.mimetype == "application/pdf":
+		       print("  Trying pdf.sciencedirectassets.com hack!", file=sys.stderr)
+		       cdx_row = elsevier_pdf_cdx
+		   else:
+		       print("  Failed pdf.sciencedirectassets.com hack!", file=sys.stderr)
+		       # print(elsevier_pdf_cdx, file=sys.stderr)
+		*/
+
+		// TODO cdx lookup by OriginalURL and Timestamp (old client's fetch)
+		// TODO investigate high number of spn2-cdx-lookup-failure. Grabbing a
+		// recent one, it's something we tried to get today and indeed have found
+		// in the wayback machine now. The current delay for a CDX lookup is 9
+		// seconds so we should up that; going to start with 30 seconds.
+
 	}
-	u = maybeRewriteURL(u)
+
+	// is there value in consulting a database at this point?
+	// what if we tracked success from an initial url? of course, the url will
+	// have a distinctive path and likely be new/unique. but it should have some
+	// kind of prefix.
+
+	// lol.com/access/id/123/120931092830l12309123..123.123
+
+	// domain is crude but still a nice indicator: how often does this domain
+	// lead to a pdf? if it's less than 10%, we could skip
+	// domain + 1 path element might be more useful but we can't rule out a top
+	// level access path like lol.com/12039120390123 (which would be unique).
+
+	// we could score each prefix based on number of attempts and number of successes
+
+	// for a given domain + N paths, N >= 0
+	// unknown: insufficient number of requests
+	// likely: at least 10% hit rate
+	// unlikely: <10% hit rate
+
+	// lol.com: likely
+	// lol.com/access: likely
+	// lol.com/id: likely
+	// lol.com/id/123: unknown
+	// lol.com/id/123/12381283: unknown
+
+	// ok.com: likely
+	// ok.com/foo: unlikely
+	// ok.com/foo/bar: unknown
+
+	// paths just feel too volatile the more i think about it so i think domain
+	// hit rate is more interesting
 
 	// NB sandcrawler had a notion of "force_recrawl" which skipped the wayback
 	// check. However, the daily crawls have force_recrawl set to false. I only
@@ -976,7 +1152,36 @@ func getURL(opts getOpts) (getResult, error) {
 
 	// TODO wayback check
 
+	// thoughts on crawling
+	//
+	// we're always starved for SPN slots. so, if we can request some % of our
+	// urls without SPN that means, potentially, more papers in a day. However,
+	// we are operating on the asusmption that we want headless browser for pdf
+	// landing pages.
+	//
+	// if we didn't, we could just make plain http requests ourselves or via zeno
+	// from 263 until we find a promising PDF link then submit the PDF link to
+	// SPN.
+	//
+	// however, what if we used umbra for landing pages? it means more infra.
+
+	// TODO
+
 	return out, nil
+}
+
+func (c PDFCrawler) maybeRewrite(u string) string {
+	if strings.HasPrefix(u, "https://arxiv.org/pdf/") && strings.HasSuffix(u, ".pdf") {
+		return u[:len(u)-4]
+	}
+	if strings.HasPrefix(u, "https://onlinelibrary.wiley.com/doi/") {
+		return strings.Replace(u, "doi", "doi/pdf", 1)
+	}
+	// TODO explore viewcontent.cgi rewrite opportunities
+	// ie, if a doi.org link ends up as a viewcontent.cgi and there is a
+	// consistent ID between the two we can cut out the doi.org hit and go
+	// straight to viewcontent.
+	return u
 }
 
 // isCrawlWanted returns true if we feel this release is worthy of a crawl attempt

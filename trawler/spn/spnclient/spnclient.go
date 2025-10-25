@@ -44,9 +44,9 @@ type JobStatus struct {
 	Resources   []string `json:"resources"`
 	// NB using interface because depending on value of outlinks-avaiability used
 	// when the capture was requested the map can either contain strings or maps
-	Outlinks   map[string]interface{} `json:"outlinks"`
-	Message    string                 `json:"message,omitempty"`
-	HTTPStatus int                    `json:"http_status"`
+	Outlinks   map[string]any `json:"outlinks"`
+	Message    string         `json:"message,omitempty"`
+	HTTPStatus int            `json:"http_status"`
 	Counters   struct {
 		Embeds   int `json:"embeds"`
 		Outlinks int `json:"outlinks"`
@@ -55,8 +55,10 @@ type JobStatus struct {
 
 // type SaveResult describes the result of requesting a page save via "POST /save"
 type SaveResult struct {
-	URL     string `json:"url"`
-	JobID   string `json:"job_id"`
+	URL   string `json:"url"`
+	JobID string `json:"job_id"`
+	// TODO status_ext
+	// TODO exception
 	Message string `json:"message,omitempty"`
 }
 
@@ -181,6 +183,15 @@ func (c *DefaultClient) newRequest(method string, path string, body io.Reader) (
 	return req, nil
 }
 
+type SPNError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e SPNError) Error() string {
+	return fmt.Sprintf("SPN API returned %d: %s", e.StatusCode, e.Body)
+}
+
 func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) error {
 	req, err := c.newRequest(method, path, body)
 	if err != nil {
@@ -202,6 +213,9 @@ func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) erro
 		return fmt.Errorf("SPN call failed: %w", err)
 	}
 
+	// TODO old code checked for a 429 *and* checked for slots full. do I need to do both?
+	// the SPN docs don't say they themselves return a 429 so I'm going to pass for now but I think I will do a status code check here
+
 	if c.Debug {
 		fmt.Printf("<- %d\n", resp.StatusCode)
 	}
@@ -213,6 +227,13 @@ func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) erro
 
 	if c.Debug {
 		fmt.Printf("<- %s\n", string(rbody))
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return SPNError{
+			StatusCode: resp.StatusCode,
+			Body:       string(rbody),
+		}
 	}
 
 	err = json.Unmarshal(rbody, parsed)

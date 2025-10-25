@@ -132,6 +132,11 @@ url_blocklist = [
 
 # these URL patterns imply a direct PDF download we can obtain with a "simple"
 # get in SPN
+# Simple GETs
+#  'Tis a GET to the server, 'tis a GET 403,
+#  'Tis a GET to download a PDF for me,
+#  And when we find our query with no Chrome in sight,
+#  'Twill be in the archive of our petabyte.
 simple_get_list = [
   # TODO
 ]

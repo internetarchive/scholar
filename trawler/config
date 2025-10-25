@@ -139,6 +139,9 @@ url_blocklist = [
 #  'Twill be in the archive of our petabyte.
 simple_get_list = [
   # TODO
+  "journals.plos.org/plosone/article/file?id=",
+  "tidsskrift.dk/spr/article/download/",
+  "scholarscompass.vcu.edu/cgi/viewcontent.cgi?article=",
 ]
 
 [spn]

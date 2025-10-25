@@ -433,6 +433,8 @@ type releaseCounts struct {
 	CrawlWanted int
 	// Acquired is the count of PDFs we acquired from the upstream metadata
 	Acquired int
+	// Ingested is the count of PDFs we successfully ingested into scholar's search index
+	Ingested int
 }
 
 type containerCounts struct {
@@ -457,6 +459,7 @@ func (c counts) Add(other counts) counts {
 			Added:       c.Releases.Added + other.Releases.Added,
 			CrawlWanted: c.Releases.CrawlWanted + other.Releases.CrawlWanted,
 			Acquired:    c.Releases.Acquired + other.Releases.Acquired,
+			Ingested:    c.Releases.Ingested + other.Releases.Ingested,
 		},
 		Containers: containerCounts{
 			Ignored: c.Containers.Ignored + other.Containers.Ignored,

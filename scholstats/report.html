@@ -9,6 +9,50 @@
     href="https://git.archive.org/webgroup/scholar/-/tree/trunk/python/scholstats">gitlab</a>.
     </p>
 
+    <h2>daily crawl</h2>
+    <table border="hell yeah">
+      <tr>
+        <th>metric</th>
+        {% for wl in week_labels %}
+        <th>{{wl}}</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>FC releases added</td>
+        {% for week in fc_releases_weeks %}
+        <td>{{week.total}} ({{week.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>urls sent to SPN</td>
+        {% for week in spn_reqs_weeks %}
+        <td>{{week.total}} ({{week.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>pdfs archived from SPN</td>
+        {% for week in spn_hits_weeks %}
+        <td>{{week.total}} ({{week.pct_change}})</td>
+        {% endfor %}
+      </tr>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     <h2>Sandcrawler (SPN)</h2>
     <p>
     These two graphs reflect weekly use of Save Page Now. The first graph shows

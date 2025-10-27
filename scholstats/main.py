@@ -10,6 +10,7 @@
 import base64
 import io
 import json
+import math
 import os
 import pathlib
 import re
@@ -39,6 +40,25 @@ ES_URL = "https://scholar.archive.org/_es/"
 SC_URL = "http://wbgrp-svc506.us.archive.org:3030/rpc/"
 FC_STATS_URL = "https://scholar.archive.org/fatcat/stats.json"
 DEFAULT_STATS_PATH = pathlib.Path("./stats.jsonl")
+
+# daily crawl - big table with this week, week-1, week-2
+
+# releases added via upstream
+# urls sent to spn
+# urls archived via spn
+
+# FC holdings - big table with this month, month-1, month-2
+# total containers
+# total works
+# total works with archived release
+# % of works with archived release
+# total releases
+# total citations
+
+# scholar holdings - big table with this month, month-1, month-2
+# containers in ias index
+# releases in ias index
+# search queries
 
 
 def sandcrawler_stats() -> dict[str, Any]:
@@ -229,6 +249,29 @@ def plot_clear():
     plt.cla()
 
 
+def weeks(df: pd.DataFrame) -> list[dict]:
+    out = []
+    for x in range(len(df) - 1, -1, -1):
+        ws = df.iloc[x]
+        pct_change = 0
+        if x == 0:
+            pct_change = "?"
+        else:
+            prev_week = df.iloc[x-1]
+            pct_change = math.inf
+            if prev_week > 0:
+                pct_change = int(((ws-prev_week)/prev_week) * 100)
+            elif prev_week == 0 and ws == 0:
+                pct_change = 0
+
+        out.append({
+            "total": int(ws),
+            "pct_change": f"{pct_change}%" if pct_change != math.inf else "∞%",
+            })
+        x += 1
+    return out
+
+
 def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     ctx = {
         "generated": datetime.today(),
@@ -242,6 +285,21 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
             }
 
     # sandcrawler
+
+    weekly_sums = df.sandcrawler_pdf_reqs_diff.resample("7D").sum()
+
+    ctx["week_labels"] = []
+
+    for x in range(len(weekly_sums)):
+        ctx["week_labels"].append("last week" if x == 0 else f"{x} weeks ago")
+
+    ctx["spn_reqs_weeks"] = weeks(weekly_sums)
+    weekly_sums = df.sandcrawler_pdf_hits_diff.resample("7D").sum()
+    ctx["spn_hits_weeks"] = weeks(weekly_sums)
+    weekly_sums = df.fatcat_releases_diff.resample("7D").sum()
+    ctx["fc_releases_weeks"] = weeks(weekly_sums)
+
+    # TODO
 
     plot_args = default_plot_args | {
             "title": "Weekly SPN PDF requests",

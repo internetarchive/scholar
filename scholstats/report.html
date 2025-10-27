@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html>
   <body>
+<style>
+td {
+  padding: 0.5em;
+}
+td:first-child {
+  font-weight: bold;
+}
+</style>
     <h1>Scholar stats for {{ generated }} </h1>
     <p>
     The stats in this report are pulled from a variety of sources and collected
@@ -24,13 +32,13 @@
         {% endfor %}
       </tr>
       <tr>
-        <td>urls sent to SPN</td>
+        <td>URLs sent to SPN</td>
         {% for week in spn_reqs_weeks %}
         <td>{{week.total}} ({{week.pct_change}})</td>
         {% endfor %}
       </tr>
       <tr>
-        <td>pdfs archived from SPN</td>
+        <td>PDFs archived from SPN</td>
         {% for week in spn_hits_weeks %}
         <td>{{week.total}} ({{week.pct_change}})</td>
         {% endfor %}

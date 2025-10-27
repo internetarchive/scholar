@@ -17,7 +17,7 @@ td:first-child {
     href="https://git.archive.org/webgroup/scholar/-/tree/trunk/python/scholstats">gitlab</a>.
     </p>
 
-    <h2>daily crawl</h2>
+    <h2>Daily Crawl</h2>
     <table border="hell yeah">
       <tr>
         <th>metric</th>
@@ -46,20 +46,118 @@ td:first-child {
     </table>
 
 
+    <h2>Fatcat Holdings</h2>
+    <p>
+    Month-to-month changes in overall totals of fatcat holdings.
+    </p>
+    <table border="hell yeah">
+      <tr>
+        <th>metric</th>
+        <th>total</th>
+        {% for ml in month_labels %}
+        <th>{{ml}}</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Containers</td>
+        <td>{{"{:,}".format(fatcat_containers)}}</td>
+        {% for month in fc_container_months %}
+        <td>{{month.total}} ({{month.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Releases</td>
+        <td>{{"{:,}".format(fatcat_releases)}}</td>
+        {% for month in fc_releases_months %}
+        <td>{{month.total}} ({{month.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Papers</td>
+        <td>{{"{:,}".format(fatcat_papers)}}</td>
+        {% for month in fc_papers_months %}
+        <td>{{month.total}} ({{month.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Archived Papers</td>
+        <td>{{"{:,}".format(fatcat_papers_in_web)}}</td>
+        {% for month in fc_archived_papers_months %}
+        <td>{{month.total}} ({{month.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Citations</td>
+        <td>{{"{:,}".format(fatcat_refs)}}</td>
+        {% for month in fc_refs_months %}
+        <td>{{month.total}} ({{month.pct_change}})</td>
+        {% endfor %}
+      </tr>
+    </table>
 
+    <h2>Scholar FTS Index</h2>
+    <p>
+    Month-to-month changes in overall totals of things in Scholar's FTS index
+    </p>
+    <table border="hell yeah">
+      <tr>
+        <th>metric</th>
+        <th>total</th>
+        {% for ml in month_labels %}
+        <th>{{ml}}</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Releases</td>
+        <td>{{"{:,}".format(ias_indexed_pdfs)}}</td>
+        {% for month in ias_releases_months%}
+        <td>{{month.total}} ({{month.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Containers</td>
+        <td>{{"{:,}".format(ias_containers)}}</td>
+        {% for month in ias_containers_months%}
+        <td>{{month.total}} ({{month.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Sitemap</td>
+        <td>{{"{:,}".format(ias_sitemap_access)}}</td>
+        {% for month in ias_sitemap_access_months%}
+        <td>{{month.total}} ({{month.pct_change}})</td>
+        {% endfor %}
+      </tr>
+    </table>
 
-
-
-
-
-
-
-
-
-
-
-
-
+    <!--
+    <h2>Searches</h2>
+    <p>
+    Week to week changes in searches in Elasticsearch. These numbers are often
+    suspicious; they come directly from elasticsearch and should likely come
+    from web access logs instead.
+    </p>
+    <table border="hell yeah">
+      <tr>
+        <th>metric</th>
+        {% for ml in week_labels %}
+        <th>{{ml}}</th>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Scholar</td>
+        {% for week in scholar_searches_weeks %}
+        <td>{{week.total}} ({{week.pct_change}})</td>
+        {% endfor %}
+      </tr>
+      <tr>
+        <td>Fatcat</td>
+        {% for week in fatcat_searches_weeks %}
+        <td>{{week.total}} ({{week.pct_change}})</td>
+        {% endfor %}
+      </tr>
+    </table>
+    -->
 
     <h2>Sandcrawler (SPN)</h2>
     <p>

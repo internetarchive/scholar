@@ -10,7 +10,6 @@
 import base64
 import io
 import json
-import math
 import os
 import pathlib
 import re
@@ -40,6 +39,7 @@ ES_URL = "https://scholar.archive.org/_es/"
 SC_URL = "http://wbgrp-svc506.us.archive.org:3030/rpc/"
 FC_STATS_URL = "https://scholar.archive.org/fatcat/stats.json"
 DEFAULT_STATS_PATH = pathlib.Path("./stats.jsonl")
+
 
 def sandcrawler_stats() -> dict[str, Any]:
     timeout = 60.0
@@ -245,7 +245,7 @@ def to_cols(df: pd.DataFrame) -> list[dict]:
                 pct_change = 0
 
         out.append({
-            "total": int(ws),
+            "total": "{:,}".format(int(ws)),
             "pct_change": f"{pct_change}%",
             })
         x += 1
@@ -257,30 +257,52 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
         "generated": datetime.today(),
         }
 
+    # generate an arbitrary stat first in order to figure out how many weeks
+    # worth of data we have
     weekly_sums = df.sandcrawler_pdf_reqs_diff.resample("7D").sum()
 
     ctx["week_labels"] = []
 
     for x in range(len(weekly_sums)):
-        ctx["week_labels"].append("last week" if x == 0 else f"-{x} wk")
+        ctx["week_labels"].append("last week" if x == 0 else f"-{x+1} wk")
 
     ctx["spn_reqs_weeks"] = to_cols(weekly_sums)
+    # generate the rest
     ctx["spn_hits_weeks"] = to_cols(df.sandcrawler_pdf_hits_diff.resample("7D").sum())
     ctx["fc_releases_weeks"] = to_cols(df.fatcat_releases_diff.resample("7D").sum())
 
-    # TODO
-    # FC holdings - big table with this month, month-1, month-2
-    # total containers
-    # total works
-    # total works with archived release
-    # % of works with archived release
-    # total releases
-    # total citations
+    # generate an arbirary stat first in order to figure out how many months
+    # worh of data we have
+    monthly_sums = df["fatcat_containers_diff"].resample("30D").sum()
+
+    ctx["month_labels"] = []
+    for x in range(len(monthly_sums)):
+        ctx["month_labels"].append("last 30 days" if x == 0 else f"-{(x*30)+30} days")
+
+    ctx["fc_container_months"] = to_cols(monthly_sums)
+    ctx["fc_releases_months"] = to_cols(df["fatcat_releases_diff"].resample("30D").sum())
+    ctx["fc_papers_months"] = to_cols(df["fatcat_papers_diff"].resample("30D").sum())
+    ctx["fc_archived_papers_months"] = to_cols(df["fatcat_papers_in_web_diff"].resample("30D").sum())
+    ctx["fc_refs_months"] = to_cols(df["fatcat_refs_diff"].resample("30D").sum())
+    # TODO total works
+    # TODO % of works with archived release
 
     # scholar holdings - big table with this month, month-1, month-2
-    # containers in ias index
-    # releases in ias index
+    ctx["ias_containers_months"] = to_cols(
+            df["elasticsearch_scholar_containers_diff"].resample("30D").sum())
+    ctx["ias_releases_months"] = to_cols(
+            df["elasticsearch_scholar_indexed_pdfs_diff"].resample("30D").sum())
+    ctx["ias_sitemap_works_months"] = to_cols(
+            df["scholar_sitemap_works_lines_diff"].resample("30D").sum())
+    ctx["ias_sitemap_access_months"] = to_cols(
+            df["scholar_sitemap_access_lines_diff"].resample("30D").sum())
+
     # search queries
+    # TODO these numbers are useless. need to switch to looking at access logs
+    ctx["scholar_searches_weeks"] = to_cols(
+            df["elasticsearch_scholar_searches_diff"].resample("7D").sum())
+    ctx["fatcat_searches_weeks"] = to_cols(
+            df["elasticsearch_fatcat_searches_diff"].resample("7D").sum())
 
     # older stuff below
     default_plot_args = {

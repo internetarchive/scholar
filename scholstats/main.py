@@ -299,10 +299,10 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
 
     # search queries
     # TODO these numbers are useless. need to switch to looking at access logs
-    ctx["scholar_searches_weeks"] = to_cols(
-            df["elasticsearch_scholar_searches_diff"].resample("7D").sum())
-    ctx["fatcat_searches_weeks"] = to_cols(
-            df["elasticsearch_fatcat_searches_diff"].resample("7D").sum())
+    #ctx["scholar_searches_weeks"] = to_cols(
+    #        df["elasticsearch_scholar_searches_diff"].resample("7D").sum())
+    #ctx["fatcat_searches_weeks"] = to_cols(
+    #        df["elasticsearch_fatcat_searches_diff"].resample("7D").sum())
 
     # older stuff below
     default_plot_args = {
@@ -395,17 +395,6 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
             }
 
     plot_args = default_plot_args | {
-            "title": "fatcat release totals (month to month)",
-            }
-    ax = df[["fatcat_releases", "fatcat_papers",
-             "fatcat_papers_in_web"]].resample("30D").max().plot.bar(**plot_args)
-    ax.legend(framealpha=0.5)
-    plt.ticklabel_format(style='plain', axis='y')
-    ctx["fc_release_graph_b64"] = plot_to_b64()
-
-    plot_clear()
-
-    plot_args = default_plot_args | {
             "title": "fatcat release change per week",
             }
     ax = df[["fatcat_releases_diff", "fatcat_papers_diff",
@@ -417,7 +406,7 @@ def report(df: pd.DataFrame, tmpl: jinja2.Template) -> str:
     plot_clear()
 
     plot_args = default_plot_args | {
-            "title": "fatcat contribs change per week",
+            "title": "fatcat citations change per week",
             }
     ax = df.fatcat_refs_diff.resample("7D").sum().plot.bar(**plot_args)
     ax.legend(framealpha=0.5)

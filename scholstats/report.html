@@ -159,7 +159,8 @@ td:first-child {
     </table>
     -->
 
-    <h2>Sandcrawler (SPN)</h2>
+    <h2>Graphs</h2>
+    <h3>SPN</h3>
     <p>
     These two graphs reflect weekly use of Save Page Now. The first graph shows
     the total requests made to SPN per day broken down by successes (PDF
@@ -205,35 +206,8 @@ td:first-child {
       </tr>
     </table>
 
-    <h2>Scholar holdings</h2>
-    <p>
-    The table shows overall totals in IAS's index; the graph shows weekly
-    full text IAS indexing counts.
-    </p>
-
-    <h3>Totals</h3>
-    <table border="sure">
-      <tr>
-        <td><b>fulltext PDFs in index</b></td>
-        <td>{{ias_indexed_pdfs}}</td>
-        <td><em>full text PDFs in elasticsearch index</em></td>
-      </tr>
-      <tr>
-        <td><b>containers in index</b></td>
-        <td>{{ias_containers}}</td>
-        <td><em>total unique containers reflected by releases in full text index</em></td>
-      </tr>
-      <tr>
-        <td><b>sitemap count (works)</b></td>
-        <td>{{ias_sitemap_works}}</td>
-        <td><em>number of lines in the "works" sitemap files</em></td>
-      </tr>
-      <tr>
-        <td><b>sitemap count (access)</b></td>
-        <td>{{ias_sitemap_access}}</td>
-        <td><em>number of lines in the "access" sitemap files</em></td>
-      </tr>
-    </table>
+    <h3>Scholar PDF indexing</h3>
+    <p>PDFs indexed into scholar week to week</p>
 
     <img src="data:image/png;base64, {{ias_releases_diff_graph_b64}}">
 
@@ -242,7 +216,9 @@ td:first-child {
     Daily search counts. The scholar graph shows weekly IAS searches; the Fatcat
     graph is a roll-up of release, file, and container searches. These numbers
     are from elasticsearch which means they include internal use. Big script
-    runs can pump these numbers significantly.
+    runs can pump these numbers significantly, though that has not been enough
+    to explain some serious oddities in these data. I intend to replace this
+    with parsing of our web access logs.
     </p>
 
     <img src="data:image/png;base64, {{ias_searches_diff_graph_b64}}">
@@ -250,39 +226,7 @@ td:first-child {
 
     <h2>Fatcat holdings</h2>
     <p>
-    Fatcat totals. The table shows current holding statistics as gleaned from
-    Elasticsearch. The graph shows the ratios of overall release holdings:
-    releases, releases of type <code>article</code>, and releases of type
-    <code>article</code> that have an associated file.
-    </p>
-
-    <table border="sure">
-      <tr>
-        <td>total releases</td>
-        <td>{{fatcat_releases}}</td>
-      </tr>
-      <tr>
-        <td>total papers</td>
-        <td>{{fatcat_papers}}</td>
-      </tr>
-      <tr>
-        <td>total papers with archive (papers_in_web)</td>
-        <td>{{fatcat_papers_in_web}}</td>
-      </tr>
-      <tr>
-        <td>total contribs</td>
-        <td>{{fatcat_refs}}</td>
-      </tr>
-      <tr>
-        <td>total containers</td>
-        <td>{{fatcat_containers}}</td>
-      </tr>
-    </table>
-
-    <img src="data:image/png;base64, {{fc_release_graph_b64}}">
-
-    <p>
-    These graph show weekly changes in Fatcat holdings.
+    Weekly changes in Fatcat holdings.
     </p>
     <img src="data:image/png;base64, {{fc_release_diff_graph_b64}}">
     <img src="data:image/png;base64, {{fc_refs_diff_graph_b64}}">

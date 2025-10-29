@@ -21,7 +21,7 @@ const (
 	defaultMatchType = "exact"
 	defaultLimit     = 1
 	defaultOutput    = "json"
-	timeFormat       = "20060201150405"
+	timeFormat       = "20060102150405"
 )
 
 type CDXClient struct {

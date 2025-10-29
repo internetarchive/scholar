@@ -1,12 +1,6 @@
-# notes to a future self
-#
-# the doc for this work talks about averages for different periods of time --
-# 7d, 30d, 60d etc. I have not implemented anything like that since as of
-# writing we haven't been collecting data for more than two days. This
-# currently produces graphs where each line of data gets its own tick on the x
-# axis -- in other words, a point per day. I think that's good enough until we
-# have >30 days worth of stuff at least.
-
+# TODO figure out best way to check access logs on svcs 097, 500, 503 to
+# compute scholar and fatcat ES searches. ideally we'd do it in one big pass
+# with zgrep and do as a count on lines that match a regex for the search forms
 import base64
 import io
 import json

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/cdx"
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
@@ -900,12 +901,23 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		panic(err)
 	}
 
+	cdxClient := cdx.NewClient(cdx.CDXClientOpts{
+		Auth:      viper.GetString("cdx.auth"),
+		Endpoint:  viper.GetString("cdx.endpoint"),
+		UserAgent: viper.GetString("cdx.user_agent"),
+		Retries:   viper.GetInt("cdx.retries"),
+		Backoff:   viper.GetInt("cdx.backoff"),
+	})
+
 	for _, u := range release.FulltextURLs() {
 		crawler := PDFCrawler{
-			SPNClient:  spnClient,
-			MaxHops:    8,
-			SimpleGets: viper.GetStringSlice("crawling.simple_get_list"),
-			Blocklist:  viper.GetStringSlice("crawling.url_blocklist"),
+			SPNClient:       spnClient,
+			CDXClient:       cdxClient,
+			MaxHops:         8,
+			UserAgent:       viper.GetString("crawling.user_agent"),
+			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
+			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
+			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
 		}
 
 		res, err := crawler.Crawl(u)
@@ -970,10 +982,13 @@ func maybeRewriteURL(u string) string {
 }
 
 type PDFCrawler struct {
-	SPNClient  spnclient.Client
-	MaxHops    int
-	SimpleGets []string
-	Blocklist  []string
+	SPNClient       spnclient.Client
+	CDXClient       cdx.CDXClient
+	WaybackEndpoint string
+	UserAgent       string
+	MaxHops         int
+	SimpleGets      []string
+	Blocklist       []string
 }
 
 type CrawlResult struct {
@@ -982,6 +997,81 @@ type CrawlResult struct {
 
 // TODO decide on CrawlResult
 // TODO implement slog for crawl results
+
+func (c PDFCrawler) fetchLiveReplay(URL string, ts time.Time) (io.Reader, error) {
+	u, err := url.Parse(c.WaybackEndpoint)
+	if err != nil {
+		panic(err)
+	}
+	// TODO this should live elsewhere; it's been propagating (cdx, spnclient)
+	timeFormat := "20060102150405"
+	timestamp := ts.Format(timeFormat)
+	u = u.JoinPath(timestamp, "id_/", URL)
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("User-Agent", c.UserAgent)
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	attempts := 0
+	retries := viper.GetInt("wayback.retries")
+	backoff, err := time.ParseDuration(viper.GetString("wayback.backoff"))
+	if err != nil {
+		panic(err)
+	}
+
+	var resp *http.Response
+	var wbErr error
+	for {
+		attempts++
+		resp, wbErr = client.Do(req)
+		if wbErr == nil || attempts == retries {
+			break
+		}
+		time.Sleep(backoff * time.Duration(attempts))
+	}
+	if wbErr != nil {
+		return nil, fmt.Errorf("wayback request failed after %d attempts: %w", attempts, err)
+	}
+
+	// TODO old code had this X-Archive-Src thing:
+	/*
+	   # defensively check that this is actually correct replay based on headers
+	   if "X-Archive-Src" not in resp.headers:
+	       # check if this was an error first
+	       try:
+	           resp.raise_for_status()
+	       except Exception as e:
+	           raise WaybackError(str(e))
+	       # otherwise, a weird case (200/redirect but no Src header
+	       raise WaybackError("replay fetch didn't return X-Archive-Src in headers")
+	   if datetime not in resp.url:
+	       raise WaybackError(
+	           "didn't get exact reply (redirect?) datetime:{} got:{}".format(
+	               datetime, resp.url
+	           )
+	       )
+	*/
+
+	if resp.StatusCode != http.StatusOK {
+		// TODO return reader; only read body here if non-200 status code
+		bs, err := io.ReadAll(resp.Body)
+		var body string
+		if err == nil {
+			body = string(bs)
+		}
+
+		return nil, fmt.Errorf("got a non 200 from wayback: %d: '%s'", resp.StatusCode, body)
+	}
+
+	return resp.Body, nil
+}
 
 func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 	out := CrawlResult{}
@@ -995,6 +1085,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			// TODO in the historical sandcrawler data there are a lot of URLs that
 			// fail to parse -- none of them ever led to a hit. Thus, a fail here
 			// should just give up on the PDF attempt and not bother with SPN.
+			// TODO do not error, just form a fail result
 			return out, fmt.Errorf("failed to parse url '%s': %w", startURL, err)
 		}
 		for _, p := range c.Blocklist {
@@ -1058,31 +1149,29 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		}
 
 		// poll until job completes
-		var status spnclient.JobStatus
+		var spnJobResult spnclient.JobStatus
 		for {
-			status, err = c.SPNClient.StatusJob(jobID)
+			spnJobResult, err = c.SPNClient.StatusJob(jobID)
 			if err != nil {
 				// TODO slog
 				return out, fmt.Errorf("could not get spn job status: %w", err)
 			}
 
-			if status.Status == "pending" {
+			if spnJobResult.Status == "pending" {
 				continue
 			}
 
 			break
 		}
 
-		if status.Status != "success" {
+		if spnJobResult.Status != "success" {
 			// TODO slog
 			return out, SPNError{
-				Message: status.Message,
-				URL:     status.OriginalURL,
-				JobID:   status.JobID,
+				Message: spnJobResult.Message,
+				URL:     spnJobResult.OriginalURL,
+				JobID:   spnJobResult.JobID,
 			}
 		}
-
-		// TODO status == success
 
 		// TODO  original code had a check for 'original_url' starting with /; did
 		// not see that coming up in the last month+ of sc logs so i'm leaving it
@@ -1111,66 +1200,82 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		// in the wayback machine now. The current delay for a CDX lookup is 9
 		// seconds so we should up that; going to start with 30 seconds.
 
+		// TODO we have code around ftp:// resources but have only ever processed
+		// 2500 of those and not since 2002 so dropping for now
+
+		rows, err := c.CDXClient.Query(cdx.CDXParams{
+			From: spnJobResult.Time,
+			To:   spnJobResult.Time,
+			URL:  spnJobResult.OriginalURL,
+			Filters: []string{
+				"statuscode:2..",
+			},
+			Limit: 1,
+		})
+		if err != nil {
+			return out, fmt.Errorf("failed to find successful SPN job in CDX: %w", err)
+		}
+
+		if len(rows) == 0 {
+			return out, fmt.Errorf("no error from CDX but 0 rows in result for %s",
+				spnJobResult.OriginalURL)
+		}
+
+		cdxRow := rows[0]
+
+		content, err := c.fetchLiveReplay(cdxRow.URL, cdxRow.Datetime)
+		if err != nil {
+			return out, fmt.Errorf("could not find cdx row '%s' %v in live wayback: %w", cdxRow.URL, cdxRow.Datetime, err)
+		}
+
+		if cdxRow.Mimetype == "application/pdf" {
+			// TODO handle -- pipe content bytes to blobproc
+			// TODO setup result
+			return out, nil
+		}
+
+		// TODO i question the wisdom of proceeding from this point with XML; xhtml, sure.
+		if !c.isHTMLishMimetype(cdxRow.Mimetype) {
+			// TODO set up result for un-proceedable mimetype
+			return out, nil
+		}
+
+		pdfLink, err := c.findPDFLink(cdxRow.URL, content)
+		if err != nil {
+			return out, fmt.Errorf("pdf link heuristics failure: %w", err)
+		}
+
+		if pdfLink == "" {
+			// TODO setup failure result
+			return out, nil
+		}
+
+		chain = append(chain, pdfLink)
 	}
 
-	// is there value in consulting a database at this point?
-	// what if we tracked success from an initial url? of course, the url will
-	// have a distinctive path and likely be new/unique. but it should have some
-	// kind of prefix.
+	// TODO this should be unreachable but not a big deal
+	return out, nil
+}
 
-	// lol.com/access/id/123/120931092830l12309123..123.123
-
-	// domain is crude but still a nice indicator: how often does this domain
-	// lead to a pdf? if it's less than 10%, we could skip
-	// domain + 1 path element might be more useful but we can't rule out a top
-	// level access path like lol.com/12039120390123 (which would be unique).
-
-	// we could score each prefix based on number of attempts and number of successes
-
-	// for a given domain + N paths, N >= 0
-	// unknown: insufficient number of requests
-	// likely: at least 10% hit rate
-	// unlikely: <10% hit rate
-
-	// lol.com: likely
-	// lol.com/access: likely
-	// lol.com/id: likely
-	// lol.com/id/123: unknown
-	// lol.com/id/123/12381283: unknown
-
-	// ok.com: likely
-	// ok.com/foo: unlikely
-	// ok.com/foo/bar: unknown
-
-	// paths just feel too volatile the more i think about it so i think domain
-	// hit rate is more interesting
-
-	// NB sandcrawler had a notion of "force_recrawl" which skipped the wayback
-	// check. However, the daily crawls have force_recrawl set to false. I only
-	// saw use of force_recrawl in a one-off script. It's unclear how often Bryan
-	// may have relied on it in scripts not captured in git but I can't produce a
-	// solid argument for having it. For now I'm always checking wayback. We can
-	// introduce a "skip_wayback" type of argument to the workflow definition
-	// when we find that we need it.
-
-	// TODO wayback check
-
-	// thoughts on crawling
-	//
-	// we're always starved for SPN slots. so, if we can request some % of our
-	// urls without SPN that means, potentially, more papers in a day. However,
-	// we are operating on the asusmption that we want headless browser for pdf
-	// landing pages.
-	//
-	// if we didn't, we could just make plain http requests ourselves or via zeno
-	// from 263 until we find a promising PDF link then submit the PDF link to
-	// SPN.
-	//
-	// however, what if we used umbra for landing pages? it means more infra.
-
+func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (string, error) {
 	// TODO
 
-	return out, nil
+	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.
+	// Ominously, the older code has comments like "[this function] is partially
+	// deprecated" and "note: most of these have migrated to the html_biblio code
+	// path"
+
+	return "", nil
+}
+
+func (c PDFCrawler) isHTMLishMimetype(mimetype string) bool {
+	substrs := []string{"/html", "/xhtml", "application/xml", "text/xml"}
+	for _, s := range substrs {
+		if strings.Contains(mimetype, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c PDFCrawler) maybeRewrite(u string) string {

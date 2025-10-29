@@ -34,7 +34,8 @@ type CDXClientOpts struct {
 	Auth      string
 	UserAgent string
 	Retries   int
-	Backoff   int
+	// Backoff is the retry backoff factor expressed in duration format (eg, 10s)
+	Backoff string
 }
 
 type CDXParams struct {
@@ -44,6 +45,7 @@ type CDXParams struct {
 	MatchType string
 	Limit     int
 	Output    string
+	Filters   []string
 }
 
 type CDXRow struct {
@@ -72,12 +74,15 @@ func NewClient(opts CDXClientOpts) CDXClient {
 		opts.UserAgent = defaultUserAgent
 	}
 
+	// TODO is it correct to have retry logic *inside* the client? I think it
+	// should probably be handled externally.
+
 	if opts.Retries == 0 {
 		opts.Retries = 3
 	}
 
-	if opts.Backoff == 0 {
-		opts.Backoff = 5
+	if opts.Backoff == "" {
+		opts.Backoff = "10s"
 	}
 
 	return CDXClient{
@@ -97,38 +102,42 @@ func (c CDXClient) Query(params CDXParams) ([]CDXRow, error) {
 	if u == "" {
 		return nil, errors.New("URL required")
 	}
-	// CDX code it's assuming 14 characters. can just go with the docs, then
+
 	q := req.URL.Query()
 
-	q.Add("url", params.URL)
+	q.Set("url", params.URL)
 
 	if params.From != nil {
 		from := params.From.Format(timeFormat)
-		q.Add("from", from)
+		q.Set("from", from)
 	}
 
 	if params.To != nil {
 		to := params.To.Format(timeFormat)
-		q.Add("to", to)
+		q.Set("to", to)
 	}
 
 	mt := defaultMatchType
 	if params.MatchType != "" {
 		mt = params.MatchType
 	}
-	q.Add("matchType", mt)
+	q.Set("matchType", mt)
 
 	l := defaultLimit
 	if params.Limit > 0 {
 		l = params.Limit
 	}
-	q.Add("limit", fmt.Sprintf("%d", l))
+	q.Set("limit", fmt.Sprintf("%d", l))
 
 	o := defaultOutput
 	if params.Output != "" {
 		o = params.Output
 	}
-	q.Add("output", o)
+	q.Set("output", o)
+
+	for _, f := range params.Filters {
+		q.Add("filter", f)
+	}
 
 	req.URL.RawQuery = q.Encode()
 
@@ -136,6 +145,11 @@ func (c CDXClient) Query(params CDXParams) ([]CDXRow, error) {
 	req.Header.Add("Cookie", fmt.Sprintf("cdx_auth_token=%s", c.opts.UserAgent))
 
 	var resp *http.Response
+
+	backoff, err := time.ParseDuration(c.opts.Backoff)
+	if err != nil {
+		panic(err)
+	}
 
 	attempts := 0
 	for {
@@ -145,12 +159,11 @@ func (c CDXClient) Query(params CDXParams) ([]CDXRow, error) {
 			break
 		}
 
-		backoff := c.opts.Backoff * attempts
-		time.Sleep(time.Second * time.Duration(backoff))
+		time.Sleep(backoff * time.Duration(attempts))
 	}
 
 	if err != nil {
-		return out, fmt.Errorf("cdx api call failed: %w", err)
+		return out, fmt.Errorf("cdx api call failed after %d attempts: %w", attempts, err)
 	}
 
 	bs, err := io.ReadAll(resp.Body)

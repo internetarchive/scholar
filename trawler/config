@@ -31,6 +31,7 @@ default_limit = 1000 # for dev; typically would be -1 for unlimited
 endpoint = "https://scholar.archive.org/api/fatcat/v1"
 
 [crawling]
+user_agent = "Mozilla/5.0 ias_trawler"
 doi_prefix_blocklist = [
   # gbif.org: many DOIs, not PDF fulltext
   "10.15468/",
@@ -106,6 +107,8 @@ url_blocklist = [
   "//isiarticles.com/",
   # requested to be not crawled in 2023
   "//unsworks.unsw.edu.au/",
+  # 403s since 2020
+  "sciencedirect.com",
 
   # loginwall patterns
 

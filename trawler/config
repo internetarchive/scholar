@@ -147,7 +147,23 @@ simple_get_list = [
   "scholarscompass.vcu.edu/cgi/viewcontent.cgi?article=",
 ]
 
+[fatcat2]
+endpoint = "https://scholar.archive.org/api/fatcat/v2"
+key = ""
+
 [spn]
 access_key = ""
 secret_key = ""
-endpoint = ""
+endpoint = "https://web.archive.org/save"
+
+[cdx]
+auth = ""
+endpoint = "https://web.archive.org/cdx/search/cdx"
+user_agent = "Mozilla/5.0 ias_trawler_cdx_client"
+backoff = 10s
+retries = 4
+
+[wayback]
+replay_endpoint = "https://web.archive.org/web/"
+retries = 4
+backoff = 10s

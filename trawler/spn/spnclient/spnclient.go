@@ -18,7 +18,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
+
+const timeFormat = "20060102150405"
 
 // type SystemStatus describes the result of the /status/system endpoint
 type SystemStatus struct {
@@ -35,18 +38,19 @@ type UserStatus struct {
 
 // type JobStatus describes the result of the /status/<job id> endpoint
 type JobStatus struct {
-	Status      string   `json:"status"`
-	JobID       string   `json:"job_id"`
-	OriginalURL string   `json:"original_url"`
-	Screenshot  string   `json:"screenshot"`
-	Timestamp   string   `json:"timestamp"`
+	Status      string `json:"status"`
+	JobID       string `json:"job_id"`
+	OriginalURL string `json:"original_url"`
+	Screenshot  string `json:"screenshot"`
+	Timestamp   string `json:"timestamp"`
+	Time        *time.Time
 	Duration    float64  `json:"duration_sec"`
 	Resources   []string `json:"resources"`
 	// NB using interface because depending on value of outlinks-avaiability used
 	// when the capture was requested the map can either contain strings or maps
-	Outlinks   map[string]any `json:"outlinks"`
-	Message    string         `json:"message,omitempty"`
-	HTTPStatus int            `json:"http_status"`
+	Outlinks   []string `json:"outlinks"`
+	Message    string   `json:"message,omitempty"`
+	HTTPStatus int      `json:"http_status"`
 	Counters   struct {
 		Embeds   int `json:"embeds"`
 		Outlinks int `json:"outlinks"`
@@ -274,6 +278,14 @@ func (c *DefaultClient) StatusJob(jobID string) (JobStatus, error) {
 	err := c.do("GET", p, nil, &out)
 	if err != nil {
 		return out, fmt.Errorf("%s failed: %w", p, err)
+	}
+
+	if out.Timestamp != "" {
+		t, err := time.Parse(timeFormat, out.Timestamp)
+		if err != nil {
+			return out, fmt.Errorf("malformed timestamp from SPN: %w", err)
+		}
+		out.Time = &t
 	}
 
 	return out, nil

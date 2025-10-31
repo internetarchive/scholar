@@ -1,6 +1,7 @@
 package crossref
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha1"
@@ -19,11 +20,14 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cdx"
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
+	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
+	"golang.org/x/net/html/charset"
+	"golang.org/x/text/encoding/htmlindex"
 )
 
 // scrape crossref for a day's worth of metadata: huge ndjson file in s3, each line a paper-like entity
@@ -906,7 +910,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		Endpoint:  viper.GetString("cdx.endpoint"),
 		UserAgent: viper.GetString("cdx.user_agent"),
 		Retries:   viper.GetInt("cdx.retries"),
-		Backoff:   viper.GetInt("cdx.backoff"),
+		Backoff:   viper.GetString("cdx.backoff"),
 	})
 
 	for _, u := range release.FulltextURLs() {
@@ -965,20 +969,6 @@ type SPNError struct {
 
 func (e SPNError) Error() string {
 	return fmt.Sprintf("SPN job %s failed for '%s': %s", e.JobID, e.URL, e.Message)
-}
-
-// maybeRewriteURL looks for known patterns we can rewrite into direct PDF
-// access. This would ideally be captured in the config file perhaps as sets of
-// regular expressions with capture groups but is for now in a function for
-// expediency.
-func maybeRewriteURL(u string) string {
-	if strings.HasPrefix(u, "https://arxiv.org/pdf/") && strings.HasSuffix(u, ".pdf") {
-		return u[:len(u)-4]
-	}
-	if strings.HasPrefix(u, "https://onlinelibrary.wiley.com/doi/") {
-		return strings.Replace(u, "doi", "doi/pdf", 1)
-	}
-	return u
 }
 
 type PDFCrawler struct {
@@ -1245,27 +1235,117 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			return out, fmt.Errorf("pdf link heuristics failure: %w", err)
 		}
 
-		if pdfLink == "" {
+		if pdfLink == nil {
 			// TODO setup failure result
 			return out, nil
 		}
 
-		chain = append(chain, pdfLink)
+		// TODO slog about pdfLink.Technique
+
+		chain = append(chain, pdfLink.URL)
 	}
 
 	// TODO this should be unreachable but not a big deal
 	return out, nil
 }
 
-func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (string, error) {
-	// TODO
+func detectContentCharset(body io.Reader) string {
+	r := bufio.NewReader(body)
+	if data, err := r.Peek(1024); err == nil {
+		if _, name, ok := charset.DetermineEncoding(data, ""); ok {
+			return name
+		}
+	}
+	return "utf-8"
+}
+
+func decodeHTMLBody(body io.Reader, charset string) (io.Reader, error) {
+	if charset == "" {
+		charset = detectContentCharset(body)
+	}
+	e, err := htmlindex.Get(charset)
+	if err != nil {
+		return nil, err
+	}
+	if name, _ := htmlindex.Name(e); name != "utf-8" {
+		body = e.NewDecoder().Reader(body)
+	}
+	return body, nil
+}
+
+type FulltextPattern struct {
+	Label string
+	InURL string
+}
+
+type PDFLinkResult struct {
+	URL       string
+	Technique string
+}
+
+func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, error) {
+	// TODO handle what we can with regexes on raw html
+	decodedContent, err := decodeHTMLBody(content, "")
+	if err != nil {
+		return nil, fmt.Errorf("could not decode content for %s: %w", URL, err)
+	}
+	doc, err := goquery.NewDocumentFromReader(decodedContent)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse HTML for %s: %w", URL, err)
+	}
+
+	fmt.Println(doc)
+
+	// TODO selector based heuristics
+	// TODO re-review which of these rely on JS-rendered HTML since we are *not*
+	// actually getting that from SPN (I believe it's both of these)
+
+	// http://www.revistas.unam.mx/index.php/rep/article/view/35503/32336
+	//   <a href="https://www.revistas.unam.mx/index.php/rep/article/download/35503/32336/85134" class="download" download="">...</a>
+	if strings.Contains(URL, "/view/") {
+		href, ok := doc.Find("a.download").Attr("href")
+		if ok {
+			return &PDFLinkResult{href, "a.download"}, nil
+		}
+	}
+
+	// https://elifesciences.org/articles/59841
+	// <a href="https://elifesciences.org/download/aHR0cHM6Ly9jZG4uZWxpZmVzY2llbmNlcy5vcmcvYXJ0aWNsZXMvNTk4NDEvZWxpZmUtNTk4NDEtdjEucGRmP2Nhbm9uaWNhbFVyaT1odHRwczovL2VsaWZlc2NpZW5jZXMub3JnL2FydGljbGVzLzU5ODQx/elife-59841-v1.pdf?_hash=%2BEZ2CH%2FifGiXeDp5cSOT92ExFSGAjdYcDH%2FlRlOLLE0%3D" class="article-download-links-list__link" data-behaviour-initialised="true">Article PDF</a>
+	if strings.Contains(URL, "://elifesciences.org/articles") {
+		href, ok := doc.Find("a.article-download-links-list__link").Attr("href")
+		if ok {
+			return &PDFLinkResult{href, "elifesciences"}, nil
+		}
+	}
 
 	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.
 	// Ominously, the older code has comments like "[this function] is partially
 	// deprecated" and "note: most of these have migrated to the html_biblio code
-	// path"
+	// path". I ran through all of the old hacks and could not find exact matches
+	// for any of them in the newer code. From the logs of the past couple days,
+	// 6% of the pdf link detection attempts fell into the old code path. Of that
+	// 6%, the techniques that were applied:
+	//
+	// 42% osf-by-url -- all of these fail
+	// 52% elsevier-linkinghub -- most go to sciencedirect which fail. not all do
+	// 2% ojs-galley-href -- some success
+	// 1% ahajournals-url -- all of these succeed
+	// 1% google-drive -- many succeed
+	// <1% sciencedirect-munge-json -- led to pdf but got captcha'd
 
-	return "", nil
+	// of the 94% that were html_biblio, 6% of those were "self pointing" which
+	// is a situation I can't justify ever allowing and it's a mystery why Bryan
+	// did. The point of this work is to find a next hop that might go to a PDF
+	// -- a self link is not going to do that. The answer might lie on the "fuzzy
+	// equals" function for urls; no, that is just stripping www. and :80 and
+	// trailing / for an equals.
+
+	// I'd like more data but this is all journalctl knows about. still, I have some takeaways:
+	// - some of these are just url rewrties. I can move them into maybeRewrite.
+	// - some of these should just go to blocklist (already did sciencedirect)
+	// - some of these are purely regex based
+
+	return nil, nil
 }
 
 func (c PDFCrawler) isHTMLishMimetype(mimetype string) bool {
@@ -1278,7 +1358,11 @@ func (c PDFCrawler) isHTMLishMimetype(mimetype string) bool {
 	return false
 }
 
+// maybeRewrite looks for known patterns we can rewrite into direct PDF access.
+// This would ideally be captured in the config file perhaps as sets of regular
+// expressions with capture groups but is for now in a function for expediency.
 func (c PDFCrawler) maybeRewrite(u string) string {
+	// TODO ensure that these are captured in simple get list
 	if strings.HasPrefix(u, "https://arxiv.org/pdf/") && strings.HasSuffix(u, ".pdf") {
 		return u[:len(u)-4]
 	}
@@ -1289,6 +1373,27 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 	// ie, if a doi.org link ends up as a viewcontent.cgi and there is a
 	// consistent ID between the two we can cut out the doi.org hit and go
 	// straight to viewcontent.
+
+	// https://journals.sagepub.com/doi/10.1177/2309499019888836
+	// https://journals.sagepub.com/doi/10.1177/2309499019888836?download=true
+	if strings.HasPrefix(u, "https://journals.sagepub.com/doi/10.") {
+		return u + "?download=true"
+	}
+
+	// https://journals.sagepub.com/doi/pdf/10.1177/2309499019888836
+	// https://journals.sagepub.com/doi/pdf/10.1177/2309499019888836?download=true
+	if strings.HasPrefix(u, "https://journals.sagepub.com/doi/pdf/10.") {
+		return u + "?download=true"
+	}
+
+	// https://pubs.acs.org/doi/10.1021/acs.estlett.9b00379
+	// https://pubs.acs.org/doi/pdf/10.1021/acs.estlett.9b00379?ref=article_openPDF
+	if strings.HasPrefix(u, "https://pubs.acs.org/doi/10") {
+		u = strings.Replace(u, "/doi/", "/doi/pdf/", 1)
+		strings.TrimSuffix(u, "#")
+		return u + "?ref=article_openPDF"
+	}
+
 	return u
 }
 

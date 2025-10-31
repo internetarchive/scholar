@@ -107,8 +107,15 @@ url_blocklist = [
   "//isiarticles.com/",
   # requested to be not crawled in 2023
   "//unsworks.unsw.edu.au/",
-  # 403s since 2020
+  # 403s since 2020.
   "sciencedirect.com",
+  # no success since 2023 (can do in browser but it's captcha'd)
+  "sciencedirectassets.com",
+  # this worked until 2023; I do see a way to get a download link if we let JS
+  # load and pull it from the "previous version" dropdown but it uses a
+  # different ID and requires either a good regex or HTML parsing. Can unblock
+  # if we get that working.
+  "osf.io",
 
   # loginwall patterns
 
@@ -139,7 +146,7 @@ url_blocklist = [
 #  'Tis a GET to the server, 'tis a GET 403,
 #  'Tis a GET to download a PDF for me,
 #  And when we find our query with no Chrome in sight,
-#  'Twill be in the archive of our petabyte.
+#  'Twill be in the archive of our petabyte. -avd
 simple_get_list = [
   # TODO
   "journals.plos.org/plosone/article/file?id=",

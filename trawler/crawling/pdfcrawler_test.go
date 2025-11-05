@@ -1,6 +1,13 @@
 package crawling
 
-import "testing"
+import (
+	"bytes"
+	"embed"
+	"testing"
+)
+
+//go:embed htmlsamples/*.html
+var samples embed.FS
 
 func Test_maybeRewrite(t *testing.T) {
 	cs := []struct {
@@ -46,24 +53,56 @@ func Test_maybeRewrite(t *testing.T) {
 	}
 }
 
-func TestFindPDFLink(t *testing.T) {
+func Test_findPDFLink(t *testing.T) {
+	crawler := PDFCrawler{}
 	cs := []struct {
 		Name              string
 		HtmlPath          string
-		ExpectedLink      string
+		Url               string
+		ExpectedURL       string
 		ExpectedTechnique string
+		Err               error
 	}{
 		{
-			Name:              "TODO",
-			HtmlPath:          "TODO",
-			ExpectedLink:      "TODO",
-			ExpectedTechnique: "TODO",
+			Name:              "revistas",
+			HtmlPath:          "revistas.html",
+			Url:               "https://www.revistas.unam.mx/index.php/rep/article/view/35503/32336",
+			ExpectedURL:       "https://www.revistas.unam.mx/index.php/rep/article/download/35503/32336/85134",
+			ExpectedTechnique: "jspdfurl",
 		},
 	}
 
 	for _, c := range cs {
 		t.Run(c.Name, func(t *testing.T) {
-			// TODO
+			bs, err := samples.ReadFile("htmlsamples/" + c.HtmlPath)
+			if err != nil {
+				panic(err)
+			}
+
+			result, err := crawler.findPDFLink(c.Url, bytes.NewReader(bs))
+			if err != nil {
+				if c.Err == nil {
+					t.Errorf("%s: did not expect error but got %s", c.Name, err.Error())
+				} else if c.Err.Error() != err.Error() {
+					t.Errorf("%s: expected error '%s', got error '%s'", c.Name, c.Err, err)
+				}
+				return
+			}
+
+			if c.Err != nil {
+				t.Errorf("%s: expected error but saw none", c.Name)
+				return
+			}
+
+			if result.Technique != c.ExpectedTechnique {
+				t.Errorf("%s: expected technique '%s', got '%s'",
+					c.Name, c.ExpectedTechnique, result.Technique)
+			}
+
+			if result.URL != c.ExpectedURL {
+				t.Errorf("%s: expected url '%s', got '%s'",
+					c.Name, c.ExpectedURL, result.URL)
+			}
 		})
 	}
 }

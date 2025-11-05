@@ -351,7 +351,7 @@ type PDFLinkResult struct {
 }
 
 // currently known to work on revistas.unam.mx
-var jsPDFRe = regexp.MustCompile(`pdfURL = "(.*)";`)
+var jsPDFRe = regexp.MustCompile(`pdfUrl = "(.*)";`)
 
 func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, error) {
 	decodedContent, err := decodeHTMLBody(content, "")
@@ -366,7 +366,7 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 
 	rawHTML := string(r)
 
-	// http://www.revistas.unam.mx/index.php/rep/article/view/35503/32336
+	// https://www.revistas.unam.mx/index.php/rep/article/view/35503/32336
 	// https://www.revistas.unam.mx/index.php/rep/article/download/35503/32336/85134
 	if strings.Contains(URL, "/article/view/") {
 		matches := jsPDFRe.FindAllStringSubmatch(rawHTML, 1)

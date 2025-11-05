@@ -77,6 +77,20 @@ func Test_findPDFLink(t *testing.T) {
 			ExpectedURL:       "https://elifesciences.org/download/aHR0cHM6Ly9jZG4uZWxpZmVzY2llbmNlcy5vcmcvYXJ0aWNsZXMvNTk4NDEvZWxpZmUtNTk4NDEtdjEucGRmP2Nhbm9uaWNhbFVyaT1odHRwczovL2VsaWZlc2NpZW5jZXMub3JnL2FydGljbGVzLzU5ODQx/elife-59841-v1.pdf?_hash=%2BEZ2CH%2FifGiXeDp5cSOT92ExFSGAjdYcDH%2FlRlOLLE0%3D",
 			ExpectedTechnique: "elifesciences",
 		},
+		{
+			Name:              "citation pdf url",
+			HtmlPath:          "unsw.html",
+			Url:               "https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa",
+			ExpectedURL:       "https://unsworks.unsw.edu.au/bitstreams/474505c1-89eb-407c-9793-fd4ffeabd6a2/download",
+			ExpectedTechnique: "citation_pdf_url",
+		},
+		{
+			Name:              "bepress citation pdf url",
+			HtmlPath:          "aisnet.html",
+			Url:               "https://aisel.aisnet.org/sjis/vol25/iss2/1/",
+			ExpectedURL:       "https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1298&context=sjis",
+			ExpectedTechnique: "bepress_citation_pdf_url",
+		},
 	}
 
 	for _, c := range cs {

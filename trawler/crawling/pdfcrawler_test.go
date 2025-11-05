@@ -70,6 +70,13 @@ func Test_findPDFLink(t *testing.T) {
 			ExpectedURL:       "https://www.revistas.unam.mx/index.php/rep/article/download/35503/32336/85134",
 			ExpectedTechnique: "jspdfurl",
 		},
+		{
+			Name:              "elifesciences",
+			HtmlPath:          "elifesciences.html",
+			Url:               "https://elifesciences.org/articles/59841",
+			ExpectedURL:       "https://elifesciences.org/download/aHR0cHM6Ly9jZG4uZWxpZmVzY2llbmNlcy5vcmcvYXJ0aWNsZXMvNTk4NDEvZWxpZmUtNTk4NDEtdjEucGRmP2Nhbm9uaWNhbFVyaT1odHRwczovL2VsaWZlc2NpZW5jZXMub3JnL2FydGljbGVzLzU5ODQx/elife-59841-v1.pdf?_hash=%2BEZ2CH%2FifGiXeDp5cSOT92ExFSGAjdYcDH%2FlRlOLLE0%3D",
+			ExpectedTechnique: "elifesciences",
+		},
 	}
 
 	for _, c := range cs {

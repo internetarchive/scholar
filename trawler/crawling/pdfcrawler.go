@@ -2,6 +2,7 @@ package crawling
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -359,12 +360,12 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 		return nil, fmt.Errorf("could not decode content for %s: %w", URL, err)
 	}
 
-	r, err := io.ReadAll(decodedContent)
+	bs, err := io.ReadAll(decodedContent)
 	if err != nil {
 		return nil, fmt.Errorf("could not read html content: %w", err)
 	}
 
-	rawHTML := string(r)
+	rawHTML := string(bs)
 
 	// https://www.revistas.unam.mx/index.php/rep/article/view/35503/32336
 	// https://www.revistas.unam.mx/index.php/rep/article/download/35503/32336/85134
@@ -374,10 +375,9 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 			u := strings.ReplaceAll(matches[0][1], `\`, "")
 			return &PDFLinkResult{u, "jspdfurl"}, nil
 		}
-
 	}
 
-	doc, err := goquery.NewDocumentFromReader(decodedContent)
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(bs))
 	if err != nil {
 		return nil, fmt.Errorf("could not parse HTML for %s: %w", URL, err)
 	}

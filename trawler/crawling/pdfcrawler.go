@@ -317,28 +317,24 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 	return out, nil
 }
 
-func detectContentCharset(body io.Reader) string {
+func decodeHTMLBody(body io.Reader, cset string) (io.Reader, error) {
 	r := bufio.NewReader(body)
-	if data, err := r.Peek(1024); err == nil {
-		if _, name, ok := charset.DetermineEncoding(data, ""); ok {
-			return name
+	if cset == "" {
+		if data, err := r.Peek(1024); err == nil {
+			if _, name, ok := charset.DetermineEncoding(data, ""); ok {
+				cset = name
+			}
 		}
+		cset = "utf-8"
 	}
-	return "utf-8"
-}
-
-func decodeHTMLBody(body io.Reader, charset string) (io.Reader, error) {
-	if charset == "" {
-		charset = detectContentCharset(body)
-	}
-	e, err := htmlindex.Get(charset)
+	e, err := htmlindex.Get(cset)
 	if err != nil {
 		return nil, err
 	}
 	if name, _ := htmlindex.Name(e); name != "utf-8" {
-		body = e.NewDecoder().Reader(body)
+		return e.NewDecoder().Reader(r), nil
 	}
-	return body, nil
+	return r, nil
 }
 
 type FulltextPattern struct {

@@ -351,6 +351,47 @@ type PDFLinkResult struct {
 	Technique string
 }
 
+// absolutize takes two urls with the expectation that the first one has a
+// domain and the second one *might* have a domain. the domain from the first
+// argument is prepended to the path/query of the second argument if the second
+// argument is lacking a domain.
+func absolutize(pageURL, pdfURL string) (string, error) {
+	if !strings.HasPrefix(pdfURL, "http://") && !strings.HasPrefix(pdfURL, "https://") {
+		pdfURL = "https://" + pdfURL
+	}
+
+	parsedPDF, err := url.Parse(pdfURL)
+	if err != nil {
+		return "", fmt.Errorf("could not parse pdf url '%s': %w", pdfURL, err)
+	}
+
+	if parsedPDF.Host != "" {
+		return parsedPDF.String(), nil
+	}
+
+	parsedPage, err := url.Parse(pageURL)
+	if err != nil {
+		return "", fmt.Errorf("could not parse page url '%s': %w", pageURL, err)
+	}
+
+	parsedPDF.Host = parsedPage.Host
+	parsedPDF.Scheme = parsedPage.Scheme
+
+	return parsedPDF.String(), nil
+}
+
+func newPDFLinkResult(pageURL, pdfURL, technique string) *PDFLinkResult {
+	u, err := absolutize(pageURL, pdfURL)
+	if err == nil {
+		pdfURL = u
+	}
+
+	return &PDFLinkResult{
+		URL:       pdfURL,
+		Technique: technique,
+	}
+}
+
 // currently known to work on revistas.unam.mx
 var jsPDFRe = regexp.MustCompile(`pdfUrl = "(.*)";`)
 
@@ -373,7 +414,7 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 		matches := jsPDFRe.FindAllStringSubmatch(rawHTML, 1)
 		if len(matches) > 0 {
 			u := strings.ReplaceAll(matches[0][1], `\`, "")
-			return &PDFLinkResult{u, "jspdfurl"}, nil
+			return newPDFLinkResult(URL, u, "jspdfurl"), nil
 		}
 	}
 
@@ -384,23 +425,55 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 
 	// https://elifesciences.org/articles/59841
 	// <a href="https://elifesciences.org/download/aHR0cHM6Ly9jZG4uZWxpZmVzY2llbmNlcy5vcmcvYXJ0aWNsZXMvNTk4NDEvZWxpZmUtNTk4NDEtdjEucGRmP2Nhbm9uaWNhbFVyaT1odHRwczovL2VsaWZlc2NpZW5jZXMub3JnL2FydGljbGVzLzU5ODQx/elife-59841-v1.pdf?_hash=%2BEZ2CH%2FifGiXeDp5cSOT92ExFSGAjdYcDH%2FlRlOLLE0%3D" class="article-download-links-list__link" data-behaviour-initialised="true">Article PDF</a>
-	if strings.Contains(URL, "://elifesciences.org/articles") {
+	if strings.Contains(URL, "elifesciences.org/articles") {
 		href, ok := doc.Find("a.article-download-links-list__link").Attr("href")
 		if ok {
-			return &PDFLinkResult{href, "elifesciences"}, nil
+			return newPDFLinkResult(URL, href, "elifesciences"), nil
 		}
 	}
 
-	// TODO
+	/*
+		If we can get the landing page to load, this *does* work fine. but as of
+		11/2025 their site fails to load landing pages on the first try and I gave up
+		trying to coax it into working. I suspect some accumulation of cookies is
+		needed for it to work.
 
-	meta, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
-	if ok {
-		return &PDFLinkResult{meta, "citation_pdf_url"}, nil
+		For now, I've put this domain on the blocklist.
+
+		// https://journals.tsu.ru/informatics/en/&journal_page=archive&id=2582&article_id=52764
+		// <a class='file pdf' href='https://journals.tsu.ru/engine/download.php?id=302574&area=files'>Download file</a>
+		if strings.Contains(URL, "journals.tsu.ru") && strings.Contains(URL, "article_id=") {
+		  href, ok := doc.Find("a.file.pdf").Attr("href")
+		  if ok {
+		    return &PDFLinkResult{href, "journals.tsu.ru-download.php"}, nil
+		  }
+		}
+	*/
+
+	// https://www.eurosurveillance.org/content/10.2807/1560-7917.ES.2025.30.43.2500793
+	// <a href="/deliver/fulltext/eurosurveillance/30/43/eurosurv-30-43-3.pdf?itemId=%2Fcontent%2F10.2807%2F1560-7917.ES.2025.30.43.2500793&mimeType=pdf&containerItemId=content/eurosurveillance" class="pdf " title="Download" rel="http://instance.metastore.ingenta.com/content/10.2807/1560-7917.ES.2025.30.43.2500793" target="/content/10.2807/1560-7917.ES.2025.30.43.2500793-pdf" >
+	if strings.Contains(URL, "/content/10.") {
+		href, ok := doc.Find("a.pdf[title='Download']").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, href, "a.pdf_link"), nil
+		}
 	}
 
+	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
+	meta, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
+	if ok {
+		return newPDFLinkResult(URL, meta, "citation_pdf_url"), nil
+	}
+
+	// eg, https://aisel.aisnet.org/sjis/vol25/iss2/1/
 	meta, ok = doc.Find("meta[name='bepress_citation_pdf_url']").Attr("content")
 	if ok {
-		return &PDFLinkResult{meta, "bepress_citation_pdf_url"}, nil
+		return newPDFLinkResult(URL, meta, "bepress_citation_pdf_url"), nil
+	}
+
+	meta, ok = doc.Find("meta[name='eprints.document_url']").Attr("content")
+	if ok {
+		return newPDFLinkResult(URL, meta, "eprints-document_url"), nil
 	}
 
 	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.
@@ -477,6 +550,24 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 		u = strings.Replace(u, "/doi/", "/doi/pdf/", 1)
 		u = strings.TrimSuffix(u, "#")
 		return u + "?ref=article_openPDF"
+	}
+
+	// https://www.jcancer.org/v16p1684.html
+	// https://www.jcancer.org/v16p1684.pdf
+	if strings.Contains(u, "jcancer.org/") && strings.HasSuffix(u, ".html") {
+		return strings.Replace(u, ".html", ".pdf", 1)
+	}
+
+	// https://www.jcancer.org/v16p1684.htm
+	// https://www.jcancer.org/v16p1684.pdf
+	if strings.Contains(u, "jcancer.org/") && strings.HasSuffix(u, ".htm") {
+		return strings.Replace(u, ".htm", ".pdf", 1)
+	}
+
+	// https://www.tandfonline.com/doi/full/10.1080/19491247.2019.1682234
+	// https://www.tandfonline.com/doi/pdf/10.1080/19491247.2019.1682234
+	if strings.Contains(u, "tandfonline.com/doi/full/10.") {
+		return strings.Replace(u, "/doi/full/", "/doi/pdf/", 1)
 	}
 
 	return u

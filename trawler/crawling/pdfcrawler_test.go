@@ -40,6 +40,21 @@ func Test_maybeRewrite(t *testing.T) {
 			Url:      "https://pubs.acs.org/doi/10.123/foobar#",
 			Expected: "https://pubs.acs.org/doi/pdf/10.123/foobar?ref=article_openPDF",
 		},
+		{
+			Name:     "jcancer html",
+			Url:      "https://www.jcancer.org/v16p1684.html",
+			Expected: "https://www.jcancer.org/v16p1684.pdf",
+		},
+		{
+			Name:     "jcancer htm",
+			Url:      "https://www.jcancer.org/v16p1684.html",
+			Expected: "https://www.jcancer.org/v16p1684.pdf",
+		},
+		{
+			Name:     "tandfonline",
+			Url:      "https://www.tandfonline.com/doi/full/10.1080/19491247.2019.1682234",
+			Expected: "https://www.tandfonline.com/doi/pdf/10.1080/19491247.2019.1682234",
+		},
 	}
 
 	for _, c := range cs {
@@ -91,6 +106,20 @@ func Test_findPDFLink(t *testing.T) {
 			ExpectedURL:       "https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1298&context=sjis",
 			ExpectedTechnique: "bepress_citation_pdf_url",
 		},
+		{
+			Name:              "eprints document url",
+			HtmlPath:          "utas.html",
+			Url:               "https://eprints.utas.edu.au/16016/",
+			ExpectedURL:       "https://eprints.utas.edu.au/16016/1/wilson-tasmanian-lichens-1892.pdf",
+			ExpectedTechnique: "eprints-document_url",
+		},
+		{
+			Name:              "a.pdf style link",
+			HtmlPath:          "eurosurveillance.org.html",
+			Url:               "https://www.eurosurveillance.org/content/10.2807/1560-7917.ES.2025.30.43.2500793",
+			ExpectedURL:       "https://www.eurosurveillance.org/deliver/fulltext/eurosurveillance/30/43/eurosurv-30-43-3.pdf?itemId=%2Fcontent%2F10.2807%2F1560-7917.ES.2025.30.43.2500793&mimeType=pdf&containerItemId=content/eurosurveillance",
+			ExpectedTechnique: "a.pdf_link",
+		},
 	}
 
 	for _, c := range cs {
@@ -123,6 +152,58 @@ func Test_findPDFLink(t *testing.T) {
 			if result.URL != c.ExpectedURL {
 				t.Errorf("%s: expected url '%s', got '%s'",
 					c.Name, c.ExpectedURL, result.URL)
+			}
+		})
+	}
+}
+
+func Test_absolutize(t *testing.T) {
+	cs := []struct {
+		name        string
+		pageUrl     string
+		pdfUrl      string
+		expectedUrl string
+		err         error
+	}{
+		{
+			name:        "full pdf url",
+			pageUrl:     "https://jill.valentine/squamous/landing",
+			pdfUrl:      "https://claire.redfield/pdf/download?cool=1&hi=there",
+			expectedUrl: "https://claire.redfield/pdf/download?cool=1&hi=there",
+		},
+		{
+			name:        "relative pdf url",
+			pageUrl:     "https://barry.burton/article/cool?ok=sure",
+			pdfUrl:      "/download/pdf?why=not",
+			expectedUrl: "https://barry.burton/download/pdf?why=not",
+		},
+		{
+			name:        "schemaless pdf url",
+			pageUrl:     "https://barry.burton/article/cool?ok=sure",
+			pdfUrl:      "cool.com/download/pdf?why=not",
+			expectedUrl: "https://cool.com/download/pdf?why=not",
+		},
+	}
+
+	for _, c := range cs {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := absolutize(c.pageUrl, c.pdfUrl)
+			if err != nil {
+				if c.err == nil {
+					t.Errorf("%s: did not expect error but got %s", c.name, err.Error())
+				} else if c.err.Error() != err.Error() {
+					t.Errorf("%s: expected error '%s', got error '%s'", c.name, c.err, err)
+				}
+				return
+			}
+
+			if c.err != nil {
+				t.Errorf("%s: expected error but saw none", c.name)
+				return
+			}
+
+			if out != c.expectedUrl {
+				t.Errorf("%s: expected %s, got %s", c.name, c.expectedUrl, out)
 			}
 		})
 	}

@@ -472,6 +472,11 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 		return newPDFLinkResult(URL, meta, "eprints-document_url"), nil
 	}
 
+	embed, ok := doc.Find("embed[type='application/pdf']").Attr("src")
+	if ok {
+		return newPDFLinkResult(URL, embed, "pdf-embed"), nil
+	}
+
 	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.
 	// Ominously, the older code has comments like "[this function] is partially
 	// deprecated" and "note: most of these have migrated to the html_biblio code

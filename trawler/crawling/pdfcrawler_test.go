@@ -11,58 +11,58 @@ var samples embed.FS
 
 func Test_maybeRewrite(t *testing.T) {
 	cs := []struct {
-		Name     string
-		Url      string
-		Expected string
+		name     string
+		url      string
+		expected string
 	}{
 		{
-			Name:     "arxiv",
-			Url:      "https://arxiv.org/pdf/1234567.pdf",
-			Expected: "https://arxiv.org/pdf/1234567",
+			name:     "arxiv",
+			url:      "https://arxiv.org/pdf/1234567.pdf",
+			expected: "https://arxiv.org/pdf/1234567",
 		},
 		{
-			Name:     "wiley",
-			Url:      "https://onlinelibrary.wiley.com/doi/10.foobar/baz123",
-			Expected: "https://onlinelibrary.wiley.com/doi/pdf/10.foobar/baz123",
+			name:     "wiley",
+			url:      "https://onlinelibrary.wiley.com/doi/10.foobar/baz123",
+			expected: "https://onlinelibrary.wiley.com/doi/pdf/10.foobar/baz123",
 		},
 		{
-			Name:     "sagepub",
-			Url:      "https://journals.sagepub.com/doi/10.123/wahoo",
-			Expected: "https://journals.sagepub.com/doi/10.123/wahoo?download=true",
+			name:     "sagepub",
+			url:      "https://journals.sagepub.com/doi/10.123/wahoo",
+			expected: "https://journals.sagepub.com/doi/10.123/wahoo?download=true",
 		},
 		{
-			Name:     "sagepub (direct pdf)",
-			Url:      "https://journals.sagepub.com/doi/pdf/10.123/wahoo",
-			Expected: "https://journals.sagepub.com/doi/pdf/10.123/wahoo?download=true",
+			name:     "sagepub (direct pdf)",
+			url:      "https://journals.sagepub.com/doi/pdf/10.123/wahoo",
+			expected: "https://journals.sagepub.com/doi/pdf/10.123/wahoo?download=true",
 		},
 		{
-			Name:     "acs.org",
-			Url:      "https://pubs.acs.org/doi/10.123/foobar#",
-			Expected: "https://pubs.acs.org/doi/pdf/10.123/foobar?ref=article_openPDF",
+			name:     "acs.org",
+			url:      "https://pubs.acs.org/doi/10.123/foobar#",
+			expected: "https://pubs.acs.org/doi/pdf/10.123/foobar?ref=article_openPDF",
 		},
 		{
-			Name:     "jcancer html",
-			Url:      "https://www.jcancer.org/v16p1684.html",
-			Expected: "https://www.jcancer.org/v16p1684.pdf",
+			name:     "jcancer html",
+			url:      "https://www.jcancer.org/v16p1684.html",
+			expected: "https://www.jcancer.org/v16p1684.pdf",
 		},
 		{
-			Name:     "jcancer htm",
-			Url:      "https://www.jcancer.org/v16p1684.html",
-			Expected: "https://www.jcancer.org/v16p1684.pdf",
+			name:     "jcancer htm",
+			url:      "https://www.jcancer.org/v16p1684.html",
+			expected: "https://www.jcancer.org/v16p1684.pdf",
 		},
 		{
-			Name:     "tandfonline",
-			Url:      "https://www.tandfonline.com/doi/full/10.1080/19491247.2019.1682234",
-			Expected: "https://www.tandfonline.com/doi/pdf/10.1080/19491247.2019.1682234",
+			name:     "tandfonline",
+			url:      "https://www.tandfonline.com/doi/full/10.1080/19491247.2019.1682234",
+			expected: "https://www.tandfonline.com/doi/pdf/10.1080/19491247.2019.1682234",
 		},
 	}
 
 	for _, c := range cs {
 		crawler := PDFCrawler{}
-		t.Run(c.Name, func(t *testing.T) {
-			out := crawler.maybeRewrite(c.Url)
-			if out != c.Expected {
-				t.Errorf("%s: expected %s, got %s", c.Name, c.Expected, out)
+		t.Run(c.name, func(t *testing.T) {
+			out := crawler.maybeRewrite(c.url)
+			if out != c.expected {
+				t.Errorf("%s: expected %s, got %s", c.name, c.expected, out)
 			}
 		})
 	}
@@ -71,87 +71,99 @@ func Test_maybeRewrite(t *testing.T) {
 func Test_findPDFLink(t *testing.T) {
 	crawler := PDFCrawler{}
 	cs := []struct {
-		Name              string
-		HtmlPath          string
-		Url               string
-		ExpectedURL       string
-		ExpectedTechnique string
-		Err               error
+		name              string
+		htmlPath          string
+		url               string
+		expectedURL       string
+		expectedTechnique string
+		err               error
 	}{
 		{
-			Name:              "revistas",
-			HtmlPath:          "revistas.html",
-			Url:               "https://www.revistas.unam.mx/index.php/rep/article/view/35503/32336",
-			ExpectedURL:       "https://www.revistas.unam.mx/index.php/rep/article/download/35503/32336/85134",
-			ExpectedTechnique: "jspdfurl",
+			name:              "revistas",
+			htmlPath:          "revistas.html",
+			url:               "https://www.revistas.unam.mx/index.php/rep/article/view/35503/32336",
+			expectedURL:       "https://www.revistas.unam.mx/index.php/rep/article/download/35503/32336/85134",
+			expectedTechnique: "jspdfurl",
 		},
 		{
-			Name:              "elifesciences",
-			HtmlPath:          "elifesciences.html",
-			Url:               "https://elifesciences.org/articles/59841",
-			ExpectedURL:       "https://elifesciences.org/download/aHR0cHM6Ly9jZG4uZWxpZmVzY2llbmNlcy5vcmcvYXJ0aWNsZXMvNTk4NDEvZWxpZmUtNTk4NDEtdjEucGRmP2Nhbm9uaWNhbFVyaT1odHRwczovL2VsaWZlc2NpZW5jZXMub3JnL2FydGljbGVzLzU5ODQx/elife-59841-v1.pdf?_hash=%2BEZ2CH%2FifGiXeDp5cSOT92ExFSGAjdYcDH%2FlRlOLLE0%3D",
-			ExpectedTechnique: "elifesciences",
+			name:              "elifesciences",
+			htmlPath:          "elifesciences.html",
+			url:               "https://elifesciences.org/articles/59841",
+			expectedURL:       "https://elifesciences.org/download/aHR0cHM6Ly9jZG4uZWxpZmVzY2llbmNlcy5vcmcvYXJ0aWNsZXMvNTk4NDEvZWxpZmUtNTk4NDEtdjEucGRmP2Nhbm9uaWNhbFVyaT1odHRwczovL2VsaWZlc2NpZW5jZXMub3JnL2FydGljbGVzLzU5ODQx/elife-59841-v1.pdf?_hash=%2BEZ2CH%2FifGiXeDp5cSOT92ExFSGAjdYcDH%2FlRlOLLE0%3D",
+			expectedTechnique: "elifesciences",
 		},
 		{
-			Name:              "citation pdf url",
-			HtmlPath:          "unsw.html",
-			Url:               "https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa",
-			ExpectedURL:       "https://unsworks.unsw.edu.au/bitstreams/474505c1-89eb-407c-9793-fd4ffeabd6a2/download",
-			ExpectedTechnique: "citation_pdf_url",
+			name:              "citation pdf url",
+			htmlPath:          "unsw.html",
+			url:               "https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa",
+			expectedURL:       "https://unsworks.unsw.edu.au/bitstreams/474505c1-89eb-407c-9793-fd4ffeabd6a2/download",
+			expectedTechnique: "citation_pdf_url",
 		},
 		{
-			Name:              "bepress citation pdf url",
-			HtmlPath:          "aisnet.html",
-			Url:               "https://aisel.aisnet.org/sjis/vol25/iss2/1/",
-			ExpectedURL:       "https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1298&context=sjis",
-			ExpectedTechnique: "bepress_citation_pdf_url",
+			name:              "bepress citation pdf url",
+			htmlPath:          "aisnet.html",
+			url:               "https://aisel.aisnet.org/sjis/vol25/iss2/1/",
+			expectedURL:       "https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1298&context=sjis",
+			expectedTechnique: "bepress_citation_pdf_url",
 		},
 		{
-			Name:              "eprints document url",
-			HtmlPath:          "utas.html",
-			Url:               "https://eprints.utas.edu.au/16016/",
-			ExpectedURL:       "https://eprints.utas.edu.au/16016/1/wilson-tasmanian-lichens-1892.pdf",
-			ExpectedTechnique: "eprints-document_url",
+			name:              "eprints document url",
+			htmlPath:          "utas.html",
+			url:               "https://eprints.utas.edu.au/16016/",
+			expectedURL:       "https://eprints.utas.edu.au/16016/1/wilson-tasmanian-lichens-1892.pdf",
+			expectedTechnique: "eprints-document_url",
 		},
 		{
-			Name:              "a.pdf style link",
-			HtmlPath:          "eurosurveillance.org.html",
-			Url:               "https://www.eurosurveillance.org/content/10.2807/1560-7917.ES.2025.30.43.2500793",
-			ExpectedURL:       "https://www.eurosurveillance.org/deliver/fulltext/eurosurveillance/30/43/eurosurv-30-43-3.pdf?itemId=%2Fcontent%2F10.2807%2F1560-7917.ES.2025.30.43.2500793&mimeType=pdf&containerItemId=content/eurosurveillance",
-			ExpectedTechnique: "a.pdf_link",
+			name:              "a.pdf style link",
+			htmlPath:          "eurosurveillance.org.html",
+			url:               "https://www.eurosurveillance.org/content/10.2807/1560-7917.ES.2025.30.43.2500793",
+			expectedURL:       "https://www.eurosurveillance.org/deliver/fulltext/eurosurveillance/30/43/eurosurv-30-43-3.pdf?itemId=%2Fcontent%2F10.2807%2F1560-7917.ES.2025.30.43.2500793&mimeType=pdf&containerItemId=content/eurosurveillance",
+			expectedTechnique: "a.pdf_link",
+		},
+		{
+			name:              "pdf embed",
+			htmlPath:          "jass.html",
+			url:               "https://jasstudies.com/DergiTamDetay.aspx?ID=3401",
+			expectedURL:       "https://jasstudies.com/files/jass_makaleler/1359848334_33-Okt.%20Yasemin%20KARADEM%C4%B0R.pdf",
+			expectedTechnique: "pdf-embed",
 		},
 	}
 
 	for _, c := range cs {
-		t.Run(c.Name, func(t *testing.T) {
-			bs, err := samples.ReadFile("htmlsamples/" + c.HtmlPath)
+		t.Run(c.name, func(t *testing.T) {
+			bs, err := samples.ReadFile("htmlsamples/" + c.htmlPath)
 			if err != nil {
 				panic(err)
 			}
 
-			result, err := crawler.findPDFLink(c.Url, bytes.NewReader(bs))
+			result, err := crawler.findPDFLink(c.url, bytes.NewReader(bs))
 			if err != nil {
-				if c.Err == nil {
-					t.Errorf("%s: did not expect error but got %s", c.Name, err.Error())
-				} else if c.Err.Error() != err.Error() {
-					t.Errorf("%s: expected error '%s', got error '%s'", c.Name, c.Err, err)
+				if c.err == nil {
+					t.Errorf("%s: did not expect error but got %s", c.name, err.Error())
+				} else if c.err.Error() != err.Error() {
+					t.Errorf("%s: expected error '%s', got error '%s'", c.name, c.err, err)
 				}
 				return
 			}
 
-			if c.Err != nil {
-				t.Errorf("%s: expected error but saw none", c.Name)
+			if c.err != nil {
+				t.Errorf("%s: expected error but saw none", c.name)
 				return
 			}
 
-			if result.Technique != c.ExpectedTechnique {
-				t.Errorf("%s: expected technique '%s', got '%s'",
-					c.Name, c.ExpectedTechnique, result.Technique)
+			if result == nil {
+				t.Errorf("%s: nil result", c.name)
+				return
 			}
 
-			if result.URL != c.ExpectedURL {
+			if result.Technique != c.expectedTechnique {
+				t.Errorf("%s: expected technique '%s', got '%s'",
+					c.name, c.expectedTechnique, result.Technique)
+			}
+
+			if result.URL != c.expectedURL {
 				t.Errorf("%s: expected url '%s', got '%s'",
-					c.Name, c.ExpectedURL, result.URL)
+					c.name, c.expectedURL, result.URL)
 			}
 		})
 	}

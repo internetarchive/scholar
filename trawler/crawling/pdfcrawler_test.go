@@ -127,6 +127,20 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "https://jasstudies.com/files/jass_makaleler/1359848334_33-Okt.%20Yasemin%20KARADEM%C4%B0R.pdf",
 			expectedTechnique: "pdf-embed",
 		},
+		{
+			name:              "downloadPdf class",
+			htmlPath:          "degruyter.html",
+			url:               "https://www.degruyterbrill.com/document/doi/10.1515/zaw-2021-0001/html",
+			expectedURL:       "https://www.degruyterbrill.com/document/doi/10.1515/zaw-2021-0001/pdf?licenseType=open-access",
+			expectedTechnique: "downloadPdf",
+		},
+		{
+			name:              "unicamp",
+			htmlPath:          "unicamp.html",
+			url:               "http://www.repositorio.unicamp.br/acervo/detalhe/1509801",
+			expectedURL:       "http://www.repositorio.unicamp.br/Busca/Download?codigoArquivo=592674&tipoMidia=0",
+			expectedTechnique: "unicamp",
+		},
 	}
 
 	for _, c := range cs {

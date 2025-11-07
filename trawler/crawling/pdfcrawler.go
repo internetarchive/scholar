@@ -455,6 +455,13 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 		}
 	}
 
+	if strings.Contains(URL, "repositorio.unicamp.br") {
+		anchor, ok := doc.Find("span.titulo a").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, anchor, "unicamp"), nil
+		}
+	}
+
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
 	meta, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {
@@ -475,6 +482,14 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 	embed, ok := doc.Find("embed[type='application/pdf']").Attr("src")
 	if ok {
 		return newPDFLinkResult(URL, embed, "pdf-embed"), nil
+	}
+
+	// NB the sample page bryan had for this now features citation_pdf_url so
+	// this is unlikely to be triggered. I've left it here because it doesn't
+	// hurt and tweaked the degruyter.html sample html to trigger the fallback.
+	anchor, ok := doc.Find("a.downloadPdf").Attr("href")
+	if ok {
+		return newPDFLinkResult(URL, anchor, "downloadPdf"), nil
 	}
 
 	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.

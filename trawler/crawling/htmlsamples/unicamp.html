@@ -1,0 +1,985 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR" class="">
+<head>
+	<meta charset="utf-8">
+	<meta name="google" content="notranslate">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="Content-Language" content="pt-BR" />
+		<link rel="manifest" href="/ManifestoPwa" />
+	<link rel="apple-touch-icon" sizes="72x72" href="/content/images/icones-pwa/ri/logo_72x72px.png" />
+	<link rel="apple-touch-icon" sizes="96x96" href="/content/images/icones-pwa/ri/logo_96x96px.png" />
+	<link rel="apple-touch-icon" sizes="128x128" href="/content/images/icones-pwa/ri/logo_128x128px.png" />
+	<link rel="apple-touch-icon" sizes="144x144" href="/content/images/icones-pwa/ri/logo_144x144px.png" />
+	<link rel="apple-touch-icon" sizes="152x152" href="/content/images/icones-pwa/ri/logo_152x152px.png" />
+	<link rel="apple-touch-icon" sizes="192x192" href="/content/images/icones-pwa/ri/logo_192x192px.png" />
+	<link rel="apple-touch-icon" sizes="384x384" href="/content/images/icones-pwa/ri/logo_384x384px.png" />
+	<link rel="apple-touch-icon" sizes="512x512" href="/content/images/icones-pwa/ri/logo_512x512px.png" />
+	
+	
+	
+					<meta name="citation_date" content="2019">
+					<meta name="citation_keywords" content="Artigo original; Diafragma da pelve; Ultrassonografia transvaginal; Vulvodínia; ARTIGO">
+					<meta name="citation_title" content="013 pelvic floor biometry assessed using 3d translabial ultrasound in women with vulvodynia submitted to physical therapy : a randomized controlled trial">
+					<meta name="citation_author" content="M. Bardin">
+					<meta name="citation_author" content="P. C. Giraldo">
+					<meta name="citation_author" content="N. Martinho">
+					<meta name="citation_author" content="M. Morin">
+					<meta name="citation_journal_title" content="Journal of sexual medicine">
+
+			
+
+
+	
+	<script type="text/javascript">Caixa = { Normal: 0, Alta: 1, Baixa: 2, Capitalizada: 3, PrimeiraPalavraCapitalizada: 4  };</script>
+
+
+
+	<title>Terminal RI - Sophia Biblioteca Web</title>
+	
+	<link href="/bundles/css?v=3pHG_I_XRboeAVOCll-ihoEMA_6V5aBh62srct7Mtx41" rel="stylesheet"/>
+
+	<link href='/Content/css/theme.less?build=1.207.0.0' rel='stylesheet' type='text/css' />
+	
+	<link href='/Content/css/toastr/angular-toastr.min.css?build=1.207.0.0' rel='stylesheet' type='text/css' />
+	<link href='/Content/css/toastr/toastr.custom.less?build=1.207.0.0' rel='stylesheet' type='text/css' />
+
+	
+	<link href='/Content/css/shared/detalhe.less?build=1.207.0.0' rel='stylesheet' type='text/css' />
+	<link href='/Content/css/acervo/detalhe.less?build=1.207.0.0' rel='stylesheet' type='text/css' />
+	<link href='/Content/css/grid/grid.less?build=1.207.0.0' rel='stylesheet' type='text/css' />
+
+
+	<style>
+		@media (min-width: 1200px) {
+			header > nav.navbar > div.container.imagemCabecalho {
+				background-image: url('/Home/ObterCabecalhoRi');
+			}
+		}
+	</style>
+
+
+	<link rel="shortcut icon" href="/content/images/favicon.ico?v=2023" type="image/x-icon" />
+</head>
+
+
+
+
+
+
+<body role="document" ng-app="terminalApp" ng-cloak>
+	
+
+
+
+
+<h1 class="visivel-apenas-para-leitor-de-acessibilidade">Terminal de consulta web</h1>
+<ul id="accessibility" class="visivel-apenas-para-leitor-de-acessibilidade">
+	<li>
+		<a accesskey="1" href="#acessibilidade-e-auto-contraste" id="link-acessibilidade-e-auto-contraste">
+			Versão de alto contraste e opções de acessibilidade<span>1</span>
+		</a>
+	</li>
+	<li>
+		<a accesskey="2" href="#menu-principal" id="link-menu-principal">
+			Filtro por bibliotecas e menu de ações do usuário<span>2</span>
+		</a>
+	</li>
+	<li>
+		<a accesskey="3" href="#busca-rapida" id="link-busca-rapida">
+			Busca rápida por palavra chave<span>3</span>
+		</a>
+	</li>
+	<li>
+		<a accesskey="4" href="#carrosseis" id="link-carrosseis">
+			Últimos títulos adquiridos e mais emprestados<span>4</span>
+		</a>
+	</li>
+	<li>
+		<a accesskey="5" href="#rodape" id="link-rodape">
+			Rodapé<span>5</span>
+		</a>
+	</li>
+</ul>
+<header>
+	<nav class="navbar navbar-fixed-top">
+		<div id="acessibilidade-e-auto-contraste" class="container">
+			<span class="container-ssogovbr" ng-controller="SolicitacaoImagensModalController as solicImgModalCtrl" ng-cloak>
+			</span>
+			<button onclick="tw.acessibilidade.abrir()">
+				<i class="mdi mdi-human"></i>Acessibilidade
+			</button>
+			<button onclick="tw.contraste.toggle()">
+				<i class="mdi mdi-circle-slice-4"></i>Alto contraste
+			</button>
+		</div>
+	</nav>
+	<nav id="menu-principal" class="navbar navbar-fixed-top">
+		<div class="container imagemCabecalho">
+			<a id="logotipoTerminal" href="/" target="_self" title="Logotipo da instituição">
+				<img src="/Home/ObterLogotipoRi" alt="Logotipo da instituição" />
+			</a>
+			<ul class="nav navbar-nav navbar-right" ng-cloak>
+				
+				<li class="dropdown filtro-biblioteca" ng-controller="FiltroBibliotecasCtrl as filtroBibCtrl">
+	<button id="bibliotecasSelecionadasA" class="dropdown-toggle a-caret" data-toggle="dropdown" role="button"
+			aria-haspopup="true" aria-expanded="false">
+		<span class="mdi mdi-map-marker" aria-hidden="true" data-total-bibliotecas="{{filtroBibCtrl.totalBibliotecas()}}"></span>
+		<span id="bibliotecasSelecionadasTitulo"></span>
+		<span class="caret"></span>
+	</button>
+	<ul class="dropdown-menu animated bounceInDown">
+		<li class="li-multiselect" ng-if="filtroBibCtrl.model.EstadoSet.length > 0">
+			<label>Estado</label>
+			<div class="multiselecao">
+				<select kendo-multi-select id="estado_multiselect" k-options="filtroBibCtrl.options.estado"
+						data-no-data-template="false" k-ng-model="filtroBibCtrl.filtro.estadoSet" data-value-primitive="false"
+						ng-cloak></select>
+			</div>
+		</li>
+		<li class="li-multiselect" ng-if="filtroBibCtrl.model.CidadeSet.length > 0">
+			<label>Cidade</label>
+			<div class="multiselecao">
+				<select kendo-multi-select id="cidade_multiselect" k-options="filtroBibCtrl.options.cidade"
+						data-no-data-template="false" k-ng-model="filtroBibCtrl.filtro.cidadeSet" data-value-primitive="false"
+						ng-cloak></select>
+			</div>
+		</li>
+		<li class="divider" ng-if="filtroBibCtrl.model.EstadoSet.length > 0 && filtroBibCtrl.model.CidadeSet.length > 0"></li>
+		<li class="li-multiselect">
+			<label>Biblioteca</label>
+			<div class="multiselecao">
+				<select kendo-multi-select id="biblioteca_multiselect" k-options="filtroBibCtrl.options.biblioteca"
+						data-no-data-template="false" k-ng-model="filtroBibCtrl.filtro.bibliotecaSet" data-value-primitive="false"
+						ng-cloak></select>
+			</div>
+		</li>
+		<li class="divider"></li>
+		<li>
+			<button class="btn" ng-click="filtroBibCtrl.filtrar();">
+				<span class="mdi mdi-filter-outline" aria-hidden="true"></span>
+				Aplicar filtro
+			</button>
+		</li>
+	</ul>
+</li>
+
+				<li class="minha-selecao" ng-controller="ServicosController as servicosCtrl">
+	<a href="/MinhaSelecao?guid=1762473253809" title="Minha seleção" ng-click="servicosCtrl.navegarParaMinhaSelecao()">
+		<span class="visivel-apenas-para-leitor-de-acessibilidade">Minha seleção</span>
+		<span class="mdi mdi-basket" data-total-selecao="{{servicosCtrl.obterTotalMinhaSelecao()}}"></span>
+	</a>
+</li>
+								<li>
+	<a href="/Indicador?guid=1762473253809"
+	   title="Indicadores" onclick="tw.navegarParaIndicadores()">
+		<span class="mdi mdi-chart-areaspline"></span>
+	</a>
+</li>				<li class="links-uteis" ng-controller="ServicosController as servicosCtrl">
+	<a href="/LinksUteis?guid=1762473253809"
+	   title="Links" ng-click="servicosCtrl.navegarParaLinksUteis()">
+		<span class="mdi mdi-link-variant"></span>
+	</a>
+</li>									<li class="dropdown idiomas">
+		<button class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false"
+		   title="Idioma">
+			<span class="mdi mdi-earth"></span>
+		</button>
+		<div class="dropdown-menu dropdown-menu-right animated bounceInDown">
+				<a href="javascript:void(0);" data-idioma="0">Português</a>
+										<a href="javascript:void(0);" data-idioma="2">English</a>
+							<a href="javascript:void(0);" data-idioma="1">Español</a>
+							<a href="javascript:void(0);" data-idioma="3">Català</a>
+		</div>
+	</li>
+
+
+
+
+
+
+<li class="dropdown usuarios" ng-controller="OpenLoginController as openLoginCtrl">
+		<button href="javascript:void(0);" ng-click="openLoginCtrl.abrirPopupLogin()" title="Entrar">
+			<div>
+				<span class="mdi mdi-account"></span>
+			</div>
+		</button>
+</li>			</ul>
+		</div>
+	</nav>
+	<nav id="busca-rapida" class="navbar navbar-fixed-top">
+	<div class="container" ng-controller="BuscaRapidaController as buscaRapidaCtrl">
+		<form name="formCampoBusca" class="form-inline" ng-class="buscaRapidaCtrl.ObterClasseFormulario()" method="post" id="formCampoBusca" action="#">
+			<div class="campoBuscaRapida">
+				<input type="hidden" name="Guid" id="Guid" value="{{buscaRapidaCtrl.guid}}" />
+				<input type="hidden" id="TipoBuscaRapida" name="TipoBuscaRapida" ng-value="buscaRapidaCtrl.opcaoSelecionada.Codigo" />
+				<input type="hidden" id="IniciadoCom" name="IniciadoCom" ng-value="buscaRapidaCtrl.iniciadoCom" />
+				<ul class="nav navbar-nav" id="divBuscaRapida" ng-cloak>
+					<li>
+						<div class="input-group">
+							<div class="input-group-btn opcao-busca">
+								<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true"
+										aria-expanded="false" tabindex="{{buscaRapidaCtrl.tabIndexBtnOpcao()}}">
+									<span ng-bind="buscaRapidaCtrl.opcaoSelecionada.Descricao"></span>
+									<span class="caret"></span>
+								</button>
+								<ul class="dropdown-menu">
+									<li ng-repeat="opcao in buscaRapidaCtrl.tipoBuscaTerminalSelecionada.OpcaoSet"
+										ng-class="buscaRapidaCtrl.classLiOpcao(opcao.Codigo)"
+										ng-click="buscaRapidaCtrl.trocarOpcao(opcao.Codigo)" ng-bind="opcao.Descricao"></li>
+								</ul>
+							</div>
+							<label class="visivel-apenas-para-leitor-de-acessibilidade" for="PalavraChave">Busca rápida</label>
+							<input class="form-control" name="PalavraChave" id="PalavraChave" placeholder="Pesquisar"
+								   type="text" maxlength="500" ng-model="palavraChave" validation-error="buscaRapidaCtrl.validacaoPalavraChave()" />
+							<span class="input-group-btn" id="btnEnviarBuscaRapida" title="Pesquisar">
+								<button class="caixa-busca-button btn btn-default" type="submit" ng-disabled="buscaRapidaCtrl.btnDisabled">
+									<i class="mdi mdi-magnify"></i>
+								</button>
+							</span>
+						</div>
+					</li>
+				</ul>
+			</div>
+			<div class="buscaRapidaAcoes">
+				<div class="acao-botoes">
+					<button type="submit" class="btn btn-default" ng-disabled="buscaRapidaCtrl.btnDisabled" id="btnBuscaRapidaBuscar">
+						<span class="mdi mdi-magnify" aria-hidden="true"></span>
+						<span>Buscar</span>
+					</button>
+					<button type="button" class="btn btn-default" ng-click="buscaRapidaCtrl.limparBusca()" id="btnBuscaRapidaLimpar">
+						<span class="mdi mdi-eraser" aria-hidden="true"></span>
+						<span>Limpar</span>
+					</button>
+				</div>
+				<div class="acao-avancada">
+					<a href="/Busca/Avancada{{buscaRapidaCtrl.guidBuscaAvancada}}">
+						<i class="mdi" ng-class="buscaRapidaCtrl.classIconeBuscaAvancada()" title="Busca avançada"></i>
+						<span>Busca avançada</span>
+					</a>
+				</div>
+			</div>
+		</form>
+	</div>
+</nav>
+</header>
+<div id="aviso-instalar-pwa" class="hidden">
+	<div id="aviso-instalar-pwa-pergunta">
+		Deseja instalar o aplicativo?<br />
+		<a href="javascript:void(0)" onclick="tw.instalacaoPwa.instalar()">Sim</a>
+		<a href="javascript:void(0)" onclick="tw.instalacaoPwa.naoInstalar()">Não, obrigado</a>
+	</div>
+	<div id="aviso-instalar-pwa-negado" class="hidden">
+		Você ainda poderá instalar clicando no link no rodapé.<br />
+		<a href="javascript:void(0)" onclick="tw.instalacaoPwa.okMensagemNaoInstalar()">Ok</a>
+	</div>
+</div>
+
+<main>
+	
+
+
+
+
+<div class="row">
+	<div class="container fundo-resultado-busca detalhe-registro-bibliografico" itemscope itemtype="http://schema.org/Book">
+
+
+
+<script type="text/javascript">
+	TipoRegistroDsiAutoridade = { Todos: 0, Acervo: 1, Legislacao: 2  };
+</script>
+
+<div ng-controller="DetalheController as detalheCtrl">
+		<div id="topo-detalhes" class="row">
+			<div class="col-md-10 col-md-offset-2 col-xs-12 text-center">
+					<div id="paginacao-detalhe" ng-if="detalheCtrl.exibeNavegacao">
+						<a href="{{detalheCtrl.linkNavegacaoAnterior()}}" ng-class="{{detalheCtrl.classeNavegacaoAnterior()}}"
+						   class="mdi mdi-arrow-left-bold-box" title="Registro anterior"></a>
+						<span ng-bind="detalheCtrl.registroNavegacao.Indice"></span> / <span ng-bind="detalheCtrl.registroNavegacao.TotalResultados"></span>
+						<a href="{{detalheCtrl.linkNavegacaoPosterior()}}" ng-class="{{detalheCtrl.classeNavegacaoPosterior()}}"
+						   class="mdi mdi-arrow-right-bold-box" title="Próximo registro"></a>
+					</div>
+									<a href="javascript:void(0)" onclick="voltarPaginaAnterior()">
+						<i class="mdi mdi-arrow-left-bold"></i> Voltar
+					</a>
+			</div>
+		</div>
+	<div class="row ficha-detalhe" data-codigo-registro="1509801">
+		<div class="col-xs-12 col-sm-12 col-lg-12">
+			<div class="descricao-detalhe">
+				<div class="row">
+					<div class="col-xs-12 col-sm-12 col-lg-12">
+						<div class="fundo fundo-detalhe">
+							<div class="row hidden-xs">
+								<div class="botoes-tipo-visualizacao">
+									<div class="btn-group">
+										<button class="btn btn-default" title="Registro completo"
+												ng-class="detalheCtrl.obterClasseRegistroCompletoAtivo()" ng-click="detalheCtrl.visualizarRegistroCompleto()">
+											Registro completo
+										</button>
+										<button class="btn btn-default" title="Referência" ng-class="detalheCtrl.obterClasseReferenciaBibliograficaAtivo()"
+												ng-click="detalheCtrl.visualizarReferenciaBibliografica()">
+											Referência
+										</button>
+										<button class="btn btn-default" title="MARC tags" ng-class="detalheCtrl.obterClasseMARCTagsAtivo()"
+												ng-click="detalheCtrl.visualizarMARCTags()">
+											MARC tags
+										</button>
+									</div>
+								</div>
+							</div>
+							<div class="row">
+								<div class="col-xs-12 col-sm-3 col-lg-2">
+									<img itemprop="image" alt="013 pelvic floor biometry assessed using 3d translabial ultrasound in women with vulvodynia submitted to physical therapy : a randomized controlled trial" class="capa-ficha" src="/capa/capa/1509801" />
+									<div class="row">
+										<div class="col-xs-12 link-servicos" ng-controller="ServicosController as servicosCtrl">
+											<button title="Selecionar" type="button" class="btn btn-default btn-servicos" ng-cloak
+													ng-class="servicosCtrl.obterClasseMinhaSelecao(1509801)"
+													ng-click="servicosCtrl.selecionarRegistroMinhaSelecao(1509801, '013 pelvic floor biometry assessed using 3d translabial ultrasound in women with vulvodynia submitted to physical therapy : a randomized controlled trial', 3, 0)">
+												<span class="mdi" ng-class="servicosCtrl.obterIconeMinhaSelecao(1509801)"></span>
+												<span class="descricao-servico">Selecionar</span>
+											</button>
+																							<button title="Ver indicadores" type="button" class="btn btn-default btn-servicos"
+														ng-click="servicosCtrl.verIndicadores(1509801)">
+													<span class="mdi mdi-chart-areaspline" aria-hidden="true"></span>
+													<span class="descricao-servico">Ver indicadores</span>
+												</button>
+
+																																		<button title="Copiar link do título: https://hdl.handle.net/20.500.12733/35547 " type="button"
+														class="btn btn-default btn-servicos" ng-click="servicosCtrl.copiarLinkTitulo('https://hdl.handle.net/20.500.12733/35547')">
+													<span class="icon-copy_link_icon" aria-hidden="true"></span>
+													<span class="descricao-servico">Link do título</span>
+												</button>
+																																</div>
+									</div>
+								</div>
+								<div class="col-xs-12 col-sm-9 col-lg-10">
+									<div class="visible-xs">
+										<div class="botoes-tipo-visualizacao">
+											<div class="btn-group">
+												<button class="btn btn-default" title="Registro completo"
+														ng-class="detalheCtrl.obterClasseRegistroCompletoAtivo()" ng-click="detalheCtrl.visualizarRegistroCompleto()">
+													Registro completo
+												</button>
+												<button class="btn btn-default" title="Referência" ng-class="detalheCtrl.obterClasseReferenciaBibliograficaAtivo()"
+														ng-click="detalheCtrl.visualizarReferenciaBibliografica()">
+													Referência
+												</button>
+												<button class="btn btn-default" title="MARC tags" ng-class="detalheCtrl.obterClasseMARCTagsAtivo()"
+														ng-click="detalheCtrl.visualizarMARCTags()">
+													MARC tags
+												</button>
+											</div>
+										</div>
+									</div>
+									<div ng-show="detalheCtrl.exibirRegistroCompleto()">
+										<div class="row">
+											<div class="col-xs-12">
+												<h1 class="titulo" itemprop="name">013 pelvic floor biometry assessed using 3d translabial ultrasound in women with vulvodynia submitted to physical therapy : a randomized controlled trial</h1>
+											</div>
+												<div class="col-xs-12">
+														<div class="row container-texto-longo">
+		<div class="col-xs-12 form-group div-texto-longo">
+							<div class="text-justify texto-completo">
+					M. Bardin, P. C. Giraldo, N. Martinho, M. Morin
+				</div>
+		</div>
+	</div>
+
+												</div>
+										</div>
+										<div class="detalhe-destaque">
+											<div class="row">
+												<div class="col-xs-12 col-sm-6 col-md-4 form-group">
+													<label class="control-label">Material</label>
+													<p class="publicacao" itemprop="genre"> ARTIGO </p>
+												</div>
+
+													<div class="col-xs-12 col-sm-6 col-md-4 form-group">
+														<label class="control-label">Idioma</label>
+														<p class="idioma" itemprop="inLanguage">Ingl&#234;s                         </p>
+													</div>
+
+																							</div>
+
+											<div class="row">
+
+
+																							</div>
+
+
+											<div class="row">
+																																															</div>
+
+
+
+
+
+
+											
+
+	<div class="row">
+		<div class="col-xs-12 form-group div-texto-longo">
+				<label class="control-label">Resumo</label>
+							<div class="text-justify texto-truncado">
+					Abstract: Vulvodynia is a prevalent chronic vulvar pain which has strong negative effects  over quality of life of women and their partners. Pelvic floor muscles (PFM) hypertonicity is known to play an important role in its pathophysiology. For many years, studies investigating whether physical...
+					<span class="texto-exibir-mais">
+						<a href="#">Ver mais</a>
+					</span>
+				</div>
+				<div class="text-justify texto-completo display-none">
+					Abstract: Vulvodynia is a prevalent chronic vulvar pain which has strong negative effects  over quality of life of women and their partners. Pelvic floor muscles (PFM) hypertonicity is known to play an important role in its pathophysiology. For many years, studies investigating whether physical therapy was efficient on changing muscle status of PFM of women with vulvodynia used digital and electromyography assessments, with inconsistent findings. The four-dimensional translabial ultrasound (4D-TLUS) is proven to be efficient on measuring biometry of PFM. Recent studies found that biometric measures of PFM of women with vulvodynia differ from those of healthy controls. However, there is a lack of scientific evidence of whether physical therapy is effective on promoting changes on PFM of women with vulvodynia. This knowledge would contribute to improve knowledge about the mechanism throughout physical therapy is effective for treating women with vulvodynia, and to guide future studies aiming to increase effect of treatment for this disabling condition. To evaluate biometric changes of pelvic floor muscles of women diagnosed with vulvodynia submitted to physical therapy, using 4D-TLUS. This single blinded randomized controlled trial assessed pelvic floor muscles of 86 women with vulvodynia, using 4D-TLUS. The imaging was obtained at rest, maximum voluntary contraction and valsalva maneuver after bladder was empty. Axial and midsagittal planes were analysed using 4D-View software, where biometric measures of PFM (levator plate angle, anorectal angle, antero-posterior distance, area of puborectal muscles, left-right and antero-posterior diameters) were measured. In addition, patients answered to the Female Sexual Function Index (FSFI) questionnaire and reported the mean of sexual pain experienced on last 30 days, based on numerical rate scale (NRS) from 0 (no pain) to 10 (worst pain). Volunteers were randomized either into oral medication with tricyclic antidepressant (TCA) or both TCA and a protocol of kinesiotherapy including contraction and stretching exercises for the PFM. Outcomes were assessed at baseline and after 8 weeks of the treatment. Both groups had significant improvement for sexual function and pain (p&gt;0.05). Compared to baseline assessment, women with vulvodynia submitted to TCA and kinesiotherapy had significant increase on antero-posterior diameters at rest (p=.008) and at contraction (p=.004), larger levator hiatus area and antero-posterior diameter at contraction, and left-right diameter at valsalva (p values&lt;0.05). Control group treated with only TCA did not have significant changes from baseline when assessed after eight weeks (p&gt;.05). Comparison between groups showed that volunteers had levator plate angle more obtuse after eight weeks of physical therapy at rest (p=0.022) and at contraction (p=.007), more obtuse anorectal angle at valsalva (p=.013), and a larger antero-posterior diameter at rest (p=.025) than controls. This is the first study to objectively demonstrate changes of the PFM of women with vulvodynia after being submitted to treatment with and without physical therapy. Kinesiotherapy was efficient on promoting significant modification of the PFM biometry in this population. These findings adds contribution for further understanding of mechanism of action of physical therapy treatment of women with vulvodynia
+					<span class="texto-exibir-menos display-none">
+						<a href="#">Ver menos</a>
+					</span>
+				</div>
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-xs-12 form-group div-texto-longo">
+				<label class="control-label">Direito de acesso</label>
+							<p class="text-justify texto-completo">Fechado</p>
+		</div>
+	</div>
+
+
+												<div class="row">
+													<div class="col-xs-12 form-group">
+														<label class="display-block">Assuntos</label>
+															<div class="box-conteudo">
+																<span itemprop="about">
+																	<a href="javascript:tw.assuntosClick(1566146)" title="Artigo original"
+																	   data-codigo-assunto="1566146">
+																		Artigo original
+																	</a>
+																	
+																</span>
+															</div>
+															<div class="box-conteudo">
+																<span itemprop="about">
+																	<a href="javascript:tw.assuntosClick(1027864)" title="Diafragma da pelve"
+																	   data-codigo-assunto="1027864">
+																		Diafragma da pelve
+																	</a>
+																	
+																</span>
+															</div>
+															<div class="box-conteudo">
+																<span itemprop="about">
+																	<a href="javascript:tw.assuntosClick(108451)" title="Ultrassonografia transvaginal"
+																	   data-codigo-assunto="108451">
+																		Ultrassonografia transvaginal
+																	</a>
+																	
+																</span>
+															</div>
+															<div class="box-conteudo">
+																<span itemprop="about">
+																	<a href="javascript:tw.assuntosClick(1049724)" title="Vulvod&#237;nia"
+																	   data-codigo-assunto="1049724">
+																		Vulvodínia
+																	</a>
+																	
+																</span>
+															</div>
+													</div>
+												</div>
+
+
+
+												<div class="row">
+													<div class="col-xs-12 form-group">
+														<label class="display-block">Autoria</label>
+
+															<div class="box-duplo" itemprop="author" itemscope itemtype="http://schema.org/Person">
+																<span itemprop="name">
+																	<a href="javascript:tw.autoresClick(1161700)"
+																	   title="Bardin, Marcela Grigol, 1988-"
+																	   data-codigo-autor="1161700">
+																		Bardin, Marcela Grigol, 1988-
+																	</a>
+																		<a class="pop-id-autoridade" data-idautoridade="1161700" href="javascript:void(0)" role="button" tabindex="0" style="margin-left: 5px">
+		<span class="icon-account-tag" title="Identificadores"></span>
+	</a>
+
+																</span>
+																	<span>Autor</span>
+															</div>
+															<div class="box-duplo" itemprop="author" itemscope itemtype="http://schema.org/Person">
+																<span itemprop="name">
+																	<a href="javascript:tw.autoresClick(18238)"
+																	   title="Giraldo, Paulo César, 1956-"
+																	   data-codigo-autor="18238">
+																		Giraldo, Paulo César, 1956-
+																	</a>
+																		<a class="pop-id-autoridade" data-idautoridade="18238" href="javascript:void(0)" role="button" tabindex="0" style="margin-left: 5px">
+		<span class="icon-account-tag" title="Identificadores"></span>
+	</a>
+
+																</span>
+																	<span>Autor</span>
+															</div>
+															<div class="box-duplo" itemprop="author" itemscope itemtype="http://schema.org/Person">
+																<span itemprop="name">
+																	<a href="javascript:tw.autoresClick(1561909)"
+																	   title="Morin, Mélanie"
+																	   data-codigo-autor="1561909">
+																		Morin, Mélanie
+																	</a>
+																		<a class="pop-id-autoridade" data-idautoridade="1561909" href="javascript:void(0)" role="button" tabindex="0" style="margin-left: 5px">
+		<span class="icon-account-tag" title="Identificadores"></span>
+	</a>
+
+																</span>
+																	<span>Autor</span>
+															</div>
+
+													</div>
+												</div>
+
+
+
+												<div class="row">
+													<div class="col-xs-12">
+														<label class="control-label">Sites</label>
+													</div>
+												</div>
+												<div class="row">
+													<div class="col-xs-12" ng-controller="ServicosController as servicosCtrl">
+															<p class="sites">
+																	<span class="rotulo" title="Texto completo">Texto completo:</span>
+																<span>
+																	<a href="https://academic.oup.com/jsm/article/16/Supplement_3/S6/7017889" itemprop="url" title="https://academic.oup.com/jsm/article/16/Supplement_3/S6/7017889"
+																	   ng-click="servicosCtrl.clickConteudoDigitalDetalhe(37348212,
+																	   'https%3a%2f%2facademic.oup.com%2fjsm%2farticle%2f16%2fSupplement_3%2fS6%2f7017889', false,
+																	   1, 0);"> https://academic.oup.com/jsm/article/16/Supplement_3/S6/7017889
+																	</a>
+																</span>
+															</p>
+															<p class="sites">
+																	<span class="rotulo" title="DOI">DOI:</span>
+																<span>
+																	<a href="https://doi.org/10.1016/j.jsxm.2019.03.470" itemprop="url" title="https://doi.org/10.1016/j.jsxm.2019.03.470"
+																	   ng-click="servicosCtrl.clickConteudoDigitalDetalhe(37348214,
+																	   'https%3a%2f%2fdoi.org%2f10.1016%2fj.jsxm.2019.03.470', false,
+																	   1, 0);"> https://doi.org/10.1016/j.jsxm.2019.03.470
+																	</a>
+																</span>
+															</p>
+													</div>
+												</div>
+																							<div class="row">
+													<div class="col-xs-12">
+														<label class="control-label">Arquivos</label>
+													</div>
+												</div>
+												<div class="row">
+													<div class="col-xs-12">
+															
+		<div class="arquivos " itemprop="associatedMedia">
+			<span class="titulo">
+					<a href="/Busca/Download?codigoArquivo=592674&amp;tipoMidia=0" title="1509801" onclick='downloadArquivo({"Codigo":592674,"Titulo":"1509801","TituloOriginal":"1509801.pdf","Extensao":"pdf","MimeType":null,"Publica":true,"TipoVisualizacaoMidia":1,"PermiteDownload":true,"TipoRepositorioDigital":0,"MidiaDisponivel":true,"MidiaIndisponivelMensagem":"","TipoMidia":0}, true)'>
+						1509801
+					</a>
+						<span class="acao-midia mdi mdi-eye" title="Visualizar" onclick='downloadArquivo({"Codigo":592674,"Titulo":"1509801","TituloOriginal":"1509801.pdf","Extensao":"pdf","MimeType":null,"Publica":true,"TipoVisualizacaoMidia":1,"PermiteDownload":true,"TipoRepositorioDigital":0,"MidiaDisponivel":true,"MidiaIndisponivelMensagem":"","TipoMidia":0})'></span>
+						<span class="separador-acao-midia"></span>
+						<span class="acao-midia mdi mdi-download" title="Baixar" onclick='downloadArquivo({"Codigo":592674,"Titulo":"1509801","TituloOriginal":"1509801.pdf","Extensao":"pdf","MimeType":null,"Publica":true,"TipoVisualizacaoMidia":1,"PermiteDownload":true,"TipoRepositorioDigital":0,"MidiaDisponivel":true,"MidiaIndisponivelMensagem":"","TipoMidia":0}, true)'></span>
+			</span>
+			<span class="extensao pdf-span">
+					<a href="/VisualizadorPdf?codigoArquivo=592674&amp;tipoMidia=0" class="pdf-file" itemprop="encodingFormat"
+					   onclick='downloadArquivo({"Codigo":592674,"Titulo":"1509801","TituloOriginal":"1509801.pdf","Extensao":"pdf","MimeType":null,"Publica":true,"TipoVisualizacaoMidia":1,"PermiteDownload":true,"TipoRepositorioDigital":0,"MidiaDisponivel":true,"MidiaIndisponivelMensagem":"","TipoMidia":0})'>
+						pdf
+					</a>
+			</span>
+		</div>
+	
+
+
+
+													</div>
+												</div>
+
+										</div>
+
+									</div>
+									<div id="divMARCTags" ng-show="detalheCtrl.exibirMARCTags()" ng-cloak>
+										<div class="row">
+											<div class="col-xs-12">
+												<h1 class="titulo" itemprop="name">013 pelvic floor biometry assessed using 3d translabial ultrasound in women with vulvodynia submitted to physical therapy : a randomized controlled trial</h1>
+											</div>
+												<div class="col-xs-12">
+														<div class="row container-texto-longo">
+		<div class="col-xs-12 form-group div-texto-longo">
+							<div class="text-justify texto-completo">
+					M. Bardin, P. C. Giraldo, N. Martinho, M. Morin
+				</div>
+		</div>
+	</div>
+
+												</div>
+										</div>
+										<pre></pre>
+										<div class="botoes-acao-marc-tags">
+											<button title="Copiar MARC Tags" class="btn btn-default" ng-click="detalheCtrl.copiarMARCTags()">
+												<span class="mdi mdi-content-copy"></span>
+												<span>Copiar</span>
+											</button>
+											<button title="Salvar MARC ISO2709" class="btn btn-default"
+													ng-click="detalheCtrl.salvarIso2709(1509801)">
+												<span class="mdi mdi-download"></span>
+												<span>Salvar</span>
+											</button>
+										</div>
+									</div>
+									<div id="divReferenciaBibliografica" ng-show="detalheCtrl.exibirReferenciaBibliografica()" ng-cloak>
+										<div class="row">
+											<div class="col-xs-12">
+												<h1 class="titulo" itemprop="name">013 pelvic floor biometry assessed using 3d translabial ultrasound in women with vulvodynia submitted to physical therapy : a randomized controlled trial</h1>
+											</div>
+												<div class="col-xs-12">
+														<div class="row container-texto-longo">
+		<div class="col-xs-12 form-group div-texto-longo">
+							<div class="text-justify texto-completo">
+					M. Bardin, P. C. Giraldo, N. Martinho, M. Morin
+				</div>
+		</div>
+	</div>
+
+												</div>
+										</div>
+										<ul></ul>
+										<div class="botoes-acao-referencia-bibliografica">
+											<button title="Copiar referência" class="btn btn-default" ng-click="detalheCtrl.copiarReferenciaBibliografica()">
+												<span class="mdi mdi-content-copy"></span>
+												<span>Copiar</span>
+											</button>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div id="msg-confirmacao-inclusao-dsi" class="mainbox" style="display:none;">
+		<div class="panel panel-info">
+			<div class="panel-heading">
+				<div class="panel-title">Inclusão da autoridade no perfil de interesse</div>
+				<i class="fecharPopupButton mdi mdi-close" ng-click="detalheCtrl.fecharInclusaoDsi();"></i>
+			</div>
+			<div class="panel-body">
+				<div class="row text-center" ng-if="!detalheCtrl.mensagemSucesso && !detalheCtrl.mensagemErro">
+					<div class="col-xs-12">
+						Deseja adicionar essa autoridade em seu perfil de interesse?
+					</div>
+				</div>
+				<div class="row" ng-if="detalheCtrl.mensagemSucesso">
+					<div class="col-xs-12 text-success text-center">{{ detalheCtrl.mensagemSucesso }}</div>
+				</div>
+				<div class="row" ng-if="detalheCtrl.mensagemErro">
+					<div class="col-xs-12 text-danger text-center">{{ detalheCtrl.mensagemErro }}</div>
+				</div>
+				<div class="row rowButtons" ng-if="!detalheCtrl.mensagemSucesso && !detalheCtrl.mensagemErro">
+					<div class="col-xs-12 text-center">
+						<button type="submit" class="btn btn-primary" ng-click="detalheCtrl.incluirAutoridadePerfilInteresse();">
+							<i class="mdi mdi-check"></i> Sim
+						</button>
+						<button type="submit" class="btn btn-default" ng-click="detalheCtrl.fecharInclusaoDsi();">
+							<i class="mdi mdi-close"></i> Não
+						</button>
+					</div>
+				</div>
+				<div class="row rowButtons" ng-if="detalheCtrl.mensagemSucesso || detalheCtrl.mensagemErro">
+					<div class="col-xs-12 text-center">
+						<button id="btnVerPerfilInteresse" class="btn btn-primary" ng-click="detalheCtrl.verPerfilInteresse($event)"
+								ng-show="detalheCtrl.mensagemSucesso">
+							<i class="mdi mdi-format-list-bulleted"></i> Ver perfil de interesse
+						</button>
+						<button type="button" class="btn btn-default" ng-click="detalheCtrl.fecharInclusaoDsi();">
+							<i class="mdi mdi-close"></i> Fechar
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<iframe id="downloadIso2709_iframe" style="display:none;"></iframe>
+	<div class="display-none">
+			<div class="identificadores_autoridade_1161700">
+				<div class="identificadores-autoridade-popover-content">
+							<a href="http://orcid.org/0000-0002-0545-1332" target="_blank" title="ORCID - orcid.org/0000-0002-0545-1332" class="">
+								<img src="/ImagemIdentificador/ObterImagem/4" alt="ORCID" />
+							</a>
+							<a href="http://lattes.cnpq.br/6613236180008745" target="_blank" title="Curr&#237;culo Lattes - http://lattes.cnpq.br/6613236180008745" class="">
+								<img src="/ImagemIdentificador/ObterImagem/1" alt="Curr&#237;culo Lattes" />
+							</a>
+
+				</div>
+			</div>
+			<div class="identificadores_autoridade_18238">
+				<div class="identificadores-autoridade-popover-content">
+							<a href="http://orcid.org/0000-0003-4365-9879" target="_blank" title="ORCID - orcid.org/0000-0003-4365-9879" class="">
+								<img src="/ImagemIdentificador/ObterImagem/4" alt="ORCID" />
+							</a>
+							<a href="http://lattes.cnpq.br/6395956022175653" target="_blank" title="Curr&#237;culo Lattes - http://lattes.cnpq.br/6395956022175653" class="">
+								<img src="/ImagemIdentificador/ObterImagem/1" alt="Curr&#237;culo Lattes" />
+							</a>
+
+				</div>
+			</div>
+			<div class="identificadores_autoridade_1561909">
+				<div class="identificadores-autoridade-popover-content">
+							<a href="http://orcid.org/0000-0002-7171-1411" target="_blank" title="ORCID - orcid.org/0000-0002-7171-1411" class="">
+								<img src="/ImagemIdentificador/ObterImagem/4" alt="ORCID" />
+							</a>
+							<a href="https://lccn.loc.gov/n2020065203" target="_blank" title="LCCN - https://lccn.loc.gov/n2020065203" class="">
+								<img src="/ImagemIdentificador/ObterImagem/8" alt="LCCN" />
+							</a>
+
+				</div>
+			</div>
+			<div class="identificadores_autoridade_1566146">
+				<div class="identificadores-autoridade-popover-content">
+
+				</div>
+			</div>
+			<div class="identificadores_autoridade_1027864">
+				<div class="identificadores-autoridade-popover-content">
+
+				</div>
+			</div>
+			<div class="identificadores_autoridade_108451">
+				<div class="identificadores-autoridade-popover-content">
+
+				</div>
+			</div>
+			<div class="identificadores_autoridade_1049724">
+				<div class="identificadores-autoridade-popover-content">
+
+				</div>
+			</div>
+	</div>
+
+		<div class="row grid-detalhe">
+			<div class="col-xs-12 col-sm-12 col-lg-12 ">
+				<div class="fundo">
+					<div class="titulo-grid">
+								<h3>Fontes</h3>
+					</div>
+					<div class="table-fontes-capitulos">
+						<table class="table table-striped table-condensed ficha-fontes">
+							<tbody>
+								<tr>
+									<td>
+										<div class="div-info">
+											<div>
+												<p>
+Journal of sexual medicine (Fonte avulsa)												</p>
+											</div>
+											<div>
+												<p></p>
+											</div>
+											<div>
+												<p></p>
+											</div>
+										</div>
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+					<div class="link-voltar link-voltar-bottom visible-xs">
+				<a href="javascript:void(0)" onclick="voltarPaginaAnterior()">
+					<i class="mdi mdi-arrow-left-bold"></i> Voltar
+				</a>
+			</div>
+	</div>
+</div>
+
+<iframe id="downloadArquivos_iframe" style="display:none;"></iframe>
+
+<div id="msg-acesso-negado-conteudo-digital" style="display: none" class="mainbox">
+	<div class="panel panel-info">
+		<div class="panel-heading">
+			<div class="panel-title">Controle de acesso</div>
+			<i id="msg-acesso-negado-conteudo-digital-close" class="fecharPopupButton mdi mdi-close" click=""></i>
+		</div>
+		<div class="panel-body">
+			<div class="row text-center">
+				<div class="col-xs-12"><p class="p-msg-acesso-negado-conteudo-digital">Você não tem acesso a este arquivo.</p></div>
+			</div>
+		</div>
+	</div>
+</div>
+</main>
+
+<footer id="footer-principal">
+	<div class="container">
+		<div class="row" id="rodape-extra-mobile">
+			<div class="col-xs-12 produto">
+				<a href="http://www.sophia.com.br" target="_blank" alt="Este terminal foi criado por Soluções Sophia">
+					<img src="/Content/images/sophia_rodape.png" alt="Este terminal foi criado por Soluções Sophia" />
+				</a>
+			</div>
+		</div>
+		<div class="row" id="rodape-padrao">
+			<div class="col-xs-4 sophia">
+				<span>Desenvolvido por</span>
+				<a href="http://www.sophia.com.br" target="_blank" alt="Este terminal foi criado por Soluções Sophia">
+					<img src="/Content/images/prima.png" alt="Este terminal foi criado por Soluções Sophia" />
+				</a>
+			</div>
+			<div class="col-xs-4 produto">
+				<a href="http://www.sophia.com.br" target="_blank" alt="Este terminal foi criado por Soluções Sophia">
+					<img src="/Content/images/sophia_rodape.png" alt="Este terminal foi criado por Soluções Sophia" />
+				</a>
+			</div>
+			<div class="col-xs-4 instalacao-pwa">
+				<a class="instalar-app" href="javascript:void(0)" onclick="tw.instalacaoPwa.instalar()">
+					<span><i class="icon-monitor-cellphone"></i>Instalar o app</span>
+				</a>
+				<span class="app-instalado"><i class="icon-monitor-cellphone"></i>App instalado</span>
+			</div>
+		</div>
+	</div>
+</footer>
+
+
+	<div id="scrollToTop">
+		<span class="mdi mdi-chevron-up" aria-hidden="true" title="Rolar para o topo"></span>
+	</div>
+
+	<script>
+		var personalizado = {};
+		var namespaceStorage = 'sb.ri.';
+		var serviceBaseUrl = '/';
+		var idiomaAtual = 0;
+		var culturaIdioma = 'pt-BR';
+		var moedaConfigurada = 'R$   ';
+		var formatoMoedaConfigurada = '$ n';
+		var multiTenant = false;
+		var multiBiblioteca = true;
+		var terminalRedes = false;
+		var habilitarIndexacaoArquivo = false;
+		var habilitarLoginPlataformaExterna = false;
+		var loginAutomaticoPlataformaExterna = false;
+		var exigirLoginTerminalWeb = false;
+		var habilitarCaptcha = false;
+		var usuarioAutenticado = 'False' == 'True';
+		var terminalRi = true;
+		var terminalAtosOficiais = false;
+		var permitirUsuariosExternos = false;
+		var exibirServicos = true;
+		var usaBuscaCatalogoAutoridades = true;
+		var usaBuscaLegislacao = false;
+		var habilitarBuscaFonteAnalitica = true;
+		var codigoAnalytics = 'G-0EDYMBF2NT';
+		const COR_BASE = '#036265';
+		TipoBuscaTerminal = { Acervo: 1, Autoridades: 2, Legislacao: 3  };
+		TipoBuscaRapidaAcervo = { TodosOsCampos: 0, Titulo: 1, Autoria: 2, Assunto: 3, Colecao: 4, Editora: 5, ISBNISSN: 6, TodosOsCamposConteudoDigital: 7, Fonte: 8  };
+		TipoBuscaLegislacao = { TodosOsCampos: 0, TodosOsCamposConteudoDigital: 1, Apelido: 2  };
+		MarcAutoridadeTag = { Lider: 0, NumeroControle: 1, UltimaAtualizacao: 5, Pessoa: 100, Instituicao: 110, Evento: 111, TituloUniforme: 130, TermoCronologico: 148, TermoTopico: 150, LocalGeografico: 151, TermoGeneroForma: 155, SubdivisaoGeral: 180, SubdivisaoGeografica: 181, SubdivisaoCronologica: 182, SubdivisaoForma: 185, RemissivaComplexaVer: 260, RemisivaComplexaVerTambem: 360, PessoaRemissivaVer: 400, InstituicaoRemissivaVer: 410, EventoRemissivaVer: 411, TituloUniformeRemissivaVer: 430, TermoCronologicoRemissivaVer: 448, TermoTopicoRemissivaVer: 450, LocalGeograficoRemissivaVer: 451, TermoGeneroFormaRemissivaVer: 455, SubdivisaoGeralRemissivaVer: 480, SubdivisaoGeograficaRemissivaVer: 481, SubdivisaoCronologicaRemissivaVer: 482, SubdivisaoFormaRemissivaVer: 485, PessoaRemissivaVerTambem: 500, InstituicaoRemissivaVerTambem: 510, EventoRemissivaVerTambem: 511, TituloUniformeRemissivaVerTambem: 530, TermoCronologicoRemissivaVerTambem: 548, TermoTopicoRemissivaVerTambem: 550, LocalGeograficoRemissivaVerTambem: 551, TermoGeneroFormaRemissivaVerTambem: 555, SubdivisaoGeralRemissivaVerTambem: 580, SubdivisaoGeograficaRemissivaVerTambem: 581, SubdivisaoCronologicaRemissivaVerTambem: 582, SubdivisaoFormaRemissivaVerTambem: 585, NotaGeralPrivadaSigilosa: 667, FontePositivaDeDados: 670, TituloRelacionadoAutoridade: 672, TituloNaoRelacionadoAutoridade: 673, FonteNegativaDosDados: 675, DadosHistoricosOuBibliograficos: 678, NotaGeralPublica: 680, NotaDePontoDeAcessoDoAssunto: 681, InformacaoDeCabecalhoApagada: 682, AplicacaoDeNotaHistorica: 688, PessoaOutrosVocabularios: 700, InstituicaoOutrosVocabularios: 710, EventoOutrosVocabularios: 711, TituloUniformeOutrosVocabularios: 730, TermoCronologicoOutrosVocabularios: 748, TermoTopicoOutrosVocabularios: 750, LocalGeograficoOutrosVocabularios: 751, TermoGeneroFormaOutrosVocabularios: 755, SubdivisaoGeralOutrosVocabularios: 780, SubdivisaoGeograficaOutrosVocabularios: 781, SubdivisaoCronologicaOutrosVocabularios: 782, SubdivisaoFormaOutrosVocabularios: 785, LocalEletronicoAcesso: 856  };
+		TipoRepositorioDigital = { Sophia: 0, DSpace: 1, SophiaWeb: 2  };
+		OrigemBusca = { TerminalUnificadaRapida: 1, TerminalUnificadaAvancada: 2, TerminalCarrosselUltimasAquisicoes: 3, TerminalCarrosselCategoria: 4, TerminalCarrosselMaisEmprestados: 5, TerminalCarrosselPublicoAlvo: 6, TerminalLegislacaoRapida: 7, TerminalLegislacaoAvancada: 8, TerminalRiAceleradores: 9, TerminalCarrosselImagensMaisSolicitadas: 10, TerminalCarrosselLevantamentoBibliografico: 11, TerminalBibliografiaCurso: 12, TerminalCarrosselCategoriaLegislacao: 13, TerminalObjetivoDesenvolvimentoSustentavel: 14, TerminalRiCarrosselMaisAcessados: 15, TerminalRiCarrosselUltimasInclusoes: 16  };
+		TipoOrdenacaoLegislacao = { DataPublicacaoDecrescente: 1, DataPublicacaoCrescente: 2, Norma: 3  };
+		TipoRetornoGovbr = { LoginNaoEfetuado: 0, Sucesso: 1, PermissaoNegada: 2, RetornoDoSsoSemDados: 3  };
+		MetodoRequisicao = { Get: 0, Post: 1  };
+		TipoMidia = { MidiaTitulo: 0, MidiaExemplar: 1  };
+		TipoVisualizacaoMidia = { Avulso: 0, Pdf: 1, Html: 2, Video: 3  };
+		TipoLoginExterno = { AzureAd: 0, Google: 1  };
+	</script>
+
+	<script src="/bundles/scripts?v=j1tRvzAiqWg3myaIvLGqxijXZgJiucnMhmlTvRN6iAc1"></script>
+
+
+	<script src='/Scripts/terminalWeb-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/terminalWeb.js?build=1.207.0.0'></script>
+	<script src='/Scripts/Pwa/install.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Utils/angular-ui.min.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/app.js?build=1.207.0.0'></script>
+
+	<script src="/bundles/kendoui?v=pfb_jq41uqf4Poprmvsg6aen49_kbsrw0a3g35DQCwc1"></script>
+
+
+	
+
+	<script src='/Scripts/kendo/2018.3.1017/cultures/kendo.culture.pt-BR.min.js?build=1.207.0.0'></script>
+
+	<script>
+		kendo.cultures[culturaIdioma].numberFormat.currency.symbol = moedaConfigurada;
+		kendo.cultures[culturaIdioma].numberFormat.currency.pattern = ["-" + formatoMoedaConfigurada, formatoMoedaConfigurada];
+	</script>
+		
+			<!-- Google tag (gtag.js) -->
+			<script async src="https://www.googletagmanager.com/gtag/js?id=UA-177080613-1"></script>
+			<script>
+				window.dataLayer = window.dataLayer || [];
+				function gtag() { dataLayer.push(arguments); }
+				gtag('js', new Date());
+				gtag('config', 'UA-177080613-1');
+				if (codigoAnalytics != "")
+				{
+					gtag('config', codigoAnalytics);
+				}
+			</script>
+		
+	
+
+<script src='/Scripts/AngularJS/FiltroBibliotecas/filtroBibliotecasService.js?build=1.207.0.0'></script><script src='/Scripts/AngularJS/FiltroBibliotecas/filtroBibliotecasController-termos.js?s=pt-BR&build=1.207.0.0'></script><script src='/Scripts/AngularJS/FiltroBibliotecas/filtroBibliotecasController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/SolicitacaoImagens/solicitacaoImagensModalController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/SolicitacaoImagens/solicitacaoImagensService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Reserva/reservaService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/IntegracaoDigital/integracaoDigitalService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Servicos/servicosController-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/LinksUteis/linksUteisService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Servicos/servicosController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Aviso/avisoService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Aviso/avisoController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Login/loginService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Login/requisitoSenhaService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Login/openLoginController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Usuario/usuarioService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/messageBox-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Busca/buscaRapidaService-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Busca/buscaRapidaService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Busca/buscaRapidaController-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Busca/buscaRapidaController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Utils/validationErrorDirective.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Favorito/favoritoService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Favorito/menuFavoritoController-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Favorito/menuFavoritoController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/MinhaSelecao/minhaSelecaoService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/WhatsApp/whatsAppService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/WhatsApp/whatsAppController-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/WhatsApp/whatsAppController.js?build=1.207.0.0'></script>
+
+	
+	<script src='/scripts/shared/detalhe-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/scripts/shared/listaFontes-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/TextoHtml/textoHtml.js?build=1.207.0.0'></script>
+	<script src='/scripts/shared/detalhe.js?build=1.207.0.0'></script>
+	<script src='/Scripts/Acervo/detalhe-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/Acervo/detalhe.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Detalhe/navegacaoService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Detalhe/detalheService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Detalhe/detalheController-termos.js?s=pt-BR&build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/Detalhe/detalheController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/DoacaoExemplar/listarDoacaoController.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/ComunidadeColecao/comunidadeColecaoService.js?build=1.207.0.0'></script>
+	<script src='/Scripts/AngularJS/ComunidadeColecao/comunidadeColecaoController.js?build=1.207.0.0'></script>
+	<script>
+		var fullUrl = '/acervo/detalhe/1509801?guid=1762473253809&amp;returnUrl=%2fresultado%2flistar%3fguid%3d1762473253809%26quantidadePaginas%3d1%26codigoRegistro%3d1509801%231509801&amp;i=1';
+	</script>
+
+
+</body>
+</html>
+

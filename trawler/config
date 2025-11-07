@@ -116,6 +116,20 @@ url_blocklist = [
   # different ID and requires either a good regex or HTML parsing. Can unblock
   # if we get that working.
   "osf.io",
+  # bot-walled as of may 2024; pdf links now 403ing
+  "researchgate.net",
+  # This broke in 2023; frustratingly, the PDFs are still in the same place and
+  # easy to download but something is wrong with their page such that 3 reloads
+  # of the same URL are necessary to get to the actual landing page. If we put
+  # effort in we could likely special case this with a pile of cookies /
+  # repeated requests but at this moment it doesn't seem worth it.
+  "journals.tsu.ru",
+  # broken since 2022; domain times out
+  "aed.org.cn",
+  # bryan had a hack for this domain but we never got anything from it. we get lots of stuff from library. but not dlc.library.
+  "dlc.library.columbia.edu",
+  # service seems totally gone
+  "fldeploc.dep.state.fl.us",
 
   # loginwall patterns
 

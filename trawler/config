@@ -130,6 +130,10 @@ url_blocklist = [
   "dlc.library.columbia.edu",
   # service seems totally gone
   "fldeploc.dep.state.fl.us",
+  # JS-walled, now. Could compute the url with some messy regexes if we felt like it.
+  "preprints.jmir.org",
+  # JS-walled, now. Could possibly compute the url with some messy regexes if we felt like it.
+  "bloomsburycollections.com",
 
   # loginwall patterns
 

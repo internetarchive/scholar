@@ -141,6 +141,13 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "http://www.repositorio.unicamp.br/Busca/Download?codigoArquivo=592674&tipoMidia=0",
 			expectedTechnique: "unicamp",
 		},
+		{
+			name:              "ingenta connet",
+			htmlPath:          "ingenta.html",
+			url:               "https://www.ingentaconnect.com/content/ista/sst/2021/00000049/00000001/art00007",
+			expectedURL:       "https://www.ingentaconnect.com/search/download;jsessionid=4gcfk31kgili3.x-ic-live-03?pub=infobike%3a%2f%2fista%2fsst%2f2021%2f00000049%2f00000001%2fart00007&mimetype=application%2fpdf&host=https://www.ingentaconnect.com",
+			expectedTechnique: "ingenta",
+		},
 	}
 
 	for _, c := range cs {

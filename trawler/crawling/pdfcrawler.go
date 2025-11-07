@@ -462,6 +462,13 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 		}
 	}
 
+	if strings.Contains(URL, "ingentaconnect.com/content/") {
+		anchor, ok := doc.Find("a.pdf[data-popup]").Attr("data-popup")
+		if ok {
+			return newPDFLinkResult(URL, anchor, "ingenta"), nil
+		}
+	}
+
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
 	meta, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {

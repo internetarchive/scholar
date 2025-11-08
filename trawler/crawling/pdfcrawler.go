@@ -449,54 +449,101 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 	// https://www.eurosurveillance.org/content/10.2807/1560-7917.ES.2025.30.43.2500793
 	// <a href="/deliver/fulltext/eurosurveillance/30/43/eurosurv-30-43-3.pdf?itemId=%2Fcontent%2F10.2807%2F1560-7917.ES.2025.30.43.2500793&mimeType=pdf&containerItemId=content/eurosurveillance" class="pdf " title="Download" rel="http://instance.metastore.ingenta.com/content/10.2807/1560-7917.ES.2025.30.43.2500793" target="/content/10.2807/1560-7917.ES.2025.30.43.2500793-pdf" >
 	if strings.Contains(URL, "/content/10.") {
-		href, ok := doc.Find("a.pdf[title='Download']").Attr("href")
+		attr, ok := doc.Find("a.pdf[title='Download']").Attr("href")
 		if ok {
-			return newPDFLinkResult(URL, href, "a.pdf_link"), nil
+			return newPDFLinkResult(URL, attr, "a.pdf_link"), nil
+		}
+	}
+
+	if strings.Contains(URL, "research.tue.nl") {
+		attr, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
+		if ok {
+			// they wrap pdf links in cloudflare but this rewrite seems to fix things...
+			// https://research.tue.nl/files/1950518/Metis209517.pdf
+			// https://pure.tue.nl/ws/portalfiles/portal/1950518/Metis209517.pdf
+			u := strings.Replace(attr, "research.tue.nl", "pure.tue.nl", 1)
+			u = strings.Replace(u, "/files/", "/ws/portalfiles/portal/", 1)
+			return newPDFLinkResult(URL, u, "research.tue.nl"), nil
+		}
+	}
+
+	if strings.Contains(URL, "//hal.") {
+		attr, ok := doc.Find("div.widget-files a").Attr("href")
+		if ok && strings.Contains(attr, "pdf") {
+			return newPDFLinkResult(URL, attr, "hal"), nil
+		}
+	}
+
+	if strings.Contains(URL, "/record/") {
+		attr, ok := doc.Find("#detailedrecordminipanelfile a").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "invenio-record"), nil
 		}
 	}
 
 	if strings.Contains(URL, "repositorio.unicamp.br") {
-		anchor, ok := doc.Find("span.titulo a").Attr("href")
+		attr, ok := doc.Find("span.titulo a").Attr("href")
 		if ok {
-			return newPDFLinkResult(URL, anchor, "unicamp"), nil
+			return newPDFLinkResult(URL, attr, "unicamp"), nil
 		}
 	}
 
 	if strings.Contains(URL, "ingentaconnect.com/content/") {
-		anchor, ok := doc.Find("a.pdf[data-popup]").Attr("data-popup")
+		attr, ok := doc.Find("a.pdf[data-popup]").Attr("data-popup")
 		if ok {
-			return newPDFLinkResult(URL, anchor, "ingenta"), nil
+			return newPDFLinkResult(URL, attr, "ingenta"), nil
+		}
+	}
+
+	if strings.Contains(URL, "/dlibra/") {
+		attr, ok := doc.Find("iframe#js-main-frame").Attr("src")
+		if ok {
+			return newPDFLinkResult(URL, attr, "dlibra-iframe"), nil
+		}
+	}
+
+	if strings.Contains(URL, "/available/") {
+		attr, ok := doc.Find("table.file-table a").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "unipi.it"), nil
+		}
+	}
+
+	if strings.Contains(URL, "/islandora/") {
+		attr, ok := doc.Find("a.islandora-pdf-link").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "islandora"), nil
 		}
 	}
 
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
-	meta, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
+	attr, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {
-		return newPDFLinkResult(URL, meta, "citation_pdf_url"), nil
+		return newPDFLinkResult(URL, attr, "citation_pdf_url"), nil
 	}
 
 	// eg, https://aisel.aisnet.org/sjis/vol25/iss2/1/
-	meta, ok = doc.Find("meta[name='bepress_citation_pdf_url']").Attr("content")
+	attr, ok = doc.Find("meta[name='bepress_citation_pdf_url']").Attr("content")
 	if ok {
-		return newPDFLinkResult(URL, meta, "bepress_citation_pdf_url"), nil
+		return newPDFLinkResult(URL, attr, "bepress_citation_pdf_url"), nil
 	}
 
-	meta, ok = doc.Find("meta[name='eprints.document_url']").Attr("content")
+	attr, ok = doc.Find("meta[name='eprints.document_url']").Attr("content")
 	if ok {
-		return newPDFLinkResult(URL, meta, "eprints-document_url"), nil
+		return newPDFLinkResult(URL, attr, "eprints-document_url"), nil
 	}
 
-	embed, ok := doc.Find("embed[type='application/pdf']").Attr("src")
+	attr, ok = doc.Find("embed[type='application/pdf']").Attr("src")
 	if ok {
-		return newPDFLinkResult(URL, embed, "pdf-embed"), nil
+		return newPDFLinkResult(URL, attr, "pdf-embed"), nil
 	}
 
 	// NB the sample page bryan had for this now features citation_pdf_url so
 	// this is unlikely to be triggered. I've left it here because it doesn't
 	// hurt and tweaked the degruyter.html sample html to trigger the fallback.
-	anchor, ok := doc.Find("a.downloadPdf").Attr("href")
+	attr, ok = doc.Find("a.downloadPdf").Attr("href")
 	if ok {
-		return newPDFLinkResult(URL, anchor, "downloadPdf"), nil
+		return newPDFLinkResult(URL, attr, "downloadPdf"), nil
 	}
 
 	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.

@@ -148,6 +148,48 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "https://www.ingentaconnect.com/search/download;jsessionid=4gcfk31kgili3.x-ic-live-03?pub=infobike%3a%2f%2fista%2fsst%2f2021%2f00000049%2f00000001%2fart00007&mimetype=application%2fpdf&host=https://www.ingentaconnect.com",
 			expectedTechnique: "ingenta",
 		},
+		{
+			name:              "wroc.pl",
+			htmlPath:          "wroc.html",
+			url:               "https://dbc.wroc.pl/dlibra/docmetadata?showContent=true&id=41031",
+			expectedURL:       "https://dbc.wroc.pl//Content/41031/PDF/Raport_M_Adamska_popr.pdf",
+			expectedTechnique: "dlibra-iframe",
+		},
+		{
+			name:              "research.tue.nl hack+rewrite",
+			htmlPath:          "research.tue.nl.html",
+			url:               "https://research.tue.nl/files/1950518/Metis209517.pdf",
+			expectedURL:       "https://pure.tue.nl/ws/portalfiles/portal/1950518/Metis209517.pdf",
+			expectedTechnique: "research.tue.nl",
+		},
+		{
+			name:              "hal -> arxiv link",
+			htmlPath:          "hal.html",
+			url:               "https://hal.science/hal-00744951",
+			expectedURL:       "http://arxiv.org/pdf/1204.4004",
+			expectedTechnique: "hal",
+		},
+		{
+			name:              "invenio record path",
+			htmlPath:          "desy.de.html",
+			url:               "https://bib-pubdb1.desy.de/record/416556",
+			expectedURL:       "https://bib-pubdb1.desy.de/record/416556/files/ILD-PHYS-PROC-2018-005.pdf",
+			expectedTechnique: "invenio-record",
+		},
+		{
+			name:              "unipi.it",
+			htmlPath:          "unipi.it.html",
+			url:               "https://etd.adm.unipi.it/theses/available/etd-05302014-183910/",
+			expectedURL:       "https://etd.adm.unipi.it/theses/available/etd-05302014-183910/unrestricted/TESI_DEFINITIVA.pdf",
+			expectedTechnique: "unipi.it",
+		},
+		{
+			name:              "islandora",
+			htmlPath:          "flvc.org.html",
+			url:               "https://fau.digital.flvc.org/islandora/object/fau%3A9804",
+			expectedURL:       "https://fau.digital.flvc.org/islandora/object/fau%3A9804/datastream/OBJ/download/Crossing_the_Rainbow_Bridge.pdf",
+			expectedTechnique: "islandora",
+		},
 	}
 
 	for _, c := range cs {

@@ -190,6 +190,13 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "https://fau.digital.flvc.org/islandora/object/fau%3A9804/datastream/OBJ/download/Crossing_the_Rainbow_Bridge.pdf",
 			expectedTechnique: "islandora",
 		},
+		{
+			name:              "mycore receive",
+			htmlPath:          "thueringen.html",
+			url:               "https://www.db-thueringen.de/receive/dbt_mods_00005191",
+			expectedURL:       "https://www.db-thueringen.de/servlets/MCRFileNodeServlet/dbt_derivate_00007860/2.%20Dissertation.pdf",
+			expectedTechnique: "mycore-receive",
+		},
 	}
 
 	for _, c := range cs {

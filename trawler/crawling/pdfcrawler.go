@@ -516,6 +516,27 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 		}
 	}
 
+	if strings.Contains(URL, "/receive/") {
+		// wacky workaround for noscript
+		// see https://github.com/PuerkitoBio/goquery/issues/139
+		root := doc.Selection
+		var subdoc *goquery.Document
+		var err error
+		root.Find(`noscript`).Each(func(i int, selection *goquery.Selection) {
+			if i != 1 {
+				return
+			}
+			subdoc, err = goquery.NewDocumentFromReader(
+				strings.NewReader(selection.Text()))
+		})
+		if err == nil {
+			attr, ok := subdoc.Find("a").Attr("href")
+			if ok {
+				return newPDFLinkResult(URL, attr, "mycore-receive"), nil
+			}
+		}
+	}
+
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
 	attr, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {

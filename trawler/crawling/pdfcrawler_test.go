@@ -197,6 +197,13 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "https://www.db-thueringen.de/servlets/MCRFileNodeServlet/dbt_derivate_00007860/2.%20Dissertation.pdf",
 			expectedTechnique: "mycore-receive",
 		},
+		{
+			name:              "digibis-media-link",
+			htmlPath:          "gva.es.html",
+			url:               "https://bivaldi.gva.es/es/consulta/registro.do?id=11740",
+			expectedURL:       "https://bivaldi.gva.es/es/catalogo_imagenes/grupo.do?path=1023613",
+			expectedTechnique: "digibis-media-link",
+		},
 	}
 
 	for _, c := range cs {
@@ -264,6 +271,12 @@ func Test_absolutize(t *testing.T) {
 			pageUrl:     "https://barry.burton/article/cool?ok=sure",
 			pdfUrl:      "cool.com/download/pdf?why=not",
 			expectedUrl: "https://cool.com/download/pdf?why=not",
+		},
+		{
+			name:        "relative url with dots",
+			pageUrl:     "http://lol.cool/sure",
+			pdfUrl:      "../pdf/123?ok=cool",
+			expectedUrl: "http://lol.cool/pdf/123?ok=cool",
 		},
 	}
 

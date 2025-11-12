@@ -352,8 +352,13 @@ type PDFLinkResult struct {
 // argument is prepended to the path/query of the second argument if the second
 // argument is lacking a domain.
 func absolutize(pageURL, pdfURL string) (string, error) {
-	if !strings.HasPrefix(pdfURL, "http://") && !strings.HasPrefix(pdfURL, "https://") {
+	if !strings.HasPrefix(pdfURL, "http://") && !strings.HasPrefix(pdfURL, "https://") && !strings.HasPrefix(pdfURL, "..") {
 		pdfURL = "https://" + pdfURL
+	}
+
+	parsedPage, err := url.Parse(pageURL)
+	if err != nil {
+		return "", fmt.Errorf("could not parse page url '%s': %w", pageURL, err)
 	}
 
 	parsedPDF, err := url.Parse(pdfURL)
@@ -361,13 +366,13 @@ func absolutize(pageURL, pdfURL string) (string, error) {
 		return "", fmt.Errorf("could not parse pdf url '%s': %w", pdfURL, err)
 	}
 
-	if parsedPDF.Host != "" {
-		return parsedPDF.String(), nil
+	if strings.HasPrefix(pdfURL, "..") {
+		parsedPage = parsedPage.ResolveReference(parsedPDF)
+		return parsedPage.String(), nil
 	}
 
-	parsedPage, err := url.Parse(pageURL)
-	if err != nil {
-		return "", fmt.Errorf("could not parse page url '%s': %w", pageURL, err)
+	if parsedPDF.Host != "" {
+		return parsedPDF.String(), nil
 	}
 
 	parsedPDF.Host = parsedPage.Host
@@ -534,6 +539,13 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 			if ok {
 				return newPDFLinkResult(URL, attr, "mycore-receive"), nil
 			}
+		}
+	}
+
+	if strings.Contains(URL, "/registro.do") {
+		attr, ok := doc.Find(".resumen_bib a[data-analytics=open-mediagroup]").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "digibis-media-link"), nil
 		}
 	}
 

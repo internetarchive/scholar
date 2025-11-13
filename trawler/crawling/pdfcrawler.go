@@ -549,6 +549,20 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 		}
 	}
 
+	if strings.Contains(URL, "repository.dri.ie/") {
+		attr, ok := doc.Find("a#download_surrogate").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "dri.ie-download-link"), nil
+		}
+	}
+
+	if strings.Contains(URL, "e-manuscripta.ch") {
+		attr, ok := doc.Find("a.downloadPdf").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "e-manuscripta"), nil
+		}
+	}
+
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
 	attr, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {
@@ -671,6 +685,18 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 	// https://www.tandfonline.com/doi/pdf/10.1080/19491247.2019.1682234
 	if strings.Contains(u, "tandfonline.com/doi/full/10.") {
 		return strings.Replace(u, "/doi/full/", "/doi/pdf/", 1)
+	}
+
+	// https://www.isca-archive.org/interspeech_2025/pu25_interspeech.html
+	// https://www.isca-archive.org/interspeech_2025/pu25_interspeech.pdf
+	if strings.Contains(u, "isca-archive.org") && strings.HasSuffix(u, ".html") {
+		return strings.Replace(u, ".html", ".pdf", 1)
+	}
+
+	// https://www.journals.uchicago.edu/doi/10.14318/hau1.1.008
+	// https://www.journals.uchicago.edu/doi/epdf/10.14318/hau1.1.008
+	if strings.Contains(u, "journals.uchicago.edu/doi/10") {
+		return strings.Replace(u, "/doi/", "/doi/epdf/", 1)
 	}
 
 	return u

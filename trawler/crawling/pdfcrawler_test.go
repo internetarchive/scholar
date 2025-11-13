@@ -55,6 +55,16 @@ func Test_maybeRewrite(t *testing.T) {
 			url:      "https://www.tandfonline.com/doi/full/10.1080/19491247.2019.1682234",
 			expected: "https://www.tandfonline.com/doi/pdf/10.1080/19491247.2019.1682234",
 		},
+		{
+			name:     "icsa-speech",
+			url:      "https://www.isca-archive.org/interspeech_2025/pu25_interspeech.html",
+			expected: "https://www.isca-archive.org/interspeech_2025/pu25_interspeech.pdf",
+		},
+		{
+			name:     "uchicago",
+			url:      "https://www.journals.uchicago.edu/doi/10.14318/hau1.1.008",
+			expected: "https://www.journals.uchicago.edu/doi/epdf/10.14318/hau1.1.008",
+		},
 	}
 
 	for _, c := range cs {
@@ -203,6 +213,20 @@ func Test_findPDFLink(t *testing.T) {
 			url:               "https://bivaldi.gva.es/es/consulta/registro.do?id=11740",
 			expectedURL:       "https://bivaldi.gva.es/es/catalogo_imagenes/grupo.do?path=1023613",
 			expectedTechnique: "digibis-media-link",
+		},
+		{
+			name:              "repository.dri.ie",
+			htmlPath:          "drie.ie.html",
+			url:               "https://repository.dri.ie/catalog/q524zq043",
+			expectedURL:       "https://repository.dri.ie/objects/q524zq043/files/q8120k889/download?type=surrogate",
+			expectedTechnique: "dri.ie-download-link",
+		},
+		{
+			name:              "e-manuscripta.ch",
+			htmlPath:          "e-manuscripta.ch.html",
+			url:               "https://www.e-manuscripta.ch/zut/doi/10.7891/e-manuscripta-112176",
+			expectedURL:       "https://www.e-manuscripta.ch/zut/download/pdf/3189359",
+			expectedTechnique: "e-manuscripta",
 		},
 	}
 

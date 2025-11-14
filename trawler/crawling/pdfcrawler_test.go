@@ -70,6 +70,11 @@ func Test_maybeRewrite(t *testing.T) {
 			url:      "https://integrityresjournals.org/journal/JBBD/article-abstract/291855622",
 			expected: "https://integrityresjournals.org/journal/JBBD/article-full-text-pdf/291855622",
 		},
+		{
+			name:     "cdnsciencepub.com",
+			url:      "https://cdnsciencepub.com/doi/10.1139/AS-2022-0011",
+			expected: "https://cdnsciencepub.com/doi/pdf/10.1139/AS-2022-0011",
+		},
 	}
 
 	for _, c := range cs {
@@ -273,6 +278,29 @@ func Test_findPDFLink(t *testing.T) {
 			url:               "https://www.arkat-usa.org/browse-arkivoc/browse-arkivoc/ark.5550190.0006.913",
 			expectedURL:       "https://www.arkat-usa.org/get-file/18673/",
 			expectedTechnique: "pdf-embed-alt",
+		},
+		{
+			name:              "dlib.si",
+			htmlPath:          "dlib.si.html",
+			url:               "https://www.dlib.si/details/URN:NBN:SI:DOC-AROJOS53",
+			expectedURL:       "https://www.dlib.si/stream/URN:NBN:SI:DOC-AROJOS53/11212611-6495-4765-9a4e-87b832520ea8/PDF",
+			expectedTechnique: "dlib.si",
+		},
+		{
+			name:              "filclass.ru",
+			htmlPath:          "filclass.ru.html",
+			url:               "https://filclass.ru/en/archive/2018/2-52/the-chronicle-of-domestic-literary-criticism",
+			expectedURL:       "https://filclass.ru/images/JOURNAL/52/29.pdf",
+			expectedTechnique: "filclass.ru",
+		},
+		{
+			// naming bit of a mystery, preserved from sandcrawler
+			name:              "ojs remote pdf",
+			htmlPath:          "mediterranea-comunicacion.org.html",
+			url:               "https://www.mediterranea-comunicacion.org/article/view/22240",
+			expectedURL:       "https://www.mediterranea-comunicacion.org/article/view/22240/pdf_en",
+			expectedTechnique: "ojs-remote-pdf",
+			hop:               true,
 		},
 	}
 

@@ -605,6 +605,28 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 		}
 	}
 
+	if strings.Contains(URL, "/article/view") {
+		// eg https://www.mediterranea-comunicacion.org
+		attr, ok := doc.Find("a.obj_galley_link.file").Attr("href")
+		if ok {
+			return newHopResult(URL, attr, "ojs-remote-pdf"), nil
+		}
+	}
+
+	if strings.Contains(URL, "dlib.si/details/") {
+		attr, ok := doc.Find("body #FilesBox a").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "dlib.si"), nil
+		}
+	}
+
+	if strings.Contains(URL, "filclass.ru") {
+		attr, ok := doc.Find("main .pdf-article a.pdficon").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "filclass.ru"), nil
+		}
+	}
+
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
 	attr, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {
@@ -750,6 +772,12 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 	// https://integrityresjournals.org/journal/JBBD/article-full-text-pdf/291855622
 	if strings.Contains(u, "integrityresjournals.org/journal/JBBD/article-abstract/") {
 		return strings.Replace(u, "/article-abstract/", "/article-full-text-pdf/", 1)
+	}
+
+	// https://cdnsciencepub.com/doi/10.1139/AS-2022-0011
+	// https://cdnsciencepub.com/doi/pdf/10.1139/AS-2022-0011
+	if strings.Contains(u, "cdnsciencepub.com/doi/10") {
+		return strings.Replace(u, "/doi/", "/doi/pdf/", 1)
 	}
 
 	return u

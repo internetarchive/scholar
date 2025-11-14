@@ -65,6 +65,11 @@ func Test_maybeRewrite(t *testing.T) {
 			url:      "https://www.journals.uchicago.edu/doi/10.14318/hau1.1.008",
 			expected: "https://www.journals.uchicago.edu/doi/epdf/10.14318/hau1.1.008",
 		},
+		{
+			name:     "integrityresjournals",
+			url:      "https://integrityresjournals.org/journal/JBBD/article-abstract/291855622",
+			expected: "https://integrityresjournals.org/journal/JBBD/article-full-text-pdf/291855622",
+		},
 	}
 
 	for _, c := range cs {
@@ -87,6 +92,7 @@ func Test_findPDFLink(t *testing.T) {
 		expectedURL       string
 		expectedTechnique string
 		err               error
+		hop               bool
 	}{
 		{
 			name:              "revistas",
@@ -228,6 +234,39 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "https://www.e-manuscripta.ch/zut/download/pdf/3189359",
 			expectedTechnique: "e-manuscripta",
 		},
+		{
+			// this could be a rewrite but I have a hunch this pattern extends across
+			// multiple domains (based on the naming in the original code)
+			name:              "ojs pdf download",
+			htmlPath:          "karazin.ua.html",
+			url:               "https://periodicals.karazin.ua/language_teaching/article/view/12543/11957",
+			expectedURL:       "https://periodicals.karazin.ua/language_teaching/article/download/12543/11957/",
+			expectedTechnique: "ojs-pdf-download",
+		},
+		{
+			// this could be a rewrite but I have a hunch this pattern extends across
+			// multiple domains (based on the naming in the original code)
+			name:              "ojs pdf embed",
+			htmlPath:          "ojs-embed.html",
+			url:               "https://periodicals.karazin.ua/language_teaching/article/view/12543/11957",
+			expectedURL:       "https://periodicals.karazin.ua/language_teaching/article/download/12543/11957/",
+			expectedTechnique: "ojs-pdf-embed",
+		},
+		{
+			name:              "scitemed",
+			htmlPath:          "scitemed.com.html",
+			url:               "https://scitemed.com/article/4294/scitemed-aohns-2024-00190",
+			expectedURL:       "https://scitemed.com/upload/5730/4294/scitemed.aohns.2024.00190.pdf?t=1643",
+			expectedTechnique: "scitemed",
+		},
+		{
+			name:              "doaj access link",
+			htmlPath:          "doaj.org.html",
+			url:               "https://doaj.org/article/000253ec38074062bb23746c2a7d6eb2",
+			expectedURL:       "https://doi.org/10.2903/j.efsa.2018.5222",
+			expectedTechnique: "doaj-access-link",
+			hop:               true,
+		},
 	}
 
 	for _, c := range cs {
@@ -237,7 +276,7 @@ func Test_findPDFLink(t *testing.T) {
 				panic(err)
 			}
 
-			result, err := crawler.findPDFLink(c.url, bytes.NewReader(bs))
+			result, err := crawler.findNextLink(c.url, bytes.NewReader(bs))
 			if err != nil {
 				if c.err == nil {
 					t.Errorf("%s: did not expect error but got %s", c.name, err.Error())
@@ -265,6 +304,11 @@ func Test_findPDFLink(t *testing.T) {
 			if result.URL != c.expectedURL {
 				t.Errorf("%s: expected url '%s', got '%s'",
 					c.name, c.expectedURL, result.URL)
+			}
+
+			if result.Hop != c.hop {
+				t.Errorf("%s: expected hop '%v', got '%v'",
+					c.name, c.hop, result.Hop)
 			}
 		})
 	}

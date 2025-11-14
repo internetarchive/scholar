@@ -298,7 +298,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			return out, nil
 		}
 
-		pdfLink, err := c.findPDFLink(cdxRow.URL, content)
+		pdfLink, err := c.findNextLink(cdxRow.URL, content)
 		if err != nil {
 			return out, fmt.Errorf("pdf link heuristics failure: %w", err)
 		}
@@ -309,6 +309,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		}
 
 		// TODO slog about pdfLink.Technique
+		// TODO include hint about wget based on Hop value
 
 		chain = append(chain, pdfLink.URL)
 	}
@@ -342,9 +343,16 @@ type FulltextPattern struct {
 	InURL string
 }
 
-type PDFLinkResult struct {
-	URL       string
+type FindLinkResult struct {
+	// URL is either a hoped-for PDF link or a hop towards one
+	URL string
+	// Technique is a unique string describing how we found the link. Its text
+	// isn't important; it's just used to track success metrics.
 	Technique string
+	// Hop indicates whether we think this link gets us one page closer to a
+	// diret PDF link. If false, it means we think the link points directly to a
+	// PDF (ie, making it suitable for a simple wget)
+	Hop bool
 }
 
 // absolutize takes two urls with the expectation that the first one has a
@@ -381,13 +389,19 @@ func absolutize(pageURL, pdfURL string) (string, error) {
 	return parsedPDF.String(), nil
 }
 
-func newPDFLinkResult(pageURL, pdfURL, technique string) *PDFLinkResult {
+func newHopResult(pageURL, hopURL, technique string) *FindLinkResult {
+	r := newPDFLinkResult(pageURL, hopURL, technique)
+	r.Hop = true
+	return r
+}
+
+func newPDFLinkResult(pageURL, pdfURL, technique string) *FindLinkResult {
 	u, err := absolutize(pageURL, pdfURL)
 	if err == nil {
 		pdfURL = u
 	}
 
-	return &PDFLinkResult{
+	return &FindLinkResult{
 		URL:       pdfURL,
 		Technique: technique,
 	}
@@ -396,7 +410,7 @@ func newPDFLinkResult(pageURL, pdfURL, technique string) *PDFLinkResult {
 // currently known to work on revistas.unam.mx
 var jsPDFRe = regexp.MustCompile(`pdfUrl = "(.*)";`)
 
-func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, error) {
+func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult, error) {
 	decodedContent, err := decodeHTMLBody(content, "")
 	if err != nil {
 		return nil, fmt.Errorf("could not decode content for %s: %w", URL, err)
@@ -563,6 +577,34 @@ func (c PDFCrawler) findPDFLink(URL string, content io.Reader) (*PDFLinkResult, 
 		}
 	}
 
+	if strings.Contains(URL, "/view/") {
+		attr, ok := doc.Find("a.download").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "ojs-pdf-download"), nil
+		}
+	}
+
+	if strings.Contains(URL, "/view/") {
+		attr, ok := doc.Find("a.pdf").Attr("href")
+		if ok && strings.Contains(attr, "/article/") {
+			return newPDFLinkResult(URL, attr, "ojs-pdf-embed"), nil
+		}
+	}
+
+	if strings.Contains(URL, "scitemed.com/article/") {
+		attr, ok := doc.Find("li.tab_pdf_btn a").Attr("href")
+		if ok {
+			return newPDFLinkResult(URL, attr, "scitemed"), nil
+		}
+	}
+
+	if strings.Contains(URL, "doaj.org/article/") {
+		attr, ok := doc.Find("section.col-md-8 a[target='_blank'].button--primary").Attr("href")
+		if ok {
+			return newHopResult(URL, attr, "doaj-access-link"), nil
+		}
+	}
+
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
 	attr, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {
@@ -697,6 +739,12 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 	// https://www.journals.uchicago.edu/doi/epdf/10.14318/hau1.1.008
 	if strings.Contains(u, "journals.uchicago.edu/doi/10") {
 		return strings.Replace(u, "/doi/", "/doi/epdf/", 1)
+	}
+
+	// https://integrityresjournals.org/journal/JBBD/article-abstract/291855622
+	// https://integrityresjournals.org/journal/JBBD/article-full-text-pdf/291855622
+	if strings.Contains(u, "integrityresjournals.org/journal/JBBD/article-abstract/") {
+		return strings.Replace(u, "/article-abstract/", "/article-full-text-pdf/", 1)
 	}
 
 	return u

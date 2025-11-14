@@ -570,13 +570,6 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 		}
 	}
 
-	if strings.Contains(URL, "e-manuscripta.ch") {
-		attr, ok := doc.Find("a.downloadPdf").Attr("href")
-		if ok {
-			return newPDFLinkResult(URL, attr, "e-manuscripta"), nil
-		}
-	}
-
 	if strings.Contains(URL, "/view/") {
 		attr, ok := doc.Find("a.download").Attr("href")
 		if ok {
@@ -660,6 +653,21 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 	attr, ok = doc.Find("a.downloadPdf").Attr("href")
 	if ok {
 		return newPDFLinkResult(URL, attr, "downloadPdf"), nil
+	}
+
+	attr, ok = doc.Find(".download-article a").Attr("href")
+	if ok && strings.Contains(attr, "pdf") {
+		return newPDFLinkResult(URL, attr, "download-article"), nil
+	}
+
+	attr, ok = doc.Find("a.downloadPdf").Attr("href")
+	if ok {
+		return newPDFLinkResult(URL, attr, "downloadPdf"), nil
+	}
+
+	attr, ok = doc.Find("a.download-pdf").Attr("href")
+	if ok {
+		return newPDFLinkResult(URL, attr, "download-pdf"), nil
 	}
 
 	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.
@@ -778,6 +786,12 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 	// https://cdnsciencepub.com/doi/pdf/10.1139/AS-2022-0011
 	if strings.Contains(u, "cdnsciencepub.com/doi/10") {
 		return strings.Replace(u, "/doi/", "/doi/pdf/", 1)
+	}
+
+	// https://www.worldscientific.com/doi/abs/10.1142/S0116110521500098
+	// https://www.worldscientific.com/doi/pdf/10.1142/S0116110521500098?download=true
+	if strings.Contains(u, "worldscientific.com/doi/abs/") {
+		return strings.Replace(u, "/doi/abs/", "/doi/pdf/", 1) + "?download=true"
 	}
 
 	return u

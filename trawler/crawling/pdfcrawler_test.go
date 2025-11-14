@@ -75,6 +75,11 @@ func Test_maybeRewrite(t *testing.T) {
 			url:      "https://cdnsciencepub.com/doi/10.1139/AS-2022-0011",
 			expected: "https://cdnsciencepub.com/doi/pdf/10.1139/AS-2022-0011",
 		},
+		{
+			name:     "worldscientific.com",
+			url:      "https://www.worldscientific.com/doi/abs/10.1142/S0116110521500098",
+			expected: "https://www.worldscientific.com/doi/pdf/10.1142/S0116110521500098?download=true",
+		},
 	}
 
 	for _, c := range cs {
@@ -150,9 +155,9 @@ func Test_findPDFLink(t *testing.T) {
 		},
 		{
 			name:              "downloadPdf class",
-			htmlPath:          "degruyter.html",
-			url:               "https://www.degruyterbrill.com/document/doi/10.1515/zaw-2021-0001/html",
-			expectedURL:       "https://www.degruyterbrill.com/document/doi/10.1515/zaw-2021-0001/pdf?licenseType=open-access",
+			htmlPath:          "e-manuscripta.ch.html",
+			url:               "https://www.e-manuscripta.ch/zut/doi/10.7891/e-manuscripta-112176",
+			expectedURL:       "https://www.e-manuscripta.ch/zut/download/pdf/3189359",
 			expectedTechnique: "downloadPdf",
 		},
 		{
@@ -233,13 +238,6 @@ func Test_findPDFLink(t *testing.T) {
 			expectedTechnique: "dri.ie-download-link",
 		},
 		{
-			name:              "e-manuscripta.ch",
-			htmlPath:          "e-manuscripta.ch.html",
-			url:               "https://www.e-manuscripta.ch/zut/doi/10.7891/e-manuscripta-112176",
-			expectedURL:       "https://www.e-manuscripta.ch/zut/download/pdf/3189359",
-			expectedTechnique: "e-manuscripta",
-		},
-		{
 			// this could be a rewrite but I have a hunch this pattern extends across
 			// multiple domains (based on the naming in the original code)
 			name:              "ojs pdf download",
@@ -301,6 +299,21 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "https://www.mediterranea-comunicacion.org/article/view/22240/pdf_en",
 			expectedTechnique: "ojs-remote-pdf",
 			hop:               true,
+		},
+		{
+			name:              "download-article a",
+			htmlPath:          "lpnu.ua.html",
+			url:               "https://science.lpnu.ua/mmc/all-volumes-and-issues/volume-9-number-1-2022/pursuit-differential-game-many-pursuers-and-one",
+			expectedURL:       "https://science.lpnu.ua/sites/default/files/journal-paper/2022/jan/26226/202291009017.pdf",
+			expectedTechnique: "download-article",
+		},
+		{
+			// I could find no example of this in the wild so fabricated a sample
+			name:              "download-pdf class",
+			htmlPath:          "degruyter.html",
+			url:               "https://www.degruyterbrill.com/document/doi/10.1515/zaw-2021-0001/html",
+			expectedURL:       "https://www.degruyterbrill.com/document/doi/10.1515/zaw-2021-0001/pdf?licenseType=open-access",
+			expectedTechnique: "download-pdf",
 		},
 	}
 

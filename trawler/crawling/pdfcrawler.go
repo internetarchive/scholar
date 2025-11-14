@@ -624,7 +624,12 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 
 	attr, ok = doc.Find("embed[type='application/pdf']").Attr("src")
 	if ok {
-		return newPDFLinkResult(URL, attr, "pdf-embed"), nil
+		return newPDFLinkResult(URL, attr, "pdf-embed-type"), nil
+	}
+
+	attr, ok = doc.Find("embed[alt='pdf']").Attr("src")
+	if ok {
+		return newPDFLinkResult(URL, attr, "pdf-embed-alt"), nil
 	}
 
 	// NB the sample page bryan had for this now features citation_pdf_url so

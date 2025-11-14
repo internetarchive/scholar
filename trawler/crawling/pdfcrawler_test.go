@@ -141,7 +141,7 @@ func Test_findPDFLink(t *testing.T) {
 			htmlPath:          "jass.html",
 			url:               "https://jasstudies.com/DergiTamDetay.aspx?ID=3401",
 			expectedURL:       "https://jasstudies.com/files/jass_makaleler/1359848334_33-Okt.%20Yasemin%20KARADEM%C4%B0R.pdf",
-			expectedTechnique: "pdf-embed",
+			expectedTechnique: "pdf-embed-type",
 		},
 		{
 			name:              "downloadPdf class",
@@ -266,6 +266,13 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "https://doi.org/10.2903/j.efsa.2018.5222",
 			expectedTechnique: "doaj-access-link",
 			hop:               true,
+		},
+		{
+			name:              "pdf embed, alt",
+			htmlPath:          "arkat-usa.html",
+			url:               "https://www.arkat-usa.org/browse-arkivoc/browse-arkivoc/ark.5550190.0006.913",
+			expectedURL:       "https://www.arkat-usa.org/get-file/18673/",
+			expectedTechnique: "pdf-embed-alt",
 		},
 	}
 

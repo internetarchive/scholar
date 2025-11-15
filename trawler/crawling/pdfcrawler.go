@@ -620,6 +620,23 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 		}
 	}
 
+	if strings.Contains(URL, "linkinghub.elsevier.com/retrieve/pii") {
+		attr, ok := doc.Find("#redirectURL").Attr("value")
+		if ok {
+			u, err := url.PathUnescape(attr)
+			if err == nil {
+				parsed, err := url.Parse(u)
+				if err == nil {
+					// preserving behavior from sandcrawler
+					if strings.Contains(u, "?via") {
+						parsed.RawQuery = ""
+					}
+					return newHopResult(URL, parsed.String(), "linkinghub"), nil
+				}
+			}
+		}
+	}
+
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
 	attr, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {
@@ -669,6 +686,8 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 	if ok {
 		return newPDFLinkResult(URL, attr, "download-pdf"), nil
 	}
+
+	// TODO port all the "old" style parsers
 
 	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.
 	// Ominously, the older code has comments like "[this function] is partially

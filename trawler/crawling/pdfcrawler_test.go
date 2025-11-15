@@ -315,6 +315,14 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "https://www.degruyterbrill.com/document/doi/10.1515/zaw-2021-0001/pdf?licenseType=open-access",
 			expectedTechnique: "download-pdf",
 		},
+		{
+			name:              "elsevier linkinghub",
+			htmlPath:          "linkinghub.html",
+			url:               "https://linkinghub.elsevier.com/retrieve/pii/S1569199319308975",
+			expectedURL:       "http://cysticfibrosisjournal.com/retrieve/pii/S1569199319308975",
+			expectedTechnique: "linkinghub",
+			hop:               true,
+		},
 	}
 
 	for _, c := range cs {

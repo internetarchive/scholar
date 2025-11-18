@@ -134,6 +134,8 @@ url_blocklist = [
   "preprints.jmir.org",
   # JS-walled, now. Could possibly compute the url with some messy regexes if we felt like it.
   "bloomsburycollections.com",
+  # JS and pay walled.
+  ".ovid.com",
 
   # loginwall patterns
 

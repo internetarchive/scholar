@@ -409,6 +409,7 @@ func newPDFLinkResult(pageURL, pdfURL, technique string) *FindLinkResult {
 
 // currently known to work on revistas.unam.mx
 var jsPDFRe = regexp.MustCompile(`pdfUrl = "(.*)";`)
+var ieeeRe = regexp.MustCompile(`"pdfPath":"(/.*?\.pdf)"`)
 
 func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult, error) {
 	decodedContent, err := decodeHTMLBody(content, "")
@@ -430,6 +431,15 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 		if len(matches) > 0 {
 			u := strings.ReplaceAll(matches[0][1], `\`, "")
 			return newPDFLinkResult(URL, u, "jspdfurl"), nil
+		}
+	}
+
+	// https://ieeexplore.ieee.org/document/8730316
+	// https://ieeexplore.ieee.org/iel7/6287639/8600701/08730316.pdf
+	if strings.Contains(URL, "ieeexplore.ieee.org/document/") {
+		matches := ieeeRe.FindAllStringSubmatch(rawHTML, 1)
+		if len(matches) > 0 {
+			return newHopResult(URL, matches[0][1], "ieeejs"), nil
 		}
 	}
 
@@ -637,6 +647,13 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 		}
 	}
 
+	if strings.Contains(URL, "ieeexplore.ieee.org/stamp/stamp.jsp?arnumber") {
+		attr, ok := doc.Find("iframe").Attr("src")
+		if ok {
+			return newPDFLinkResult(URL, attr, "ieee-iframe"), nil
+		}
+	}
+
 	// eg, https://unsworks.unsw.edu.au/entities/publication/fd08fc25-48dc-40bc-b673-deb232f31faa
 	attr, ok := doc.Find("meta[name='citation_pdf_url']").Attr("content")
 	if ok {
@@ -737,8 +754,14 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 	if strings.HasPrefix(u, "https://arxiv.org/pdf/") && strings.HasSuffix(u, ".pdf") {
 		return u[:len(u)-4]
 	}
+	if strings.Contains(u, "arxiv.org/abs/") {
+		return strings.Replace(u, "/abs/", "/pdf/", 1)
+	}
 	if strings.HasPrefix(u, "https://onlinelibrary.wiley.com/doi/") {
 		return strings.Replace(u, "doi", "doi/pdf", 1)
+	}
+	if strings.Contains(u, "protocols.io/view/") && !strings.HasSuffix(u, ".pdf") {
+		return u + ".pdf"
 	}
 	// TODO explore viewcontent.cgi rewrite opportunities
 	// ie, if a doi.org link ends up as a viewcontent.cgi and there is a
@@ -811,6 +834,46 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 	// https://www.worldscientific.com/doi/pdf/10.1142/S0116110521500098?download=true
 	if strings.Contains(u, "worldscientific.com/doi/abs/") {
 		return strings.Replace(u, "/doi/abs/", "/doi/pdf/", 1) + "?download=true"
+	}
+
+	// https://www.ahajournals.org/doi/10.1161/circ.110.19.2977
+	// https://www.ahajournals.org/doi/pdf/10.1161/circ.110.19.2977?download=true
+	if strings.Contains(u, "ahajournals.org/doi/") && !strings.Contains(u, "/doi/pdf") {
+		return strings.Replace(u, "/doi/", "/doi/pdf/", 1) + "?download=true"
+	}
+
+	// https://ehp.niehs.nih.gov/doi/full/10.1289/EHP4709
+	// https://ehp.niehs.nih.gov/doi/pdf/10.1289/EHP4709?download=true
+	if strings.Contains(u, "ehp.niehs.nih.gov/doi/full") && !strings.Contains(u, "doi/pdf") {
+		return strings.Replace(u, "/doi/full/", "/doi/pdf/", 1) + "?download=true"
+	}
+
+	// https://ehp.niehs.nih.gov/doi/10.1289/ehp.113-a51
+	// https://ehp.niehs.nih.gov/doi/pdf/10.1289/ehp.113-a51?download=true
+	if strings.Contains(u, "ehp.niehs.nih.gov/doi/10") && !strings.Contains(u, "doi/pdf") {
+		return strings.Replace(u, "/doi/", "/doi/pdf/", 1) + "?download=true"
+	}
+
+	// https://publications.rwth-aachen.de/record/986268/
+	// https://publications.rwth-aachen.de/record/986268/files/986268.pdf
+	if strings.Contains(u, "publications.rwth-aachen.de/record/") && !strings.HasSuffix(u, ".pdf") {
+		u := strings.TrimSuffix(u, "/")
+		split := strings.Split(u, "/")
+		return u + "/files/" + split[len(split)-1] + ".pdf"
+	}
+
+	// https://mhealth.jmir.org/2020/7/e17891/
+	// https://mhealth.jmir.org/2020/7/e17891/PDF
+	if strings.Contains(u, ".jmir.org") && !strings.Contains(u, "/pdf") {
+		return strings.TrimSuffix(u, "/") + "/PDF"
+	}
+
+	// ported without much context or meaning
+	if strings.Contains(u, "drive.google.com/file/d/") && strings.Contains(u, "/view") {
+		split := strings.Split(u, "/")
+		if len(split) > 5 && len(split[5]) > 10 {
+			return fmt.Sprintf("https://drive.google.com/uc?export=download&id=%s", split[5])
+		}
 	}
 
 	return u

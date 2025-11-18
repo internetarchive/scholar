@@ -21,6 +21,16 @@ func Test_maybeRewrite(t *testing.T) {
 			expected: "https://arxiv.org/pdf/1234567",
 		},
 		{
+			name:     "arxiv abs",
+			url:      "https://arxiv.org/abs/1234567",
+			expected: "https://arxiv.org/pdf/1234567",
+		},
+		{
+			name:     "protocols.io",
+			url:      "https://www.protocols.io/view/flow-cytometry-protocol-ewov1127vr24/v1",
+			expected: "https://www.protocols.io/view/flow-cytometry-protocol-ewov1127vr24/v1.pdf",
+		},
+		{
 			name:     "wiley",
 			url:      "https://onlinelibrary.wiley.com/doi/10.foobar/baz123",
 			expected: "https://onlinelibrary.wiley.com/doi/pdf/10.foobar/baz123",
@@ -79,6 +89,36 @@ func Test_maybeRewrite(t *testing.T) {
 			name:     "worldscientific.com",
 			url:      "https://www.worldscientific.com/doi/abs/10.1142/S0116110521500098",
 			expected: "https://www.worldscientific.com/doi/pdf/10.1142/S0116110521500098?download=true",
+		},
+		{
+			name:     "ahajournals",
+			url:      "https://www.ahajournals.org/doi/10.1161/circ.110.19.2977",
+			expected: "https://www.ahajournals.org/doi/pdf/10.1161/circ.110.19.2977?download=true",
+		},
+		{
+			name:     "ehp.niehs.nih.gov doi full",
+			url:      "https://ehp.niehs.nih.gov/doi/full/10.1289/EHP4709",
+			expected: "https://ehp.niehs.nih.gov/doi/pdf/10.1289/EHP4709?download=true",
+		},
+		{
+			name:     "ehp.niehs.nih.gov doi",
+			url:      "https://ehp.niehs.nih.gov/doi/10.1289/ehp.113-a51",
+			expected: "https://ehp.niehs.nih.gov/doi/pdf/10.1289/ehp.113-a51?download=true",
+		},
+		{
+			name:     "aachen",
+			url:      "https://publications.rwth-aachen.de/record/986268/",
+			expected: "https://publications.rwth-aachen.de/record/986268/files/986268.pdf",
+		},
+		{
+			name:     "jmir",
+			url:      "https://mhealth.jmir.org/2020/7/e17891/",
+			expected: "https://mhealth.jmir.org/2020/7/e17891/PDF",
+		},
+		{
+			name:     "google-drive",
+			url:      "https://drive.google.com/file/d/15DnbNMZTbRHHqKj8nFaikGSd1-OyoJ24/view",
+			expected: "https://drive.google.com/uc?export=download&id=15DnbNMZTbRHHqKj8nFaikGSd1-OyoJ24",
 		},
 	}
 
@@ -322,6 +362,21 @@ func Test_findPDFLink(t *testing.T) {
 			expectedURL:       "http://cysticfibrosisjournal.com/retrieve/pii/S1569199319308975",
 			expectedTechnique: "linkinghub",
 			hop:               true,
+		},
+		{
+			name:              "ieeexplore",
+			htmlPath:          "ieee.html",
+			url:               "https://ieeexplore.ieee.org/document/8730316",
+			expectedURL:       "https://ieeexplore.ieee.org/iel7/6287639/8600701/08730316.pdf",
+			expectedTechnique: "ieeejs",
+			hop:               true,
+		},
+		{
+			name:              "ieee iframe",
+			htmlPath:          "ieee-iframe.html",
+			url:               "https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=8730313",
+			expectedURL:       "https://ieeexplore.ieee.org/ielx7/6287639/8600701/08730313.pdf?tp=&arnumber=8730313&isnumber=8600701&ref=",
+			expectedTechnique: "ieee-iframe",
 		},
 	}
 

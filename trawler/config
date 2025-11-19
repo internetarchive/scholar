@@ -66,7 +66,6 @@ doi_prefix_blocklist = [
 ]
 
 url_blocklist = [
-
   # generally unwanted patterns
 
   "//localhost/",
@@ -169,10 +168,32 @@ url_blocklist = [
 #  And when we find our query with no Chrome in sight,
 #  'Twill be in the archive of our petabyte. -avd
 simple_get_list = [
-  # TODO
+  # "SUBSTRING|SUFFIX"
+  # we match URL based on it containing SUBSTRING then ensure it has the specific suffix, if any
   "journals.plos.org/plosone/article/file?id=",
   "tidsskrift.dk/spr/article/download/",
   "scholarscompass.vcu.edu/cgi/viewcontent.cgi?article=",
+  "revistas.unam.mx/index.php/rep/article/download",
+  "elifesciences.org/download/",
+  "eurosurveillance.org/deliver/fulltext/",
+  "pure.tue.nl/ws/",
+  "arxiv.org/pdf/",
+  "bib-pubdb1.desy.de/record/|.pdf",
+  "etd.adm.unipi.it/theses/available/|.pdf",
+  "fau.digital.flvc.org/islandora/object/|.pdf",
+  "db-thueringen.de/servlets/|.pdf",
+  "bivaldi.gva.es/es/catalogo_imagenes/grupo.do?path=|",
+  "repository.dri.ie/objects/",
+  "/article/download/",
+  "scitemed.com/upload/",
+  "arkat-usa.org/get-file/"
+  "dlib.si/stream/|/PDF",
+  "filclass.ru/images/|.pdf",
+  "science.lpnu.ua/sites/default/files/|.pdf",
+  "degruyterbrill.com/document/doi/|open-access",
+  "degruyterbrill.com/document/doi/|/pdf",
+  "ieeexplore.ieee.org/ielx7/",  # TODO ielx7 probably dynamic, unsure
+  # TODO expand based on sandcrawler db analysis
 ]
 
 [fatcat2]

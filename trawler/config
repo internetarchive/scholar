@@ -31,6 +31,7 @@ default_limit = 1000 # for dev; typically would be -1 for unlimited
 endpoint = "https://scholar.archive.org/api/fatcat/v1"
 
 [crawling]
+spn_slot_poll_interval = 6s
 user_agent = "Mozilla/5.0 ias_trawler"
 doi_prefix_blocklist = [
   # gbif.org: many DOIs, not PDF fulltext

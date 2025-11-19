@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -906,8 +907,11 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		Endpoint:  viper.GetString("cdx.endpoint"),
 		UserAgent: viper.GetString("cdx.user_agent"),
 		Retries:   viper.GetInt("cdx.retries"),
-		Backoff:   viper.GetString("cdx.backoff"),
+		// TODO use GetDuration
+		Backoff: viper.GetString("cdx.backoff"),
 	})
+
+	var res crawling.CrawlResult
 
 	for _, u := range release.FulltextURLs() {
 		crawler := crawling.PDFCrawler{
@@ -918,9 +922,10 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
 			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
 			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
+			Logger:          slog.Default(),
 		}
 
-		res, err := crawler.Crawl(u)
+		res, err = crawler.Crawl(u)
 
 		if err != nil {
 			l.Info(fmt.Sprintf("%s: get failed: %s", release.ID, err.Error()))
@@ -928,18 +933,21 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 
 		l.Debug(fmt.Sprintf("%s: got result %v", release.ID, res))
+		if res.Success {
+			break
+		}
 		// TODO check result -- if success, break and continue. otherwise..?
 		// results we care about later are going to be in the slog
 		// question is if we should only use result for success and errors for failure
 	}
 
-	if err != nil {
+	if err != nil || !res.Success {
 		return out, nil
 	}
 
-	// TODO fetch pdf from wayback
-	// TODO store pdf in seaweed? might not, might just shunt bytes to blobproc actually
-	// TODO hand off to blob proc
+	out.Releases.Acquired++
+
+	// TODO pdf bytes are in res.Content as io.Reader, need to shunt to blobproc
 	// TODO poll for blobproc result
 	// TODO check metadata against FC record
 	// TODO insert file into db (Acquired++)

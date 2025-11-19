@@ -3,7 +3,9 @@ package crossref
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/json"
 	"errors"
@@ -239,6 +241,26 @@ type RawRef struct {
 	ContainerName string         `json:"container_name,omitempty"`
 	Locator       string         `json:"locator,omitempty"`
 	Extra         map[string]any `json:"extra,omitempty"`
+}
+
+type FileURL struct {
+	FileID uuid.UUID `json:"file_id"`
+	Rel    string    `json:"rel"`
+	URL    string    `json:"url"`
+	Source string    `json:"source"`
+}
+
+type File struct {
+	Releases    []Release `json:"releases"`
+	URLs        []FileURL `json:"urls"`
+	ID          uuid.UUID `json:"id"`
+	Source      string    `json:"source"`
+	Size        int       `json:"size_bytes"`
+	Sha1        string    `json:"sha1"`
+	Sha256      string    `json:"sha256"`
+	Md5         string    `json:"md5"`
+	Mimetype    string    `json:"mimetype"`
+	LegacyRevID uuid.UUID `json:"legacy_rev_id,omitempty"`
 }
 
 // TODO crossref structs
@@ -945,12 +967,61 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, nil
 	}
 
+	// do I want to add file rows before or after blobproc? I think after,
+	// because we don't need to make a file record if we can't parse the PDF,
+	// right? or is there value in saving whatever we find? I can see value
+	// either way...esp if blobproc is down, we can always revisit the files
+	// later. so make a file entry then submit to blobproc.
+
+	// i should check to see if we have a file, though? maybe it doesn't matter.
+	// but i need checksums either way; and for that, i'll need the bytes in ram.
+
+	pdfBs, err := io.ReadAll(res.Content)
+	if err != nil {
+		return out, fmt.Errorf("could not read pdf bytes: %w", err)
+	}
+
+	md5h := md5.New()
+	if _, err := io.Copy(md5h, bytes.NewBuffer(pdfBs)); err != nil {
+		return out, fmt.Errorf("could not md5 sum pdf bytes: %w", err)
+	}
+
+	sha1h := sha1.New()
+	if _, err := io.Copy(sha1h, bytes.NewBuffer(pdfBs)); err != nil {
+		return out, fmt.Errorf("could not sha1 sum pdf bytes: %w", err)
+	}
+
+	sha256h := sha256.New()
+	if _, err := io.Copy(sha256h, bytes.NewBuffer(pdfBs)); err != nil {
+		return out, fmt.Errorf("could not sha256 sum pdf bytes: %w", err)
+	}
+
+	file := File{
+		Releases: []Release{release},
+		URLs: []FileURL{
+			{
+				Rel: "wayback",
+				URL: res.Chain[len(res.Chain)-1],
+			},
+		},
+		Sha1:   fmt.Sprintf("%x", sha1h.Sum(nil)),
+		Sha256: fmt.Sprintf("%x", sha256h.Sum(nil)),
+		Md5:    fmt.Sprintf("%x", md5h.Sum(nil)),
+		Size:   len(pdfBs),
+	}
+
+	fid, err := createFile(client, file)
+	if err != nil {
+		return out, fmt.Errorf("fc2 api failed to make file '%s': %w", fid, err)
+	}
+
+	l.Debug("created file", fid)
+
 	out.Releases.Acquired++
 
 	// TODO pdf bytes are in res.Content as io.Reader, need to shunt to blobproc
 	// TODO poll for blobproc result
 	// TODO check metadata against FC record
-	// TODO insert file into db (Acquired++)
 	// TODO ingest PDF (Ingested++)
 	return out, nil
 }
@@ -1069,6 +1140,46 @@ func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
 	}
 
 	return c.ID, nil
+}
+
+// createFile creates a new file in fc2 and returns its ID
+func createFile(client *http.Client, f File) (uuid.UUID, error) {
+	f.Source = "dev" // TODO thread this value through from invocation of workflow
+	f.ID = uuid.New()
+	legacy, err := lookupLegacyFile(client, f.Sha1)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
+	}
+
+	if legacy != nil {
+		f.ID = legacy.Ident
+		f.LegacyRevID = legacy.Revision
+	}
+
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	bs, err := json.Marshal(f)
+
+	body := bytes.NewBuffer(bs)
+	req, err := http.NewRequest("POST", fc2url+"/file", body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("file POST failed for '%#v': %w", f, err)
+	}
+
+	if resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", f, resp.StatusCode, b)
+	}
+
+	return f.ID, nil
 }
 
 // createRelease creates a new release in fc2 and returns its ID
@@ -1202,6 +1313,10 @@ func lookupLegacyContainer(c *http.Client, issnl string) (*LegacyData, error) {
 
 func lookupLegacyRelease(c *http.Client, doi string) (*LegacyData, error) {
 	return lookupLegacy(c, "lookup_release", "doi", doi)
+}
+
+func lookupLegacyFile(c *http.Client, sha1 string) (*LegacyData, error) {
+	return lookupLegacy(c, "lookup_file", "sha1", sha1)
 }
 
 func lookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {

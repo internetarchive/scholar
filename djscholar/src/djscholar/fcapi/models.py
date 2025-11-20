@@ -438,7 +438,7 @@ class BaseFile(models.Model):
     """
     # TODO these should not be nullable
     size_bytes = models.BigIntegerField(null=True, blank=True,
-            help_text="size in bytes of this file")
+                                        help_text="size in bytes of this file")
     sha1 = models.CharField(max_length=SHA1_MAX_LENGTH, null=True, blank=True)
     sha256 = models.CharField(max_length=SHA256_MAX_LENGTH, null=True, blank=True)
     md5 = models.CharField(max_length=MD5_MAX_LENGTH, null=True, blank=True)
@@ -454,6 +454,7 @@ class BaseFile(models.Model):
                 models.Index(fields=["md5"],
                              name="%(app_label)s_%(class)s_md5_idx"),
                 ]
+
 
 class File(Entity, BaseFile):
     """

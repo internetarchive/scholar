@@ -1,13 +1,9 @@
 package crossref
 
 import (
-	"bytes"
 	"context"
-	"crypto/md5"
 	"crypto/sha1"
-	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,7 +16,9 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cdx"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
+	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/issn"
+	"git.archive.org/webgroup/scholar/trawler/s3"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -36,6 +34,8 @@ import (
 // - extract metadata and make sure it matches the fatcat2 record
 // - create a file entry in fatcat2
 // - extract fulltext and ingest into elasticsearch
+
+const minAbstractLength = 75
 
 // containerTypeMap maps from fatcat release types to their assumed parent container type
 var containerTypeMap = map[string]string{
@@ -75,7 +75,20 @@ var releaseTypeMap = map[string]string{
 	"component": "component",
 }
 
-// TODO crossref structs
+var ignoredTypes = []string{
+	"",
+	"database",
+	"journal",
+	"proceedings",
+	"standard-series",
+	"report-series",
+	"book-series",
+	"book-set",
+	"book-track",
+	"proceedings-series",
+	"peer-review",
+}
+
 type crossrefRef struct {
 	Year            string
 	Key             string
@@ -104,6 +117,7 @@ type crossrefRef struct {
 	Unstructured    string
 	SeriesTitle     string `json:"series-title"`
 }
+
 type crossrefLicense struct {
 	URL            string
 	ContentVersion string `json:"content-version"`
@@ -132,7 +146,7 @@ func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (fatcat2.Rel
 	if cc.ORCID != "" {
 		sp := strings.Split(cc.ORCID, "/")
 		orcid := sp[len(sp)-1]
-		id, err := fatcat2.LookupCreator(client, orcid)
+		id, err := fatcat2.LookupOrcid(client, orcid)
 		if err != nil {
 			return out, err
 		}
@@ -202,20 +216,6 @@ type crossrefDoc struct {
 	}
 	// in fatcat but didn't see in sample xref json
 	// Subject     string
-}
-
-var ignoredTypes = []string{
-	"",
-	"database",
-	"journal",
-	"proceedings",
-	"standard-series",
-	"report-series",
-	"book-series",
-	"book-set",
-	"book-track",
-	"proceedings-series",
-	"peer-review",
 }
 
 func (c crossrefDoc) IsSkippable() bool {
@@ -352,7 +352,7 @@ type lineInput struct {
 
 func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	out = counts{}
-	f, err := getS3Object(ctx, in.S3Key)
+	f, err := s3.GetObject(ctx, in.S3Key)
 	if err != nil {
 		return
 	}
@@ -378,8 +378,6 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", xrefdoc.Type, xrefdoc.DOI))
 
-	// Should we skip even checking the DOI?
-
 	if xrefdoc.IsSkippable() {
 		out.Releases.Skipped++
 		return out, nil
@@ -390,12 +388,13 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	xrefDOI := strings.ToLower(xrefdoc.DOI)
 
 	client := &http.Client{}
-	found, err := isExistingDOI(client, xrefDOI)
+	foundId, err := fatcat2.LookupDoi(client, xrefDOI)
 	if err != nil {
 		return out, err
 	}
 
-	if found {
+	if foundId != uuid.Nil {
+		l.Debug("skipping known DOI ", xrefDOI)
 		out.Releases.Ignored++
 		return out, nil
 	}
@@ -411,7 +410,6 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		Language:    xrefdoc.Language,
 	}
 
-	// if things get weird we'll put some stuff in here
 	var releaseType string
 	releaseType, ok := releaseTypeMap[xrefdoc.Type]
 	if !ok {
@@ -441,7 +439,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	if issnl != "" {
 		// TODO could build a map of issnl->cid somewhere to save on requests
-		containerID, err = fatcat2.LookupContainer(client, issnl)
+		containerID, err = fatcat2.LookupIssnl(client, issnl)
 		if err != nil {
 			return out, err
 		}
@@ -591,7 +589,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	// TODO find out if any release has more than one abstract
 	release.Abstracts = []fatcat2.Abstract{}
-	if len(xrefdoc.Abstract) > 10 {
+	if len(xrefdoc.Abstract) > minAbstractLength {
 		h := sha1.Sum([]byte(xrefdoc.Abstract))
 		release.Abstracts = append(release.Abstracts, fatcat2.Abstract{
 			MIMEType: "application/xml+jats",
@@ -799,26 +797,6 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	// TODO can share this pdf byte handling stuff between different upstreams
 
-	pdfBs, err := io.ReadAll(res.Content)
-	if err != nil {
-		return out, fmt.Errorf("could not read pdf bytes: %w", err)
-	}
-
-	md5h := md5.New()
-	if _, err := io.Copy(md5h, bytes.NewBuffer(pdfBs)); err != nil {
-		return out, fmt.Errorf("could not md5 sum pdf bytes: %w", err)
-	}
-
-	sha1h := sha1.New()
-	if _, err := io.Copy(sha1h, bytes.NewBuffer(pdfBs)); err != nil {
-		return out, fmt.Errorf("could not sha1 sum pdf bytes: %w", err)
-	}
-
-	sha256h := sha256.New()
-	if _, err := io.Copy(sha256h, bytes.NewBuffer(pdfBs)); err != nil {
-		return out, fmt.Errorf("could not sha256 sum pdf bytes: %w", err)
-	}
-
 	file := fatcat2.File{
 		Releases: []fatcat2.Release{release},
 		URLs: []fatcat2.FileURL{
@@ -827,10 +805,15 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 				URL: res.Chain[len(res.Chain)-1],
 			},
 		},
-		Sha1:   fmt.Sprintf("%x", sha1h.Sum(nil)),
-		Sha256: fmt.Sprintf("%x", sha256h.Sum(nil)),
-		Md5:    fmt.Sprintf("%x", md5h.Sum(nil)),
-		Size:   len(pdfBs),
+	}
+
+	pdfBs, err := io.ReadAll(res.Content)
+	if err != nil {
+		return out, fmt.Errorf("could not read pdf bytes: %w", err)
+	}
+
+	if err = file.SetMetadata(pdfBs); err != nil {
+		return out, err
 	}
 
 	fid, err := fatcat2.CreateFile(client, file)
@@ -850,7 +833,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 }
 
 // isCrawlWanted returns true if we feel this release is worthy of a crawl
-// attempt; specific to things gleaned from crossref
+// attempt; specific to things gleaned from crossref (the DOI check)
 func isCrawlWanted(release fatcat2.Release) bool {
 	doi := release.DOI()
 
@@ -908,119 +891,6 @@ func isCrawlWanted(release fatcat2.Release) bool {
 	return true
 }
 
-func licenseSlugLookup(rawURL string) string {
-	if rawURL == "" {
-		return ""
-	}
-
-	rawURL = strings.ToLower(rawURL)
-	rawURL = strings.TrimSuffix(rawURL, "/")
-	rawURL = strings.ReplaceAll(rawURL, "https://", "//")
-	rawURL = strings.ReplaceAll(rawURL, "http://", "//")
-	if strings.Contains(rawURL, "creativecommons.org") {
-		rawURL = strings.ReplaceAll(rawURL, "/legalcode", "")
-		rawURL = strings.ReplaceAll(rawURL, "/uk", "")
-	}
-	return licenseSlugMap[rawURL]
-}
-
-func isExistingDOI(c *http.Client, doi string) (bool, error) {
-	fc2url := viper.GetString("fatcat2.endpoint")
-	req, err := http.NewRequest("GET", fc2url+"/release/lookup", nil)
-	if err != nil {
-		panic(err)
-	}
-	q := req.URL.Query()
-	q.Add("id_type", "doi")
-	q.Add("id_value", doi)
-	req.URL.RawQuery = q.Encode()
-	resp, err := c.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("fc2 lookup failed for '%s': %w", doi, err)
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		return true, nil
-	}
-
-	if resp.StatusCode != 404 {
-		err = fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
-			doi, resp.StatusCode)
-	}
-
-	return false, err
-}
-
-type findLineBatchInput struct {
-	S3Key  string
-	Offset int64
-}
-
-type findLineBatchOutput struct {
-	Offsets   [][]int64
-	BytesRead int64
-	EOF       bool
-}
-
-func findLineBatch(ctx context.Context, in findLineBatchInput) (out findLineBatchOutput, err error) {
-	out = findLineBatchOutput{}
-
-	l := activity.GetLogger(ctx)
-	l.Info(fmt.Sprintf("doing a range read from '%s'", in.S3Key))
-
-	f, err := getS3Object(ctx, in.S3Key)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	batchSize := 1000 // TODO set in config
-
-	// TODO refactor this so it's unit testable
-	chunkSize := 1024 * 100 // TODO set in config
-	out.BytesRead = in.Offset
-	curLineStart := in.Offset
-
-	var done bool
-	var curLineLength int64
-
-	for !done {
-		b := make([]byte, chunkSize)
-		n, err := f.ReadAt(b, out.BytesRead)
-		l.Debug(fmt.Sprintf("read %d bytes", n))
-		if errors.Is(err, io.EOF) {
-			l.Debug("saw EOF")
-			out.EOF = true
-			err = nil
-		}
-		if err != nil {
-			return out, fmt.Errorf("range read of '%s' failed: %w", in.S3Key, err)
-		}
-		if n == 0 {
-			return out, nil
-		}
-		for x := range n {
-			out.BytesRead++
-			curLineLength++
-			if b[x] == '\n' {
-				out.Offsets = append(out.Offsets, []int64{curLineStart, curLineLength})
-				if len(out.Offsets) == batchSize {
-					done = true
-					break
-				}
-				curLineStart = out.BytesRead
-				curLineLength = 0
-			}
-		}
-
-		if out.EOF {
-			done = true
-		}
-	}
-
-	return
-}
-
 func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts, error) {
 	l := workflow.GetLogger(ctx)
 	out := counts{}
@@ -1050,17 +920,17 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 	batchInput := lineBatchInput{
 		S3Key: skOut.S3Key,
 	}
-	findInput := findLineBatchInput{
+	findInput := harvesting.FindLineBatchInput{
 		S3Key: skOut.S3Key,
 	}
-	findOutput := findLineBatchOutput{}
+	findOutput := harvesting.FindLineBatchOutput{}
 	childSelector := workflow.NewSelector(ctx)
 	var childCount int
 
 	var childErr error
 	var childCounts counts
 	for {
-		err := workflow.ExecuteActivity(ctx, findLineBatch, findInput).Get(ctx, &findOutput)
+		err := workflow.ExecuteActivity(ctx, harvesting.FindLineBatch, findInput).Get(ctx, &findOutput)
 		if err != nil {
 			return out, err
 		}
@@ -1101,8 +971,4 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 	return out, nil
 
 	// TODO handle the outcome of a crawl
-
-	// TODO activity: for each fatcat ID, attempt to acquire a paper; each of these returns an s3 key for parsing
-	// TODO activity: given an s3 key for a pdf, do text extraction; returns either s3 key or the textual result of parsing
-	// TODO activity: bulk ingestion into ES of parsed stuff
 }

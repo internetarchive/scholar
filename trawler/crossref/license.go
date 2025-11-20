@@ -1,5 +1,7 @@
 package crossref
 
+import "strings"
+
 // The following was taken directly from old fatcat code. It might behoove us
 // to review popular licenses on crossref.
 
@@ -62,4 +64,20 @@ var licenseSlugMap = map[string]string{
 	//# //onlinelibrary.wiley.com/termsAndConditions doesn't seem like a license
 	//# //www.springer.com/tdm doesn't seem like a license
 	//# //rsc.li/journals-terms-of-use is closed for vor (am open)
+}
+
+func licenseSlugLookup(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+
+	rawURL = strings.ToLower(rawURL)
+	rawURL = strings.TrimSuffix(rawURL, "/")
+	rawURL = strings.ReplaceAll(rawURL, "https://", "//")
+	rawURL = strings.ReplaceAll(rawURL, "http://", "//")
+	if strings.Contains(rawURL, "creativecommons.org") {
+		rawURL = strings.ReplaceAll(rawURL, "/legalcode", "")
+		rawURL = strings.ReplaceAll(rawURL, "/uk", "")
+	}
+	return licenseSlugMap[rawURL]
 }

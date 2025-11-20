@@ -1,4 +1,5 @@
-package crossref
+// s3 implements basic functions for interacting with s3 compatible storage
+package s3
 
 import (
 	"context"
@@ -11,9 +12,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// TODO extract from crossref package
-
-func getS3Object(ctx context.Context, s3key string) (*minio.Object, error) {
+func GetObject(ctx context.Context, s3key string) (*minio.Object, error) {
 	endpoint := viper.GetString("s3.endpoint")
 	accessKeyID := viper.GetString("s3.access_id")
 	secretAccessKey := viper.GetString("s3.secret_key")

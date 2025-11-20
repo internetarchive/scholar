@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"github.com/spf13/viper"
 	"go.temporal.io/sdk/worker"
 )
@@ -44,7 +45,7 @@ func StartInternalWorker() error {
 	w.RegisterWorkflow(crossrefCrawlWorkflow)
 	w.RegisterWorkflow(lineBatchWorkflow)
 	w.RegisterActivity(processLine)
-	w.RegisterActivity(findLineBatch)
+	w.RegisterActivity(harvesting.FindLineBatch)
 	//w.RegisterActivity(crawlForEntity)
 
 	log.Printf("starting worker")

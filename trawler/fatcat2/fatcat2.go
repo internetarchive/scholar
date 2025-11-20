@@ -2,6 +2,9 @@ package fatcat2
 
 import (
 	"bytes"
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
@@ -206,6 +209,33 @@ type File struct {
 	Md5         string    `json:"md5"`
 	Mimetype    string    `json:"mimetype"`
 	LegacyRevID uuid.UUID `json:"legacy_rev_id,omitempty"`
+}
+
+// SetMetadata takes a byte array and sets the various checksum fields and the
+// byte size field on this File struct
+func (f *File) SetMetadata(bs []byte) error {
+
+	md5h := md5.New()
+	if _, err := io.Copy(md5h, bytes.NewBuffer(bs)); err != nil {
+		return fmt.Errorf("could not md5 sum pdf bytes: %w", err)
+	}
+
+	sha1h := sha1.New()
+	if _, err := io.Copy(sha1h, bytes.NewBuffer(bs)); err != nil {
+		return fmt.Errorf("could not sha1 sum pdf bytes: %w", err)
+	}
+
+	sha256h := sha256.New()
+	if _, err := io.Copy(sha256h, bytes.NewBuffer(bs)); err != nil {
+		return fmt.Errorf("could not sha256 sum pdf bytes: %w", err)
+	}
+
+	f.Sha1 = fmt.Sprintf("%x", sha1h.Sum(nil))
+	f.Sha256 = fmt.Sprintf("%x", sha256h.Sum(nil))
+	f.Md5 = fmt.Sprintf("%x", md5h.Sum(nil))
+	f.Size = len(bs)
+
+	return nil
 }
 
 // CreateContainer creates a new container in fc2 and returns its ID
@@ -449,11 +479,19 @@ func lookup(c *http.Client, entityType, idType, idValue string) (uuid.UUID, erro
 	return p.ID, nil
 }
 
-func LookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
+// LookupDoi returns the ID of a fatcat2 Release with the given DOI, if any.
+func LookupDoi(c *http.Client, doi string) (uuid.UUID, error) {
+	return lookup(c, "release", "doi", doi)
+
+}
+
+// LookupOrcid returns the ID of a fatcat2 Creator with the given orcid, if any.
+func LookupOrcid(c *http.Client, orcid string) (uuid.UUID, error) {
 	return lookup(c, "creator", "orcid", orcid)
 }
 
-func LookupContainer(c *http.Client, issnl string) (uuid.UUID, error) {
+// LookupIssnl returns the ID of a fatcat2 Container with the given ISSNL, if any.
+func LookupIssnl(c *http.Client, issnl string) (uuid.UUID, error) {
 	return lookup(c, "container", "issnl", issnl)
 }
 

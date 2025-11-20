@@ -6,3 +6,7 @@ cache.db
 data
 stats.jsonl
 djscholar/src/static
+scripts/hitstats/*.tsv
+scripts/hitstats/main
+trawler/trawler
+scholstats/out.html

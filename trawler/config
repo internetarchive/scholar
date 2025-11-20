@@ -31,7 +31,7 @@ default_limit = 1000 # for dev; typically would be -1 for unlimited
 endpoint = "https://scholar.archive.org/api/fatcat/v1"
 
 [crawling]
-spn_slot_poll_interval = 6s
+spn_slot_poll_interval = "6s"
 user_agent = "Mozilla/5.0 ias_trawler"
 doi_prefix_blocklist = [
   # gbif.org: many DOIs, not PDF fulltext
@@ -186,7 +186,7 @@ simple_get_list = [
   "repository.dri.ie/objects/",
   "/article/download/",
   "scitemed.com/upload/",
-  "arkat-usa.org/get-file/"
+  "arkat-usa.org/get-file/",
   "dlib.si/stream/|/PDF",
   "filclass.ru/images/|.pdf",
   "science.lpnu.ua/sites/default/files/|.pdf",
@@ -209,10 +209,10 @@ endpoint = "https://web.archive.org/save"
 auth = ""
 endpoint = "https://web.archive.org/cdx/search/cdx"
 user_agent = "Mozilla/5.0 ias_trawler_cdx_client"
-backoff = 10s
+backoff = "10s"
 retries = 4
 
 [wayback]
 replay_endpoint = "https://web.archive.org/web/"
 retries = 4
-backoff = 10s
+backoff = "10s"

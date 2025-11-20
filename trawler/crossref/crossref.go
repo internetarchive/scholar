@@ -909,6 +909,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	l.Debug("created release", id)
 
 	if !isCrawlWanted(release) {
+		l.Debug("decided crawl was unwanted")
 		return out, err
 	}
 
@@ -917,11 +918,12 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// porting the monster that is process_file from sandcrawler:python/sandcrawler/ingest_file.py
 	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
 		AccessKey: viper.GetString("spn.access_key"),
-		SecretKey: viper.GetString("spn.secret_ket"),
+		SecretKey: viper.GetString("spn.secret_key"),
 		Endpoint:  viper.GetString("spn.endpoint"),
 	})
 	if err != nil {
-		panic(err)
+		l.Debug(err.Error())
+		panic("spn client was not created")
 	}
 
 	cdxClient := cdx.NewClient(cdx.CDXClientOpts{
@@ -1082,7 +1084,7 @@ func isCrawlWanted(release Release) bool {
 	                 return False
 	*/
 
-	return false
+	return true
 }
 
 func licenseSlugLookup(rawURL string) string {

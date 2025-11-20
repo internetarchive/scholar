@@ -59,7 +59,6 @@ type ExternalID struct {
 	Value     string     `json:"id_value"`
 }
 
-// TODO split out into its own package
 type Release struct {
 	ID            uuid.UUID      `json:"id"`
 	WorkID        *uuid.UUID     `json:"work_id"`
@@ -408,22 +407,20 @@ func lookupLegacyFile(c *http.Client, sha1 string) (*LegacyData, error) {
 	return lookupLegacy(c, "lookup_file", "sha1", sha1)
 }
 
-// TODO generalize lookup functions
-
-func LookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
+func lookup(c *http.Client, entityType, idType, idValue string) (uuid.UUID, error) {
 	fc2url := viper.GetString("fatcat2.endpoint")
-	req, err := http.NewRequest("GET", fc2url+"/creator/lookup", nil)
+	req, err := http.NewRequest("GET", fc2url+"/"+entityType+"/lookup", nil)
 	if err != nil {
 		panic(err)
 	}
 
 	q := req.URL.Query()
-	q.Add("id_type", "orcid")
-	q.Add("id_value", orcid)
+	q.Add("id_type", idType)
+	q.Add("id_value", idValue)
 	req.URL.RawQuery = q.Encode()
 	resp, err := c.Do(req)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", orcid, err)
+		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", idValue, err)
 	}
 
 	if resp.StatusCode == 404 {
@@ -432,7 +429,7 @@ func LookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
 
 	if resp.StatusCode != 200 {
 		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
-			orcid, resp.StatusCode)
+			idValue, resp.StatusCode)
 	}
 
 	bs, err := io.ReadAll(resp.Body)
@@ -446,52 +443,18 @@ func LookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
 
 	err = json.Unmarshal(bs, &p)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", orcid, err)
+		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", idValue, err)
 	}
 
 	return p.ID, nil
 }
 
+func LookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
+	return lookup(c, "creator", "orcid", orcid)
+}
+
 func LookupContainer(c *http.Client, issnl string) (uuid.UUID, error) {
-	fc2url := viper.GetString("fatcat2.endpoint")
-	req, err := http.NewRequest("GET", fc2url+"/container/lookup", nil)
-	if err != nil {
-		panic(err)
-	}
-
-	q := req.URL.Query()
-	q.Add("id_type", "issnl")
-	q.Add("id_value", issnl)
-	req.URL.RawQuery = q.Encode()
-	resp, err := c.Do(req)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", issnl, err)
-	}
-
-	if resp.StatusCode == 404 {
-		return uuid.Nil, nil
-	}
-
-	if resp.StatusCode != 200 {
-		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
-			issnl, resp.StatusCode)
-	}
-
-	bs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	var p struct {
-		ID uuid.UUID
-	}
-
-	err = json.Unmarshal(bs, &p)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", issnl, err)
-	}
-
-	return p.ID, nil
+	return lookup(c, "container", "issnl", issnl)
 }
 
 func fc2uuid(fatcatIdent string) (uuid.UUID, error) {

@@ -6,7 +6,6 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
-	"encoding/base32"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +19,7 @@ import (
 
 	"git.archive.org/webgroup/scholar/trawler/cdx"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
+	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
@@ -75,194 +75,6 @@ var releaseTypeMap = map[string]string{
 	"component": "component",
 }
 
-type Abstract struct {
-	ReleaseID *uuid.UUID `json:"release_id"`
-	Content   string     `json:"content"`
-	SHA1      string     `json:"sha1"`
-	Language  string     `json:"language"`
-	MIMEType  string     `json:"mimetype"`
-}
-
-type ReleaseContrib struct {
-	CreatorID      *uuid.UUID     `json:"creator_id"`
-	ReleaseID      *uuid.UUID     `json:"release_id"`
-	Position       int            `json:"position"`
-	RawName        string         `json:"raw_name"`
-	GivenName      string         `json:"given_name"`
-	Surname        string         `json:"surname"`
-	RawAffiliation string         `json:"raw_affiliation"`
-	Role           string         `json:"role"`
-	Extra          map[string]any `json:"extra"`
-}
-
-type ExternalID struct {
-	ReleaseID *uuid.UUID `json:"release_id"`
-	Type      string     `json:"id_type"`
-	Value     string     `json:"id_value"`
-}
-type Container struct {
-	ID          uuid.UUID      `json:"id,omitempty"`
-	Name        string         `json:"name,omitempty"`
-	Type        string         `json:"container_type,omitempty"`
-	LegacyRevID uuid.UUID      `json:"legacy_rev_id,omitempty"`
-	Publisher   string         `json:"publisher,omitempty"`
-	ISSNL       string         `json:"issnl,omitempty"`
-	ISSNE       string         `json:"issne,omitempty"`
-	ISSNP       string         `json:"issnp,omitempty"`
-	Source      string         `json:"source,omitempty"`
-	Extra       map[string]any `json:"extra"`
-}
-
-// TODO split out into its own package
-type Release struct {
-	ID            uuid.UUID      `json:"id"`
-	WorkID        *uuid.UUID     `json:"work_id"`
-	Title         string         `json:"title,omitempty"`
-	OriginalTitle string         `json:"original_title,omitempty"`
-	Subtitle      string         `json:"subtitle,omitempty"`
-	Type          string         `json:"release_type,omitempty"`
-	Stage         string         `json:"release_stage,omitempty"`
-	ReleaseDate   *time.Time     `json:"release_date"`
-	ReleaseYear   int            `json:"release_year,omitempty"`
-	Source        string         `json:"source,omitempty"`
-	Volume        string         `json:"volume,omitempty"`
-	Issue         string         `json:"issue,omitempty"`
-	Pages         string         `json:"pages,omitempty"`
-	Publisher     string         `json:"publisher,omitempty"`
-	Language      string         `json:"language,omitempty"`
-	LegacyRevID   uuid.UUID      `json:"legacy_rev_id,omitempty"`
-	LicenseSlug   string         `json:"license_slug,omitempty"`
-	Extra         map[string]any `json:"extra,omitempty"`
-
-	// Foreign keys
-
-	Refs        []RawRef         `json:"refs,omitempty"`
-	Abstracts   []Abstract       `json:"abstracts,omitempty"`
-	ContainerID *uuid.UUID       `json:"container_id"`
-	ExternalIDs []ExternalID     `json:"extids,omitempty"`
-	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
-
-	// unused in xref but may want later:
-	// Pages string
-	// WithdrawnStatus string
-	// TODO
-	// understand when the structured ReleaseRefs are added in the old system
-}
-
-func (r Release) DOI() string {
-	for _, eid := range r.ExternalIDs {
-		if eid.Type == "doi" {
-			return eid.Value
-		}
-	}
-	return ""
-}
-
-func (r Release) IsPaperlike() bool {
-	paperLikeTypes := []string{
-		"article-journal",
-		"book",
-		"paper-conference",
-		"chapter",
-		"report",
-		"thesis",
-	}
-
-	return slices.Contains(paperLikeTypes, r.Type)
-}
-
-// FulltextURLs returns a list of possible locations for this release's
-// fulltext PDF. These are generated from known URL patterns for the different
-// external ID types. Should upstream patterns change, the URLs generated here
-// might become useless. The URLs are sorted roughly by preference (IE,
-// likelihood of success).
-func (r Release) FulltextURLs() []string {
-	// TODO this approach smells to me; I'm mostly just preserving what we were
-	// doing in fatcat's entity worker. This is important code (drives our daily
-	// crawling attempts) _and_ is volatile as it depends on upstream url
-	// patterns. I'm keeping it like this for the first pass but having URL
-	// templates in config per upstream might be useful to expose.
-	/*
-	   Relevant fatcat code (python/fatcat_tools/transforms/ingest.py):
-	   # generate a URL where we expect to find fulltext
-	   url = None
-	   link_source = None
-	   link_source_id = None
-	   if release.ext_ids.arxiv and ingest_type == "pdf":
-	       url = "https://arxiv.org/pdf/{}.pdf".format(release.ext_ids.arxiv)
-	       link_source = "arxiv"
-	       link_source_id = release.ext_ids.arxiv
-	   elif release.ext_ids.pmcid and ingest_type == "pdf":
-	       # TODO: how to tell if an author manuscript in PMC vs. published?
-	       # url = "https://www.ncbi.nlm.nih.gov/pmc/articles/{}/pdf/".format(release.ext_ids.pmcid)
-	       url = "http://europepmc.org/backend/ptpmcrender.fcgi?accid={}&blobtype=pdf".format(
-	           release.ext_ids.pmcid
-	       )
-	       link_source = "pmc"
-	       link_source_id = release.ext_ids.pmcid
-	   elif release.ext_ids.doi:
-	       url = "https://doi.org/{}".format(release.ext_ids.doi.lower())
-	       link_source = "doi"
-	       link_source_id = release.ext_ids.doi.lower()
-	   elif release.ext_ids.doaj:
-	       url = "https://doaj.org/article/{}".format(release.ext_ids.doaj.lower())
-	       link_source = "doaj"
-	       link_source_id = release.ext_ids.doaj.lower()
-	   elif release.ext_ids.hdl:
-	       url = "https://hdl.handle.net/{}".format(release.ext_ids.hdl.lower())
-	       link_source = "hdl"
-	       link_source_id = release.ext_ids.hdl.lower()
-	*/
-
-	out := []string{}
-	if r.DOI() != "" {
-		out = append(out, fmt.Sprintf("https://doi.org/%s", r.DOI()))
-	}
-
-	// TODO arxiv (NB cross reference with the hack i added to sandcrawler)
-	// TODO pmcid (NB it used ncbi but switched to europepmc which mostly fails, now
-	// TODO doaj
-	// TODO hdl
-	return out
-}
-
-// RawRef is stored in fatcat2's database as a json value in a release row
-type RawRef struct {
-	// TODO I don't like how this is structured (wayyy too much shoved in extra)
-	// but just maintaining parity for now with legacy fatcat
-
-	// NB no indication TargetReleaseID is ever set
-	// TODO this is ending up as uuid.Nil
-	//TargetReleaseID *uuid.UUID     `json:"target_release_id,omitempty"`
-	Title         string         `json:"title,omitempty"`
-	Index         int            `json:"index,omitempty"`
-	Key           string         `json:"key,omitempty"`
-	Year          int            `json:"year,omitempty"`
-	ContainerName string         `json:"container_name,omitempty"`
-	Locator       string         `json:"locator,omitempty"`
-	Extra         map[string]any `json:"extra,omitempty"`
-}
-
-type FileURL struct {
-	FileID uuid.UUID `json:"file_id"`
-	Rel    string    `json:"rel"`
-	URL    string    `json:"url"`
-	Source string    `json:"source"`
-}
-
-type File struct {
-	Releases    []Release `json:"releases"`
-	URLs        []FileURL `json:"urls"`
-	ID          uuid.UUID `json:"id"`
-	Source      string    `json:"source"`
-	Size        int       `json:"size_bytes"`
-	Sha1        string    `json:"sha1"`
-	Sha256      string    `json:"sha256"`
-	Md5         string    `json:"md5"`
-	Mimetype    string    `json:"mimetype"`
-	LegacyRevID uuid.UUID `json:"legacy_rev_id,omitempty"`
-}
-
 // TODO crossref structs
 type crossrefRef struct {
 	Year            string
@@ -312,15 +124,15 @@ type crossrefContributor struct {
 	}
 }
 
-func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (ReleaseContrib, error) {
-	out := ReleaseContrib{
+func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (fatcat2.ReleaseContrib, error) {
+	out := fatcat2.ReleaseContrib{
 		GivenName: cc.Given,
 		Surname:   cc.Family,
 	}
 	if cc.ORCID != "" {
 		sp := strings.Split(cc.ORCID, "/")
 		orcid := sp[len(sp)-1]
-		id, err := lookupCreator(client, orcid)
+		id, err := fatcat2.LookupCreator(client, orcid)
 		if err != nil {
 			return out, err
 		}
@@ -446,6 +258,8 @@ type CrossrefCrawlInput struct {
 	SKInput SKCrossrefInput
 }
 
+// TODO counts should be in a common package
+
 type releaseCounts struct {
 	// Skipped is the count of lines in the upstream we knew we would never want
 	Skipped int
@@ -515,6 +329,12 @@ func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts, error) 
 
 		var c counts
 
+		// TODO can we afford two or three activities per line? if we can, i'd rather see:
+		// - harvestUpstream
+		// - crawl
+		// - handlePDF
+		// but for now i'll keep it one per line
+
 		err := workflow.ExecuteActivity(ctx, processLine, lin).Get(ctx, &c)
 		if err != nil {
 			return out, err
@@ -530,7 +350,6 @@ type lineInput struct {
 	Length    int64
 }
 
-// TODO split this up into smaller activities
 func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	out = counts{}
 	f, err := getS3Object(ctx, in.S3Key)
@@ -581,9 +400,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, nil
 	}
 
-	release := Release{
-		Contribs:    []ReleaseContrib{},
-		ExternalIDs: []ExternalID{},
+	release := fatcat2.Release{
+		Contribs:    []fatcat2.ReleaseContrib{},
+		ExternalIDs: []fatcat2.ExternalID{},
 		Extra:       map[string]any{},
 		Publisher:   xrefdoc.Publisher,
 		Volume:      xrefdoc.Volume,
@@ -622,7 +441,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	if issnl != "" {
 		// TODO could build a map of issnl->cid somewhere to save on requests
-		containerID, err = lookupContainer(client, issnl)
+		containerID, err = fatcat2.LookupContainer(client, issnl)
 		if err != nil {
 			return out, err
 		}
@@ -630,13 +449,13 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	if containerID == uuid.Nil {
 		if containerTitle != "" && issnl != "" {
-			c := Container{
+			c := fatcat2.Container{
 				Name:      containerTitle,
 				ISSNL:     issnl,
 				Publisher: xrefdoc.Publisher,
 				Type:      containerTypeMap[releaseType],
 			}
-			containerID, err = createContainer(client, c)
+			containerID, err = fatcat2.CreateContainer(client, c)
 			if err != nil {
 				return out, err
 			}
@@ -666,10 +485,10 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	// references
-	release.Refs = []RawRef{}
+	release.Refs = []fatcat2.RawRef{}
 
 	for i, cref := range xrefdoc.Reference {
-		rawRef := RawRef{
+		rawRef := fatcat2.RawRef{
 			Index:   i,
 			Locator: cref.FirstPage,
 			Title:   cref.ArticleTitle,
@@ -771,10 +590,10 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// abstracts
 
 	// TODO find out if any release has more than one abstract
-	release.Abstracts = []Abstract{}
+	release.Abstracts = []fatcat2.Abstract{}
 	if len(xrefdoc.Abstract) > 10 {
 		h := sha1.Sum([]byte(xrefdoc.Abstract))
-		release.Abstracts = append(release.Abstracts, Abstract{
+		release.Abstracts = append(release.Abstracts, fatcat2.Abstract{
 			MIMEType: "application/xml+jats",
 			Content:  xrefdoc.Abstract,
 			Language: xrefdoc.Language,
@@ -818,14 +637,14 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	// external IDs
 
-	release.ExternalIDs = append(release.ExternalIDs, ExternalID{
+	release.ExternalIDs = append(release.ExternalIDs, fatcat2.ExternalID{
 		Type:  "doi",
 		Value: xrefDOI,
 	})
 	if len(xrefdoc.ISBN) > 0 {
 		for _, isbn := range xrefdoc.ISBN {
 			if len(isbn) == 17 {
-				release.ExternalIDs = append(release.ExternalIDs, ExternalID{
+				release.ExternalIDs = append(release.ExternalIDs, fatcat2.ExternalID{
 					Type:  "isbn13",
 					Value: isbn,
 				})
@@ -899,7 +718,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 	}
 
-	id, err := createRelease(client, release)
+	id, err := fatcat2.CreateRelease(client, release)
 	if err != nil {
 		return out, err
 	}
@@ -978,6 +797,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// i should check to see if we have a file, though? maybe it doesn't matter.
 	// but i need checksums either way; and for that, i'll need the bytes in ram.
 
+	// TODO can share this pdf byte handling stuff between different upstreams
+
 	pdfBs, err := io.ReadAll(res.Content)
 	if err != nil {
 		return out, fmt.Errorf("could not read pdf bytes: %w", err)
@@ -998,9 +819,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, fmt.Errorf("could not sha256 sum pdf bytes: %w", err)
 	}
 
-	file := File{
-		Releases: []Release{release},
-		URLs: []FileURL{
+	file := fatcat2.File{
+		Releases: []fatcat2.Release{release},
+		URLs: []fatcat2.FileURL{
 			{
 				Rel: "wayback",
 				URL: res.Chain[len(res.Chain)-1],
@@ -1012,7 +833,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		Size:   len(pdfBs),
 	}
 
-	fid, err := createFile(client, file)
+	fid, err := fatcat2.CreateFile(client, file)
 	if err != nil {
 		return out, fmt.Errorf("fc2 api failed to make file '%s': %w", fid, err)
 	}
@@ -1028,9 +849,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	return out, nil
 }
 
-// isCrawlWanted returns true if we feel this release is worthy of a crawl attempt
-func isCrawlWanted(release Release) bool {
-	// TODO consider adding this to Release type
+// isCrawlWanted returns true if we feel this release is worthy of a crawl
+// attempt; specific to things gleaned from crossref
+func isCrawlWanted(release fatcat2.Release) bool {
 	doi := release.DOI()
 
 	if doi == "" {
@@ -1101,308 +922,6 @@ func licenseSlugLookup(rawURL string) string {
 		rawURL = strings.ReplaceAll(rawURL, "/uk", "")
 	}
 	return licenseSlugMap[rawURL]
-}
-
-// createContainer creates a new container in fc2 and returns its ID
-func createContainer(client *http.Client, c Container) (uuid.UUID, error) {
-	c.Source = "dev" // TODO thread this value through from invocation of workflow
-	c.ID = uuid.New()
-
-	legacy, err := lookupLegacyContainer(client, c.ISSNL)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
-	}
-
-	if legacy != nil {
-		c.ID = legacy.Ident
-		c.LegacyRevID = legacy.Revision
-	}
-
-	fc2url := viper.GetString("fatcat2.endpoint")
-	fc2key := viper.GetString("fatcat2.key")
-
-	bs, err := json.Marshal(c)
-
-	body := bytes.NewBuffer(bs)
-	req, err := http.NewRequest("POST", fc2url+"/container", body)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Set("X-API-Key", fc2key)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
-	}
-
-	if resp.StatusCode != 201 {
-		b, _ := io.ReadAll(resp.Body)
-		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", c, resp.StatusCode, b)
-	}
-
-	return c.ID, nil
-}
-
-// createFile creates a new file in fc2 and returns its ID
-func createFile(client *http.Client, f File) (uuid.UUID, error) {
-	f.Source = "dev" // TODO thread this value through from invocation of workflow
-	f.ID = uuid.New()
-	legacy, err := lookupLegacyFile(client, f.Sha1)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
-	}
-
-	if legacy != nil {
-		f.ID = legacy.Ident
-		f.LegacyRevID = legacy.Revision
-	}
-
-	fc2url := viper.GetString("fatcat2.endpoint")
-	fc2key := viper.GetString("fatcat2.key")
-
-	bs, err := json.Marshal(f)
-
-	body := bytes.NewBuffer(bs)
-	req, err := http.NewRequest("POST", fc2url+"/file", body)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Set("X-API-Key", fc2key)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("file POST failed for '%#v': %w", f, err)
-	}
-
-	if resp.StatusCode != 201 {
-		b, _ := io.ReadAll(resp.Body)
-		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", f, resp.StatusCode, b)
-	}
-
-	return f.ID, nil
-}
-
-// createRelease creates a new release in fc2 and returns its ID
-func createRelease(client *http.Client, r Release) (uuid.UUID, error) {
-	r.Source = "dev" // TODO thread this value through from invocation of workflow
-	r.ID = uuid.New()
-
-	var doi string
-	for _, eid := range r.ExternalIDs {
-		if eid.Type == "doi" {
-			doi = eid.Value
-			break
-		}
-	}
-	if doi == "" {
-		panic("nothing without a doi should get to this point")
-	}
-
-	legacy, err := lookupLegacyRelease(client, doi)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
-	}
-
-	if legacy != nil {
-		r.ID = legacy.Ident
-		r.LegacyRevID = legacy.Revision
-	}
-
-	fc2url := viper.GetString("fatcat2.endpoint")
-	fc2key := viper.GetString("fatcat2.key")
-
-	bs, err := json.Marshal(r)
-
-	body := bytes.NewBuffer(bs)
-	req, err := http.NewRequest("POST", fc2url+"/release", body)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Set("X-API-Key", fc2key)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("release POST failed for '%#v': %w", r, err)
-	}
-
-	if resp.StatusCode != 201 {
-		b, _ := io.ReadAll(resp.Body)
-		return uuid.Nil, fmt.Errorf("unexpected status code for '%s' (%s) POST: %d; body '%s'",
-			doi, r.LegacyRevID, resp.StatusCode, b)
-	}
-
-	return r.ID, nil
-}
-
-// TODO make a client wrapper
-//type FC2Client http.Client
-
-// TODO generalize lookup functions
-type LegacyData struct {
-	Ident    uuid.UUID
-	Revision uuid.UUID
-}
-
-func fc2uuid(fatcatIdent string) (uuid.UUID, error) {
-	i := strings.ToUpper(fatcatIdent + "======")
-	decoded, err := base32.StdEncoding.DecodeString(i)
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	return uuid.FromBytes(decoded)
-}
-
-func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData, error) {
-	fc1url := viper.GetString("fatcat1.endpoint")
-	req, err := http.NewRequest("GET", fc1url+"/"+endpoint, nil)
-	if err != nil {
-		panic(err)
-	}
-	q := req.URL.Query()
-	q.Add("extid_type", idtype)
-	q.Add("extid_value", idvalue)
-	req.URL.RawQuery = q.Encode()
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fc1 lookup failed for %s of '%s': %w", idtype, idvalue, err)
-	}
-	if resp.StatusCode == 404 {
-		return nil, nil
-	}
-
-	if resp.StatusCode != 200 {
-		// NB invalid issnls crash the server (500). if we get bad data from
-		// crossref it will stop the activity cold. might have to patch fc1 to
-		// return a 400.
-		return nil, fmt.Errorf(
-			"did not get 200 nor 404 from fc1 for %s of '%s' lookup: %d",
-			idtype, idvalue, resp.StatusCode)
-	}
-
-	bs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var p struct {
-		Ident    string
-		Revision uuid.UUID
-	}
-
-	err = json.Unmarshal(bs, &p)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal failed for %s of '%s': %w", idtype, idvalue, err)
-	}
-
-	ident, err := fc2uuid(p.Ident)
-	if err != nil {
-		return nil, err
-	}
-
-	return &LegacyData{
-		Ident:    ident,
-		Revision: p.Revision,
-	}, nil
-}
-
-func lookupLegacyContainer(c *http.Client, issnl string) (*LegacyData, error) {
-	return lookupLegacy(c, "lookup_container", "issnl", issnl)
-}
-
-func lookupLegacyRelease(c *http.Client, doi string) (*LegacyData, error) {
-	return lookupLegacy(c, "lookup_release", "doi", doi)
-}
-
-func lookupLegacyFile(c *http.Client, sha1 string) (*LegacyData, error) {
-	return lookupLegacy(c, "lookup_file", "sha1", sha1)
-}
-
-func lookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
-	fc2url := viper.GetString("fatcat2.endpoint")
-	req, err := http.NewRequest("GET", fc2url+"/creator/lookup", nil)
-	if err != nil {
-		panic(err)
-	}
-
-	q := req.URL.Query()
-	q.Add("id_type", "orcid")
-	q.Add("id_value", orcid)
-	req.URL.RawQuery = q.Encode()
-	resp, err := c.Do(req)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", orcid, err)
-	}
-
-	if resp.StatusCode == 404 {
-		return uuid.Nil, nil
-	}
-
-	if resp.StatusCode != 200 {
-		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
-			orcid, resp.StatusCode)
-	}
-
-	bs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	var p struct {
-		ID uuid.UUID
-	}
-
-	err = json.Unmarshal(bs, &p)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", orcid, err)
-	}
-
-	return p.ID, nil
-}
-
-func lookupContainer(c *http.Client, issnl string) (uuid.UUID, error) {
-	fc2url := viper.GetString("fatcat2.endpoint")
-	req, err := http.NewRequest("GET", fc2url+"/container/lookup", nil)
-	if err != nil {
-		panic(err)
-	}
-
-	q := req.URL.Query()
-	q.Add("id_type", "issnl")
-	q.Add("id_value", issnl)
-	req.URL.RawQuery = q.Encode()
-	resp, err := c.Do(req)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", issnl, err)
-	}
-
-	if resp.StatusCode == 404 {
-		return uuid.Nil, nil
-	}
-
-	if resp.StatusCode != 200 {
-		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
-			issnl, resp.StatusCode)
-	}
-
-	bs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	var p struct {
-		ID uuid.UUID
-	}
-
-	err = json.Unmarshal(bs, &p)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", issnl, err)
-	}
-
-	return p.ID, nil
 }
 
 func isExistingDOI(c *http.Client, doi string) (bool, error) {

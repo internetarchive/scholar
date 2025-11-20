@@ -1,0 +1,505 @@
+package fatcat2
+
+import (
+	"bytes"
+	"encoding/base32"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/spf13/viper"
+)
+
+type LegacyData struct {
+	Ident    uuid.UUID
+	Revision uuid.UUID
+}
+
+type Container struct {
+	ID          uuid.UUID      `json:"id,omitempty"`
+	Name        string         `json:"name,omitempty"`
+	Type        string         `json:"container_type,omitempty"`
+	LegacyRevID uuid.UUID      `json:"legacy_rev_id,omitempty"`
+	Publisher   string         `json:"publisher,omitempty"`
+	ISSNL       string         `json:"issnl,omitempty"`
+	ISSNE       string         `json:"issne,omitempty"`
+	ISSNP       string         `json:"issnp,omitempty"`
+	Source      string         `json:"source,omitempty"`
+	Extra       map[string]any `json:"extra"`
+}
+
+type Abstract struct {
+	ReleaseID *uuid.UUID `json:"release_id"`
+	Content   string     `json:"content"`
+	SHA1      string     `json:"sha1"`
+	Language  string     `json:"language"`
+	MIMEType  string     `json:"mimetype"`
+}
+
+type ReleaseContrib struct {
+	CreatorID      *uuid.UUID     `json:"creator_id"`
+	ReleaseID      *uuid.UUID     `json:"release_id"`
+	Position       int            `json:"position"`
+	RawName        string         `json:"raw_name"`
+	GivenName      string         `json:"given_name"`
+	Surname        string         `json:"surname"`
+	RawAffiliation string         `json:"raw_affiliation"`
+	Role           string         `json:"role"`
+	Extra          map[string]any `json:"extra"`
+}
+
+type ExternalID struct {
+	ReleaseID *uuid.UUID `json:"release_id"`
+	Type      string     `json:"id_type"`
+	Value     string     `json:"id_value"`
+}
+
+// TODO split out into its own package
+type Release struct {
+	ID            uuid.UUID      `json:"id"`
+	WorkID        *uuid.UUID     `json:"work_id"`
+	Title         string         `json:"title,omitempty"`
+	OriginalTitle string         `json:"original_title,omitempty"`
+	Subtitle      string         `json:"subtitle,omitempty"`
+	Type          string         `json:"release_type,omitempty"`
+	Stage         string         `json:"release_stage,omitempty"`
+	ReleaseDate   *time.Time     `json:"release_date"`
+	ReleaseYear   int            `json:"release_year,omitempty"`
+	Source        string         `json:"source,omitempty"`
+	Volume        string         `json:"volume,omitempty"`
+	Issue         string         `json:"issue,omitempty"`
+	Pages         string         `json:"pages,omitempty"`
+	Publisher     string         `json:"publisher,omitempty"`
+	Language      string         `json:"language,omitempty"`
+	LegacyRevID   uuid.UUID      `json:"legacy_rev_id,omitempty"`
+	LicenseSlug   string         `json:"license_slug,omitempty"`
+	Extra         map[string]any `json:"extra,omitempty"`
+
+	// Foreign keys
+
+	Refs        []RawRef         `json:"refs,omitempty"`
+	Abstracts   []Abstract       `json:"abstracts,omitempty"`
+	ContainerID *uuid.UUID       `json:"container_id"`
+	ExternalIDs []ExternalID     `json:"extids,omitempty"`
+	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
+
+	// unused in xref but may want later:
+	// Pages string
+	// WithdrawnStatus string
+	// TODO
+	// understand when the structured ReleaseRefs are added in the old system
+}
+
+func (r Release) DOI() string {
+	for _, eid := range r.ExternalIDs {
+		if eid.Type == "doi" {
+			return eid.Value
+		}
+	}
+	return ""
+}
+
+func (r Release) IsPaperlike() bool {
+	paperLikeTypes := []string{
+		"article-journal",
+		"book",
+		"paper-conference",
+		"chapter",
+		"report",
+		"thesis",
+	}
+
+	return slices.Contains(paperLikeTypes, r.Type)
+}
+
+// FulltextURLs returns a list of possible locations for this release's
+// fulltext PDF. These are generated from known URL patterns for the different
+// external ID types. Should upstream patterns change, the URLs generated here
+// might become useless. The URLs are sorted roughly by preference (IE,
+// likelihood of success).
+func (r Release) FulltextURLs() []string {
+	// TODO this approach smells to me; I'm mostly just preserving what we were
+	// doing in fatcat's entity worker. This is important code (drives our daily
+	// crawling attempts) _and_ is volatile as it depends on upstream url
+	// patterns. I'm keeping it like this for the first pass but having URL
+	// templates in config per upstream might be useful to expose.
+	/*
+	   Relevant fatcat code (python/fatcat_tools/transforms/ingest.py):
+	   # generate a URL where we expect to find fulltext
+	   url = None
+	   link_source = None
+	   link_source_id = None
+	   if release.ext_ids.arxiv and ingest_type == "pdf":
+	       url = "https://arxiv.org/pdf/{}.pdf".format(release.ext_ids.arxiv)
+	       link_source = "arxiv"
+	       link_source_id = release.ext_ids.arxiv
+	   elif release.ext_ids.pmcid and ingest_type == "pdf":
+	       # TODO: how to tell if an author manuscript in PMC vs. published?
+	       # url = "https://www.ncbi.nlm.nih.gov/pmc/articles/{}/pdf/".format(release.ext_ids.pmcid)
+	       url = "http://europepmc.org/backend/ptpmcrender.fcgi?accid={}&blobtype=pdf".format(
+	           release.ext_ids.pmcid
+	       )
+	       link_source = "pmc"
+	       link_source_id = release.ext_ids.pmcid
+	   elif release.ext_ids.doi:
+	       url = "https://doi.org/{}".format(release.ext_ids.doi.lower())
+	       link_source = "doi"
+	       link_source_id = release.ext_ids.doi.lower()
+	   elif release.ext_ids.doaj:
+	       url = "https://doaj.org/article/{}".format(release.ext_ids.doaj.lower())
+	       link_source = "doaj"
+	       link_source_id = release.ext_ids.doaj.lower()
+	   elif release.ext_ids.hdl:
+	       url = "https://hdl.handle.net/{}".format(release.ext_ids.hdl.lower())
+	       link_source = "hdl"
+	       link_source_id = release.ext_ids.hdl.lower()
+	*/
+
+	out := []string{}
+	if r.DOI() != "" {
+		out = append(out, fmt.Sprintf("https://doi.org/%s", r.DOI()))
+	}
+
+	// TODO arxiv (NB cross reference with the hack i added to sandcrawler)
+	// TODO pmcid (NB it used ncbi but switched to europepmc which mostly fails, now
+	// TODO doaj
+	// TODO hdl
+	return out
+}
+
+// RawRef is stored in fatcat2's database as a json value in a release row
+type RawRef struct {
+	// TODO I don't like how this is structured (wayyy too much shoved in extra)
+	// but just maintaining parity for now with legacy fatcat
+
+	// NB no indication TargetReleaseID is ever set
+	// TODO this is ending up as uuid.Nil
+	//TargetReleaseID *uuid.UUID     `json:"target_release_id,omitempty"`
+	Title         string         `json:"title,omitempty"`
+	Index         int            `json:"index,omitempty"`
+	Key           string         `json:"key,omitempty"`
+	Year          int            `json:"year,omitempty"`
+	ContainerName string         `json:"container_name,omitempty"`
+	Locator       string         `json:"locator,omitempty"`
+	Extra         map[string]any `json:"extra,omitempty"`
+}
+
+type FileURL struct {
+	FileID uuid.UUID `json:"file_id"`
+	Rel    string    `json:"rel"`
+	URL    string    `json:"url"`
+	Source string    `json:"source"`
+}
+
+type File struct {
+	Releases    []Release `json:"releases"`
+	URLs        []FileURL `json:"urls"`
+	ID          uuid.UUID `json:"id"`
+	Source      string    `json:"source"`
+	Size        int       `json:"size_bytes"`
+	Sha1        string    `json:"sha1"`
+	Sha256      string    `json:"sha256"`
+	Md5         string    `json:"md5"`
+	Mimetype    string    `json:"mimetype"`
+	LegacyRevID uuid.UUID `json:"legacy_rev_id,omitempty"`
+}
+
+// CreateContainer creates a new container in fc2 and returns its ID
+func CreateContainer(client *http.Client, c Container) (uuid.UUID, error) {
+	c.Source = "dev" // TODO thread this value through from invocation of workflow
+	c.ID = uuid.New()
+
+	legacy, err := lookupLegacyContainer(client, c.ISSNL)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
+	}
+
+	if legacy != nil {
+		c.ID = legacy.Ident
+		c.LegacyRevID = legacy.Revision
+	}
+
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	bs, err := json.Marshal(c)
+
+	body := bytes.NewBuffer(bs)
+	req, err := http.NewRequest("POST", fc2url+"/container", body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
+	}
+
+	if resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", c, resp.StatusCode, b)
+	}
+
+	return c.ID, nil
+}
+
+// CreateFile creates a new file in fc2 and returns its ID
+func CreateFile(client *http.Client, f File) (uuid.UUID, error) {
+	f.Source = "dev" // TODO thread this value through from invocation of workflow
+	f.ID = uuid.New()
+	legacy, err := lookupLegacyFile(client, f.Sha1)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
+	}
+
+	if legacy != nil {
+		f.ID = legacy.Ident
+		f.LegacyRevID = legacy.Revision
+	}
+
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	bs, err := json.Marshal(f)
+
+	body := bytes.NewBuffer(bs)
+	req, err := http.NewRequest("POST", fc2url+"/file", body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("file POST failed for '%#v': %w", f, err)
+	}
+
+	if resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", f, resp.StatusCode, b)
+	}
+
+	return f.ID, nil
+}
+
+// CreateRelease creates a new release in fc2 and returns its ID
+func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
+	r.Source = "dev" // TODO thread this value through from invocation of workflow
+	r.ID = uuid.New()
+
+	var doi string
+	for _, eid := range r.ExternalIDs {
+		if eid.Type == "doi" {
+			doi = eid.Value
+			break
+		}
+	}
+	if doi == "" {
+		panic("nothing without a doi should get to this point")
+	}
+
+	legacy, err := lookupLegacyRelease(client, doi)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
+	}
+
+	if legacy != nil {
+		r.ID = legacy.Ident
+		r.LegacyRevID = legacy.Revision
+	}
+
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	bs, err := json.Marshal(r)
+
+	body := bytes.NewBuffer(bs)
+	req, err := http.NewRequest("POST", fc2url+"/release", body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("release POST failed for '%#v': %w", r, err)
+	}
+
+	if resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		return uuid.Nil, fmt.Errorf("unexpected status code for '%s' (%s) POST: %d; body '%s'",
+			doi, r.LegacyRevID, resp.StatusCode, b)
+	}
+
+	return r.ID, nil
+}
+
+func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData, error) {
+	fc1url := viper.GetString("fatcat1.endpoint")
+	req, err := http.NewRequest("GET", fc1url+"/"+endpoint, nil)
+	if err != nil {
+		panic(err)
+	}
+	q := req.URL.Query()
+	q.Add("extid_type", idtype)
+	q.Add("extid_value", idvalue)
+	req.URL.RawQuery = q.Encode()
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fc1 lookup failed for %s of '%s': %w", idtype, idvalue, err)
+	}
+	if resp.StatusCode == 404 {
+		return nil, nil
+	}
+
+	if resp.StatusCode != 200 {
+		// NB invalid issnls crash the server (500). if we get bad data from
+		// crossref it will stop the activity cold. might have to patch fc1 to
+		// return a 400.
+		return nil, fmt.Errorf(
+			"did not get 200 nor 404 from fc1 for %s of '%s' lookup: %d",
+			idtype, idvalue, resp.StatusCode)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var p struct {
+		Ident    string
+		Revision uuid.UUID
+	}
+
+	err = json.Unmarshal(bs, &p)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal failed for %s of '%s': %w", idtype, idvalue, err)
+	}
+
+	ident, err := fc2uuid(p.Ident)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LegacyData{
+		Ident:    ident,
+		Revision: p.Revision,
+	}, nil
+}
+
+func lookupLegacyContainer(c *http.Client, issnl string) (*LegacyData, error) {
+	return lookupLegacy(c, "lookup_container", "issnl", issnl)
+}
+
+func lookupLegacyRelease(c *http.Client, doi string) (*LegacyData, error) {
+	return lookupLegacy(c, "lookup_release", "doi", doi)
+}
+
+func lookupLegacyFile(c *http.Client, sha1 string) (*LegacyData, error) {
+	return lookupLegacy(c, "lookup_file", "sha1", sha1)
+}
+
+// TODO generalize lookup functions
+
+func LookupCreator(c *http.Client, orcid string) (uuid.UUID, error) {
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/creator/lookup", nil)
+	if err != nil {
+		panic(err)
+	}
+
+	q := req.URL.Query()
+	q.Add("id_type", "orcid")
+	q.Add("id_value", orcid)
+	req.URL.RawQuery = q.Encode()
+	resp, err := c.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", orcid, err)
+	}
+
+	if resp.StatusCode == 404 {
+		return uuid.Nil, nil
+	}
+
+	if resp.StatusCode != 200 {
+		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
+			orcid, resp.StatusCode)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	var p struct {
+		ID uuid.UUID
+	}
+
+	err = json.Unmarshal(bs, &p)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", orcid, err)
+	}
+
+	return p.ID, nil
+}
+
+func LookupContainer(c *http.Client, issnl string) (uuid.UUID, error) {
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/container/lookup", nil)
+	if err != nil {
+		panic(err)
+	}
+
+	q := req.URL.Query()
+	q.Add("id_type", "issnl")
+	q.Add("id_value", issnl)
+	req.URL.RawQuery = q.Encode()
+	resp, err := c.Do(req)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", issnl, err)
+	}
+
+	if resp.StatusCode == 404 {
+		return uuid.Nil, nil
+	}
+
+	if resp.StatusCode != 200 {
+		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
+			issnl, resp.StatusCode)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	var p struct {
+		ID uuid.UUID
+	}
+
+	err = json.Unmarshal(bs, &p)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", issnl, err)
+	}
+
+	return p.ID, nil
+}
+
+func fc2uuid(fatcatIdent string) (uuid.UUID, error) {
+	i := strings.ToUpper(fatcatIdent + "======")
+	decoded, err := base32.StdEncoding.DecodeString(i)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	return uuid.FromBytes(decoded)
+}

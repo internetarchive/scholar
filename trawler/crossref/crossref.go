@@ -254,10 +254,6 @@ func (c crossrefDoc) IsSkippable() bool {
 	return false
 }
 
-type CrossrefCrawlInput struct {
-	SKInput SKCrossrefInput
-}
-
 // TODO counts should be in a common package
 
 type releaseCounts struct {
@@ -889,6 +885,14 @@ func isCrawlWanted(release fatcat2.Release) bool {
 	*/
 
 	return true
+}
+
+// TODO this should probably be refactored such that day and limit options are
+// just part of the workflow args; I don't know that it's useful to have
+// anything related to scholkit exposed at the workflow level
+
+type CrossrefCrawlInput struct {
+	SKInput SKCrossrefInput
 }
 
 func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts, error) {

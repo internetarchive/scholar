@@ -5,8 +5,7 @@ import (
 )
 
 func Test_File_SetMetadata(t *testing.T) {
-
-	f := &File{}
+	f := File{}
 
 	bs := []byte(sample)
 	err := f.SetMetadata(bs)

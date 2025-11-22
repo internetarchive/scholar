@@ -64,6 +64,10 @@ type chunkCfg struct {
 	ChunkSize int
 }
 
+// chunk is a helper function split out for unit testing. It's critical to
+// remember that its BytesRead value is cumulative -- ie, it's bytes read
+// *including* the initial offset value. This is quite confusing and I may
+// change it...
 func chunk(cc chunkCfg, r io.ReaderAt) (out FindLineBatchOutput, err error) {
 	out = FindLineBatchOutput{
 		BytesRead: cc.Offset,

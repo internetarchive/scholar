@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,8 +37,8 @@ type Config struct {
 	Auth      string
 	UserAgent string
 	Retries   int
-	// Backoff is the retry backoff factor expressed in duration format (eg, 10s)
-	Backoff time.Duration
+	Backoff   time.Duration
+	Debug     bool
 }
 
 type QueryParams struct {
@@ -133,7 +134,7 @@ func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 	q.Set("matchType", mt)
 
 	l := defaultLimit
-	if params.Limit > 0 {
+	if params.Limit != 0 {
 		l = params.Limit
 	}
 	q.Set("limit", fmt.Sprintf("%d", l))
@@ -151,8 +152,11 @@ func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 	req.URL.RawQuery = q.Encode()
 
 	req.Header.Add("User-Agent", c.cfg.UserAgent)
-	req.Header.Add("Cookie", fmt.Sprintf("cdx_auth_token=%s", c.cfg.UserAgent))
+	req.Header.Add("Cookie", fmt.Sprintf("cdx_auth_token=%s", c.cfg.Auth))
 
+	if c.cfg.Debug {
+		fmt.Fprintf(os.Stderr, "-> %s\n", req.URL.RawQuery)
+	}
 	var resp *http.Response
 
 	backoff := c.cfg.Backoff
@@ -177,6 +181,11 @@ func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 		return out, fmt.Errorf("failed to read cdx api response: %w", err)
 	}
 
+	if c.cfg.Debug {
+		fmt.Fprintf(os.Stderr, "<- %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "<- %s\n", string(bs))
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return out, fmt.Errorf("cdx api returned %d: '%s'", resp.StatusCode, string(bs))
 	}
@@ -186,6 +195,8 @@ func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 	if err != nil {
 		return out, fmt.Errorf("failed to unmarshal cdx api response: %w", err)
 	}
+
+	// TODO if Auth is unset, validate for the unauthed version (7 column) of output
 
 	for _, r := range payload[1:] {
 		if len(r) != 11 {

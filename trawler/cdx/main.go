@@ -19,7 +19,9 @@ var to string
 const timeFormat = "20060102150405"
 
 // for holding query flags
-var queryP = cdxclient.QueryParams{}
+var queryP = cdxclient.QueryParams{
+	Output: "json",
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "cdx",
@@ -31,6 +33,7 @@ var rootCmd = &cobra.Command{
 			UserAgent: viper.GetString("user_agent"),
 			Retries:   viper.GetInt("retries"),
 			Backoff:   viper.GetDuration("backoff"),
+			Debug:     debug,
 		}
 		client = cdxclient.NewClient(*cfg)
 		return nil
@@ -69,9 +72,18 @@ var queryCmd = &cobra.Command{
 			return fmt.Errorf("invalid match type '%s'", queryP.MatchType)
 		}
 
-		// TODO format rows as tsv or whatever
+		// TODO gracefully handle unauthed case
 
-		fmt.Printf("DBG %#v\n", rows)
+		if len(rows) > 0 {
+			fmt.Println("surt\ttimestamp\turl\tmimetype\tstatus\tdigest\twarc csize\twarc offset\twarc path")
+		}
+
+		for _, row := range rows {
+			dt := row.Datetime.Format(timeFormat)
+			fmt.Printf("%s\t%s\t%s\t%s\t%d\t%s\t%d\t%d\t%s\n",
+				row.Surt, dt, row.URL, row.Mimetype, row.StatusCode, row.SHA1b32, row.WarcCsize,
+				row.WarcOffset, row.WarcPath)
+		}
 
 		return nil
 	},

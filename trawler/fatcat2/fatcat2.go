@@ -482,7 +482,6 @@ func lookup(c *http.Client, entityType, idType, idValue string) (uuid.UUID, erro
 // LookupDoi returns the ID of a fatcat2 Release with the given DOI, if any.
 func LookupDoi(c *http.Client, doi string) (uuid.UUID, error) {
 	return lookup(c, "release", "doi", doi)
-
 }
 
 // LookupOrcid returns the ID of a fatcat2 Creator with the given orcid, if any.

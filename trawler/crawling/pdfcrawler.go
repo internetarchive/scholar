@@ -347,7 +347,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		if !c.isHTMLishMimetype(cdxRow.Mimetype) {
 			// TODO set up result for un-proceedable mimetype
 			out.FailReason = "unknown-mimetype"
-			c.Logger.Info("un-processable mimetype", "trace", trace, "mimetype", cdxRow.Mimetype)
+			slogInfo("un-processable mimetype", "mimetype", cdxRow.Mimetype)
 			return out, nil
 		}
 

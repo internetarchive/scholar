@@ -28,7 +28,7 @@ func skCrossref(ctx context.Context, in SKCrossrefInput) (out skCrossrefOutput, 
 	// TODO eventually, if needed, this activity can take granular arguments to
 	// control sk's execution (ie, run for a specific date or limit how many things to pull)
 	l := activity.GetLogger(ctx)
-	l.Info("starting crossref harvest", in)
+	l.Info(fmt.Sprintf("starting crossref harvest %#v", in))
 
 	limit := in.Limit
 	if limit == 0 {
@@ -72,7 +72,7 @@ func skCrossref(ctx context.Context, in SKCrossrefInput) (out skCrossrefOutput, 
 		skArgs = append(skArgs, "--limit")
 		skArgs = append(skArgs, fmt.Sprintf("%d", limit))
 	}
-	l.Info("cmd: ", skPath, skArgs)
+	l.Info(fmt.Sprintf("sk cmd: %s %s", skPath, skArgs))
 	cmd := exec.Command(skPath, skArgs...)
 	bs, err := cmd.Output()
 	if err != nil {
@@ -84,7 +84,7 @@ func skCrossref(ctx context.Context, in SKCrossrefInput) (out skCrossrefOutput, 
 		return out, fmt.Errorf("sk failed: %w", err)
 	}
 
-	l.Info("scholkit uploaded crossref data to s3 key", string(bs))
+	l.Info(fmt.Sprintf("scholkit uploaded crossref data to s3 key %s", string(bs)))
 
 	out.S3Key = strings.TrimSpace(string(bs))
 	return

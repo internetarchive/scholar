@@ -136,6 +136,8 @@ url_blocklist = [
   "bloomsburycollections.com",
   # JS and pay walled.
   ".ovid.com",
+  # anubis walled
+  "academiccommons.columbia.edu",
 
   # loginwall patterns
 

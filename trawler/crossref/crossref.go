@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"git.archive.org/webgroup/scholar/trawler/cdx"
+	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
@@ -424,13 +424,12 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		panic("spn client was not created")
 	}
 
-	cdxClient := cdx.NewClient(cdx.CDXClientOpts{
+	cdxClient := cdx.NewClient(cdx.Config{
 		Auth:      viper.GetString("cdx.auth"),
 		Endpoint:  viper.GetString("cdx.endpoint"),
 		UserAgent: viper.GetString("cdx.user_agent"),
 		Retries:   viper.GetInt("cdx.retries"),
-		// TODO use GetDuration
-		Backoff: viper.GetString("cdx.backoff"),
+		Backoff:   viper.GetDuration("cdx.backoff"),
 	})
 
 	var res crawling.CrawlResult

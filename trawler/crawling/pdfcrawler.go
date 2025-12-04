@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"git.archive.org/webgroup/scholar/trawler/cdx"
-	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
+	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
+	spn "git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -42,8 +42,8 @@ func (e BlockedError) Error() string {
 }
 
 type PDFCrawler struct {
-	SPNClient       spnclient.Client
-	CDXClient       cdx.CDXClient
+	SPNClient       spn.Client
+	CDXClient       cdx.Client
 	WaybackEndpoint string
 	UserAgent       string
 	MaxHops         int
@@ -204,7 +204,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 
 		u = ru
 
-		req := spnclient.SaveRequest{
+		req := spn.SaveRequest{
 			URL:                u,
 			CaptureAll:         true,
 			ForceGet:           simpleGet,
@@ -240,7 +240,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			if strings.Contains(resp.Message, "The same snapshot had been made") {
 				// I suspect this is a rare case and it makes the code kind of ass
 				slogInfo("SPN claimed existing snapshot, querying CDX", "url", u)
-				rows, err := c.CDXClient.Query(cdx.CDXParams{
+				rows, err := c.CDXClient.Query(cdx.QueryParams{
 					URL: u,
 					Filters: []string{
 						"statuscode:2..",
@@ -268,7 +268,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		// There's a slim chance that the thing we want is already in CDX and we skip the SPN request.
 		if cdxRow == nil {
 			// poll until job completes
-			var spnJobResult spnclient.JobStatus
+			var spnJobResult spn.JobStatus
 			for {
 				spnJobResult, err = c.SPNClient.StatusJob(jobID)
 				if err != nil {
@@ -308,7 +308,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			// TODO we have code around ftp:// resources but have only ever processed
 			// 2500 of those and not since 2020 so dropping for now
 
-			rows, err := c.CDXClient.Query(cdx.CDXParams{
+			rows, err := c.CDXClient.Query(cdx.QueryParams{
 				From: spnJobResult.Time,
 				To:   spnJobResult.Time,
 				URL:  spnJobResult.OriginalURL,

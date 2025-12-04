@@ -1,7 +1,7 @@
 // cdx defines a client for the Wayback CDX server API. It does not expose
 // every parameter nor does it support every form of the parameters it does
 // expose; for now, it's just enough to port sandcrawler code.
-package cdx
+package cdxclient
 
 import (
 	"encoding/json"
@@ -24,21 +24,23 @@ const (
 	timeFormat       = "20060102150405"
 )
 
-type CDXClient struct {
-	opts   CDXClientOpts
+var MatchTypes = []string{"exact", "prefix", "host", "domain"}
+
+type Client struct {
+	cfg    Config
 	client *http.Client
 }
 
-type CDXClientOpts struct {
+type Config struct {
 	Endpoint  string
 	Auth      string
 	UserAgent string
 	Retries   int
 	// Backoff is the retry backoff factor expressed in duration format (eg, 10s)
-	Backoff string
+	Backoff time.Duration
 }
 
-type CDXParams struct {
+type QueryParams struct {
 	URL       string
 	From      *time.Time
 	To        *time.Time
@@ -61,39 +63,43 @@ type CDXRow struct {
 	WarcPath   string
 }
 
-func NewClient(opts CDXClientOpts) CDXClient {
-	if opts.Auth == "" {
+func ValidMatchType(mt string) bool {
+	return slices.Contains(MatchTypes, mt)
+}
+
+func NewClient(cfg Config) Client {
+	if cfg.Auth == "" {
 		panic("Auth required")
 	}
 
-	if opts.Endpoint == "" {
-		opts.Endpoint = defaultEndpoint
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = defaultEndpoint
 	}
 
-	if opts.UserAgent == "" {
-		opts.UserAgent = defaultUserAgent
+	if cfg.UserAgent == "" {
+		cfg.UserAgent = defaultUserAgent
 	}
 
 	// TODO is it correct to have retry logic *inside* the client? I think it
 	// should probably be handled externally.
 
-	if opts.Retries == 0 {
-		opts.Retries = 3
+	if cfg.Retries == 0 {
+		cfg.Retries = 3
 	}
 
-	if opts.Backoff == "" {
-		opts.Backoff = "10s"
+	if cfg.Backoff == 0 {
+		cfg.Backoff = time.Second * 10
 	}
 
-	return CDXClient{
-		opts:   opts,
+	return Client{
+		cfg:    cfg,
 		client: &http.Client{},
 	}
 }
 
-func (c CDXClient) Query(params CDXParams) ([]CDXRow, error) {
+func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 	out := []CDXRow{}
-	req, err := http.NewRequest("GET", c.opts.Endpoint, nil)
+	req, err := http.NewRequest("GET", c.cfg.Endpoint, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -121,6 +127,9 @@ func (c CDXClient) Query(params CDXParams) ([]CDXRow, error) {
 	if params.MatchType != "" {
 		mt = params.MatchType
 	}
+	if !ValidMatchType(mt) {
+		panic("invalid match type " + mt)
+	}
 	q.Set("matchType", mt)
 
 	l := defaultLimit
@@ -141,21 +150,18 @@ func (c CDXClient) Query(params CDXParams) ([]CDXRow, error) {
 
 	req.URL.RawQuery = q.Encode()
 
-	req.Header.Add("User-Agent", c.opts.UserAgent)
-	req.Header.Add("Cookie", fmt.Sprintf("cdx_auth_token=%s", c.opts.UserAgent))
+	req.Header.Add("User-Agent", c.cfg.UserAgent)
+	req.Header.Add("Cookie", fmt.Sprintf("cdx_auth_token=%s", c.cfg.UserAgent))
 
 	var resp *http.Response
 
-	backoff, err := time.ParseDuration(c.opts.Backoff)
-	if err != nil {
-		panic(err)
-	}
+	backoff := c.cfg.Backoff
 
 	attempts := 0
 	for {
 		attempts++
 		resp, err = c.client.Do(req)
-		if err == nil || attempts == c.opts.Retries {
+		if err == nil || attempts == c.cfg.Retries {
 			break
 		}
 

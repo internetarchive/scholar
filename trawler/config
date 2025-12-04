@@ -32,6 +32,7 @@ endpoint = "https://scholar.archive.org/api/fatcat/v1"
 
 [crawling]
 spn_slot_poll_interval = "6s"
+spn_job_poll_interval = "30s"
 user_agent = "Mozilla/5.0 ias_trawler"
 doi_prefix_blocklist = [
   # gbif.org: many DOIs, not PDF fulltext

@@ -277,7 +277,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				}
 
 				if spnJobResult.Status == "pending" {
-					// TODO sleep a little here, add an interval to config
+					slogInfo("sleeping while spn pending")
+					time.Sleep(viper.GetDuration("crawling.spn_job_poll_interval"))
 					continue
 				}
 

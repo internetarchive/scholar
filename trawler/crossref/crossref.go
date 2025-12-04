@@ -375,26 +375,156 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", xrefdoc.Type, xrefdoc.DOI))
 
 	if xrefdoc.IsSkippable() {
+		l.Debug(fmt.Sprintf("skipping doi '%s'", xrefdoc.DOI))
 		out.Releases.Skipped++
 		return out, nil
 	}
 
 	// Check the DOI
-
-	xrefDOI := strings.ToLower(xrefdoc.DOI)
-
 	client := &http.Client{}
-	foundId, err := fatcat2.LookupDoi(client, xrefDOI)
+
+	release, err := xrefToFc(client, xrefdoc)
+	if err != nil {
+		return out, fmt.Errorf("could not transform xref->fc2: %w", err)
+	}
+
+	foundId, err := fatcat2.LookupDoi(client, strings.ToLower(xrefdoc.DOI))
 	if err != nil {
 		return out, err
 	}
 
-	if foundId != uuid.Nil {
-		l.Debug("skipping known DOI ", xrefDOI)
-		out.Releases.Ignored++
+	if foundId == uuid.Nil {
+		err := createRelease(client, &out, &release, xrefdoc)
+		if err != nil {
+			return out, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)
+		}
+		l.Debug(fmt.Sprintf("created release %s", release.ID))
+		out.Releases.Added++
+	} else {
+		release.ID = foundId
+		l.Debug(fmt.Sprintf("found release %s", release.ID))
+	}
+
+	if !isCrawlWanted(release) {
+		l.Debug(fmt.Sprintf("decided crawl was unwanted for release %s", release.ID))
+		return out, err
+	}
+
+	out.Releases.CrawlWanted++
+
+	// porting the monster that is process_file from sandcrawler:python/sandcrawler/ingest_file.py
+	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
+		AccessKey: viper.GetString("spn.access_key"),
+		SecretKey: viper.GetString("spn.secret_key"),
+		Endpoint:  viper.GetString("spn.endpoint"),
+		Debug:     true,
+	})
+	if err != nil {
+		l.Debug(err.Error())
+		panic("spn client was not created")
+	}
+
+	cdxClient := cdx.NewClient(cdx.CDXClientOpts{
+		Auth:      viper.GetString("cdx.auth"),
+		Endpoint:  viper.GetString("cdx.endpoint"),
+		UserAgent: viper.GetString("cdx.user_agent"),
+		Retries:   viper.GetInt("cdx.retries"),
+		// TODO use GetDuration
+		Backoff: viper.GetString("cdx.backoff"),
+	})
+
+	var res crawling.CrawlResult
+
+	for _, u := range release.FulltextURLs() {
+		crawler := crawling.PDFCrawler{
+			SPNClient:       spnClient,
+			CDXClient:       cdxClient,
+			MaxHops:         8,
+			UserAgent:       viper.GetString("crawling.user_agent"),
+			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
+			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
+			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
+			Logger:          slog.Default(),
+		}
+
+		res, err = crawler.Crawl(u)
+
+		if err != nil {
+			l.Info(fmt.Sprintf("%s: get failed: %s", release.ID, err.Error()))
+			continue
+		}
+
+		l.Debug(fmt.Sprintf("%s: got result %v", release.ID, res))
+		if res.Success {
+			break
+		}
+		// TODO check result -- if success, break and continue. otherwise..?
+		// results we care about later are going to be in the slog
+		// question is if we should only use result for success and errors for failure
+	}
+
+	if err != nil || !res.Success {
 		return out, nil
 	}
 
+	// do I want to add file rows before or after blobproc? I think after,
+	// because we don't need to make a file record if we can't parse the PDF,
+	// right? or is there value in saving whatever we find? I can see value
+	// either way...esp if blobproc is down, we can always revisit the files
+	// later. so make a file entry then submit to blobproc.
+
+	// i should check to see if we have a file, though? maybe it doesn't matter.
+	// but i need checksums either way; and for that, i'll need the bytes in ram.
+
+	// TODO can share this pdf byte handling stuff between different upstreams
+
+	file := fatcat2.File{
+		Releases: []fatcat2.Release{release},
+		URLs: []fatcat2.FileURL{
+			{
+				Rel: "wayback",
+				URL: res.Chain[len(res.Chain)-1],
+			},
+		},
+	}
+
+	pdfBs, err := io.ReadAll(res.Content)
+	if err != nil {
+		return out, fmt.Errorf("could not read pdf bytes: %w", err)
+	}
+
+	if err = file.SetMetadata(pdfBs); err != nil {
+		return out, err
+	}
+
+	// TODO check if file exists. This can happen if we're re-running this
+	// workflow. NB--in that case, we've pulled all of the stuff from a previous
+	// crawl from CDX and don't need to worry about wasting SPN time assuming
+	// stuff is fresh enough which reminds me if we ever want to care about cdx
+	// freshness...
+	fileID, err := fatcat2.LookupSha256(client, file.Sha256)
+	if err != nil {
+		return out, fmt.Errorf("failed to look up checksum '%s': %w", file.Sha256, err)
+	}
+
+	if fileID == uuid.Nil {
+		fid, err := fatcat2.CreateFile(client, file)
+		if err != nil {
+			return out, fmt.Errorf("fc2 api failed to make file '%s': %w", fid, err)
+		}
+		l.Debug(fmt.Sprintf("created file %s", fid))
+	}
+
+	out.Releases.Acquired++
+
+	// TODO pdf bytes are in res.Content as io.Reader, need to shunt to blobproc
+	// TODO poll for blobproc result
+	// TODO check metadata against FC record
+	// TODO ingest PDF (Ingested++)
+	return out, nil
+}
+
+func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error) {
 	release := fatcat2.Release{
 		Contribs:    []fatcat2.ReleaseContrib{},
 		ExternalIDs: []fatcat2.ExternalID{},
@@ -409,64 +539,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	var releaseType string
 	releaseType, ok := releaseTypeMap[xrefdoc.Type]
 	if !ok {
-		return out, fmt.Errorf("found unknown crossref type '%s'", xrefdoc.Type)
+		return release, fmt.Errorf("found unknown crossref type '%s'", xrefdoc.Type)
 	}
 	release.Type = releaseType
-
-	var containerTitle string
-
-	if len(xrefdoc.ContainerTitle) > 0 {
-		// TODO fatcat importer is using ftfy to clean this value up; we can do
-		// that on the server side on container creation.
-		// TODO fatcat importer was arbitrarily using the first container title in
-		// the list so I've continued that practice but it feels weird
-		containerTitle = xrefdoc.ContainerTitle[0]
-	}
-
-	var issnl string
-	for _, i := range xrefdoc.ISSN {
-		issnl = issn.ISSN2ISSNL(i)
-		if issnl != "" {
-			break
-		}
-	}
-
-	containerID := uuid.Nil
-
-	if issnl != "" {
-		// TODO could build a map of issnl->cid somewhere to save on requests
-		containerID, err = fatcat2.LookupIssnl(client, issnl)
-		if err != nil {
-			return out, err
-		}
-	}
-
-	if containerID == uuid.Nil {
-		if containerTitle != "" && issnl != "" {
-			c := fatcat2.Container{
-				Name:      containerTitle,
-				ISSNL:     issnl,
-				Publisher: xrefdoc.Publisher,
-				Type:      containerTypeMap[releaseType],
-			}
-			containerID, err = fatcat2.CreateContainer(client, c)
-			if err != nil {
-				return out, err
-			}
-			out.Containers.Added++
-		} else if containerTitle != "" {
-			release.Extra["container_name"] = containerTitle
-			out.Containers.Skipped++
-		}
-	} else {
-		out.Containers.Ignored++
-	}
-
-	if containerID != uuid.Nil {
-		release.ContainerID = &containerID
-	}
-
-	// licenses
 
 	for _, lic := range xrefdoc.License {
 		// the original fatcat code iterated over every license running code like
@@ -633,8 +708,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	release.ExternalIDs = append(release.ExternalIDs, fatcat2.ExternalID{
 		Type:  "doi",
-		Value: xrefDOI,
+		Value: strings.ToLower(xrefdoc.DOI),
 	})
+
 	if len(xrefdoc.ISBN) > 0 {
 		for _, isbn := range xrefdoc.ISBN {
 			if len(isbn) == 17 {
@@ -659,7 +735,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	for i, a := range xrefdoc.Author {
 		contrib, err := a.ToReleaseContrib(client)
 		if err != nil {
-			return out, err
+			return release, err
 		}
 		contrib.Position = i
 		contrib.Role = "author"
@@ -668,7 +744,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	for _, a := range xrefdoc.Editor {
 		contrib, err := a.ToReleaseContrib(client)
 		if err != nil {
-			return out, err
+			return release, err
 		}
 		contrib.Role = "editor"
 		release.Contribs = append(release.Contribs, contrib)
@@ -676,7 +752,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	for _, a := range xrefdoc.Translator {
 		contrib, err := a.ToReleaseContrib(client)
 		if err != nil {
-			return out, err
+			return release, err
 		}
 		contrib.Role = "translator"
 		release.Contribs = append(release.Contribs, contrib)
@@ -712,120 +788,74 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		}
 	}
 
-	id, err := fatcat2.CreateRelease(client, release)
-	if err != nil {
-		return out, err
+	return release, nil
+}
+
+func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xrefdoc crossrefDoc) error {
+	var containerTitle string
+
+	if len(xrefdoc.ContainerTitle) > 0 {
+		// TODO fatcat importer is using ftfy to clean this value up; we can do
+		// that on the server side on container creation.
+		// TODO fatcat importer was arbitrarily using the first container title in
+		// the list so I've continued that practice but it feels weird
+		containerTitle = xrefdoc.ContainerTitle[0]
 	}
 
-	out.Releases.Added++
-
-	l.Debug("created release", id)
-
-	if !isCrawlWanted(release) {
-		l.Debug("decided crawl was unwanted")
-		return out, err
-	}
-
-	out.Releases.CrawlWanted++
-
-	// porting the monster that is process_file from sandcrawler:python/sandcrawler/ingest_file.py
-	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
-		AccessKey: viper.GetString("spn.access_key"),
-		SecretKey: viper.GetString("spn.secret_key"),
-		Endpoint:  viper.GetString("spn.endpoint"),
-	})
-	if err != nil {
-		l.Debug(err.Error())
-		panic("spn client was not created")
-	}
-
-	cdxClient := cdx.NewClient(cdx.CDXClientOpts{
-		Auth:      viper.GetString("cdx.auth"),
-		Endpoint:  viper.GetString("cdx.endpoint"),
-		UserAgent: viper.GetString("cdx.user_agent"),
-		Retries:   viper.GetInt("cdx.retries"),
-		// TODO use GetDuration
-		Backoff: viper.GetString("cdx.backoff"),
-	})
-
-	var res crawling.CrawlResult
-
-	for _, u := range release.FulltextURLs() {
-		crawler := crawling.PDFCrawler{
-			SPNClient:       spnClient,
-			CDXClient:       cdxClient,
-			MaxHops:         8,
-			UserAgent:       viper.GetString("crawling.user_agent"),
-			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
-			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
-			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
-			Logger:          slog.Default(),
-		}
-
-		res, err = crawler.Crawl(u)
-
-		if err != nil {
-			l.Info(fmt.Sprintf("%s: get failed: %s", release.ID, err.Error()))
-			continue
-		}
-
-		l.Debug(fmt.Sprintf("%s: got result %v", release.ID, res))
-		if res.Success {
+	var issnl string
+	for _, i := range xrefdoc.ISSN {
+		issnl = issn.ISSN2ISSNL(i)
+		if issnl != "" {
 			break
 		}
-		// TODO check result -- if success, break and continue. otherwise..?
-		// results we care about later are going to be in the slog
-		// question is if we should only use result for success and errors for failure
 	}
 
-	if err != nil || !res.Success {
-		return out, nil
+	containerID := uuid.Nil
+	var err error
+
+	if issnl != "" {
+		// TODO could build a map of issnl->cid somewhere to save on requests
+		containerID, err = fatcat2.LookupIssnl(client, issnl)
+		if err != nil {
+			return err
+		}
 	}
 
-	// do I want to add file rows before or after blobproc? I think after,
-	// because we don't need to make a file record if we can't parse the PDF,
-	// right? or is there value in saving whatever we find? I can see value
-	// either way...esp if blobproc is down, we can always revisit the files
-	// later. so make a file entry then submit to blobproc.
-
-	// i should check to see if we have a file, though? maybe it doesn't matter.
-	// but i need checksums either way; and for that, i'll need the bytes in ram.
-
-	// TODO can share this pdf byte handling stuff between different upstreams
-
-	file := fatcat2.File{
-		Releases: []fatcat2.Release{release},
-		URLs: []fatcat2.FileURL{
-			{
-				Rel: "wayback",
-				URL: res.Chain[len(res.Chain)-1],
-			},
-		},
+	if containerID == uuid.Nil {
+		if containerTitle != "" && issnl != "" {
+			c := fatcat2.Container{
+				Name:      containerTitle,
+				ISSNL:     issnl,
+				Publisher: xrefdoc.Publisher,
+				Type:      containerTypeMap[release.Type],
+			}
+			containerID, err = fatcat2.CreateContainer(client, c)
+			if err != nil {
+				return err
+			}
+			cs.Containers.Added++
+		} else if containerTitle != "" {
+			release.Extra["container_name"] = containerTitle
+			cs.Containers.Skipped++
+		}
+	} else {
+		cs.Containers.Ignored++
 	}
 
-	pdfBs, err := io.ReadAll(res.Content)
+	if containerID != uuid.Nil {
+		release.ContainerID = &containerID
+	}
+
+	// licenses
+
+	id, err := fatcat2.CreateRelease(client, *release)
 	if err != nil {
-		return out, fmt.Errorf("could not read pdf bytes: %w", err)
+		return err
 	}
 
-	if err = file.SetMetadata(pdfBs); err != nil {
-		return out, err
-	}
+	release.ID = id
 
-	fid, err := fatcat2.CreateFile(client, file)
-	if err != nil {
-		return out, fmt.Errorf("fc2 api failed to make file '%s': %w", fid, err)
-	}
-
-	l.Debug("created file", fid)
-
-	out.Releases.Acquired++
-
-	// TODO pdf bytes are in res.Content as io.Reader, need to shunt to blobproc
-	// TODO poll for blobproc result
-	// TODO check metadata against FC record
-	// TODO ingest PDF (Ingested++)
-	return out, nil
+	return nil
 }
 
 // isCrawlWanted returns true if we feel this release is worthy of a crawl
@@ -913,7 +943,7 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 		workflow.GetLogger(ctx).Error("scholkit crossref activity failed:", err)
 		return out, err
 	}
-	workflow.GetLogger(ctx).Info("scholkit crossref s3key:", skOut.S3Key)
+	workflow.GetLogger(ctx).Info("scholkit crossref s3key: " + skOut.S3Key)
 
 	ao = workflow.ActivityOptions{
 		StartToCloseTimeout: 8 * 60 * 60 * time.Second,

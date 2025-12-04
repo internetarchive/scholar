@@ -494,6 +494,11 @@ func LookupIssnl(c *http.Client, issnl string) (uuid.UUID, error) {
 	return lookup(c, "container", "issnl", issnl)
 }
 
+// LookupSha256 returns the ID of a fatcat2 File with the given Sha256, if any.
+func LookupSha256(c *http.Client, sha256 string) (uuid.UUID, error) {
+	return lookup(c, "file", "sha256", sha256)
+}
+
 func fc2uuid(fatcatIdent string) (uuid.UUID, error) {
 	i := strings.ToUpper(fatcatIdent + "======")
 	decoded, err := base32.StdEncoding.DecodeString(i)

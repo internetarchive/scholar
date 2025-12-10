@@ -50,6 +50,7 @@ type PDFCrawler struct {
 	SimpleGets      []string
 	Blocklist       []string
 	Logger          *slog.Logger
+	crawlTrace      uuid.UUID
 }
 
 type CrawlResult struct {
@@ -61,10 +62,21 @@ type CrawlResult struct {
 	// TODO
 }
 
-// TODO decide on CrawlResult
-// TODO implement slog for crawl results
+func (c PDFCrawler) fetchWaybackRedirect(URL string, ts time.Time) (*http.Response, error) {
+	client := &http.Client{}
+	return c.fetchWayback(client, URL, ts)
+}
 
-func (c PDFCrawler) fetchLiveReplay(URL string, ts time.Time) (io.Reader, error) {
+func (c PDFCrawler) fetchWaybackNoRedirect(URL string, ts time.Time) (*http.Response, error) {
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	return c.fetchWayback(client, URL, ts)
+}
+
+func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) (*http.Response, error) {
 	u, err := url.Parse(c.WaybackEndpoint)
 	if err != nil {
 		panic(err)
@@ -72,18 +84,14 @@ func (c PDFCrawler) fetchLiveReplay(URL string, ts time.Time) (io.Reader, error)
 	// TODO this should live elsewhere; it's been propagating (cdx, spnclient)
 	timeFormat := "20060102150405"
 	timestamp := ts.Format(timeFormat)
-	u = u.JoinPath(timestamp, "id_/", URL)
+	u = u.JoinPath(timestamp+"id_/", URL)
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
 		panic(err)
 	}
 	req.Header.Set("User-Agent", c.UserAgent)
 
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	fmt.Printf("DBG %#v\n", u.String())
 
 	attempts := 0
 	retries := viper.GetInt("wayback.retries")
@@ -125,39 +133,44 @@ func (c PDFCrawler) fetchLiveReplay(URL string, ts time.Time) (io.Reader, error)
 	       )
 	*/
 
-	if resp.StatusCode != http.StatusOK {
-		// TODO return reader; only read body here if non-200 status code
-		bs, err := io.ReadAll(resp.Body)
-		var body string
-		if err == nil {
-			body = string(bs)
+	/*
+		if resp.StatusCode != http.StatusOK {
+			// TODO return reader; only read body here if non-200 status code
+			bs, err := io.ReadAll(resp.Body)
+			var body string
+			if err == nil {
+				body = string(bs)
+			}
+
+			return nil, fmt.Errorf("got a non 200 from wayback: %d: '%s'", resp.StatusCode, body)
 		}
+	*/
 
-		return nil, fmt.Errorf("got a non 200 from wayback: %d: '%s'", resp.StatusCode, body)
-	}
+	return resp, nil
+}
 
-	return resp.Body, nil
+func (c PDFCrawler) slogInfo(msg string, args ...any) {
+	args = append(args, "trace")
+	args = append(args, c.crawlTrace)
+	c.Logger.Info(msg, args...)
 }
 
 func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
-	out := CrawlResult{}
+	out := &CrawlResult{}
 
 	trace, err := uuid.NewV7()
 	if err != nil {
-		return out, fmt.Errorf("could not generate trace ID: %w", err)
+		return *out, fmt.Errorf("could not generate trace ID: %w", err)
 	}
 
-	slogInfo := func(msg string, args ...any) {
-		args = append(args, "trace")
-		args = append(args, trace)
-		c.Logger.Info(msg, args...)
-	}
+	c.crawlTrace = trace
 
-	slogInfo("starting crawl", "starturl", startURL)
+	c.slogInfo("starting crawl", "starturl", startURL)
 
 	out.Chain = []string{startURL}
 
-	defer slogInfo("ending crawl", "result", out)
+	// TODO if we end at a url to which we were redirected i want that in the chain
+	defer c.slogInfo("ending crawl", "result", out)
 
 	for len(out.Chain) < c.MaxHops {
 		u := out.Chain[len(out.Chain)-1]
@@ -166,16 +179,16 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			// in the historical sandcrawler data there are a lot of URLs that
 			// fail to parse -- none of them ever led to a hit. Thus, a fail here
 			// should just give up on the PDF attempt and not bother with SPN.
-			slogInfo("unparsable URL", "url", u, "err", err.Error())
+			c.slogInfo("unparsable URL", "url", u, "err", err.Error())
 			out.FailReason = "bad-url"
-			return out, nil
+			return *out, nil
 		}
 
 		for _, p := range c.Blocklist {
 			if strings.Contains(parsed.String(), p) {
-				slogInfo("blocked URL", "url", parsed.String(), "pattern", p)
+				c.slogInfo("blocked URL", "url", parsed.String(), "pattern", p)
 				out.FailReason = "blocklist"
-				return out, nil
+				return *out, nil
 			}
 		}
 
@@ -184,7 +197,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		ru := c.maybeRewrite(u)
 
 		if ru != u {
-			slogInfo("rewrote URL", "from", u, "to", ru)
+			c.slogInfo("rewrote URL", "from", u, "to", ru)
 			simpleGet = true
 		} else {
 			for _, pattern := range c.SimpleGets {
@@ -195,170 +208,119 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 					suffix = split[1]
 				}
 				if strings.Contains(u, substr) && strings.HasSuffix(u, suffix) {
-					slogInfo("simple GET list match", "url", ru, "pattern", pattern)
+					c.slogInfo("simple GET list match", "url", ru, "pattern", pattern)
 					simpleGet = true
 					break
 				}
 			}
 		}
-
 		u = ru
 
-		req := spn.SaveRequest{
-			URL:                u,
-			CaptureAll:         true,
-			ForceGet:           simpleGet,
-			SkipFirstArchive:   true,
-			DelayForJavascript: !simpleGet,
-			JavascriptTimeout:  30,
-		}
+		// TODO TODO TODO TODO
+		// OK SO HERE IS THE THING
+		// Now that I understand this flow a lot better and have even drawn out FSA
+		// diagrams I want to do a second pass on this code so it looks something like:
 
-		// poll until we obtain a slot
-		var jobID string
-		attempts := 0
-		spnSlotPollInterval := viper.GetDuration("crawling.spn_slot_poll_interval")
+		// 000 u <- last(chain)
+		// 010 row <- recentCdxRow(u)
+		// 020 if not row:
+		// 030    row <- spnToRow(u)
+		// 040 if row is pdf:
+		// 050    end crawl,
+		// 055 if row is error:
+		// 056    end crawl
+		// 060 if row is html:
+		// 070    link <- findLink(row)
+		// 080    if link:
+		// 085       chain.append(link)
+		// 090       GOTO 00
+		// 100 end crawl
 
-		var cdxRow *cdx.CDXRow
+		// TODO the old code fetched N rows then tried to find the most recent 200
+		// response. I'm choosing to only look at the single most recent row for now.
+		var row *cdx.CDXRow
+		rows, err := c.CDXClient.Query(cdx.QueryParams{
+			URL:   u,
+			Limit: -1,
+		})
 
-		for jobID == "" {
-			resp, err := c.SPNClient.Save(req)
+		if len(rows) > 0 {
+			row = &rows[0]
+		} else {
+			if simpleGet {
+				row, err = c.spnGetToCdx(u)
+			} else {
+				row, err = c.spnBrowserToCdx(u)
+			}
 			if err != nil {
-				// TODO slog? what to do here? if transient we want temporal to poll;
-				// if related to input, crawl should end; otherwise..? I *this* an
-				// error like this (instead of a message in the payload) implies
-				// transient failure
-				return out, fmt.Errorf("spn api failure: %w", err)
+				return *out, err
 			}
-
-			if strings.Contains(resp.Message, "reached the limit of active sessions") {
-				slogInfo("SPN slots full, polling", "attempt", attempts, "poll", spnSlotPollInterval)
-				// TODO should we bail after N attempts?
-				time.Sleep(spnSlotPollInterval)
-				continue
-			}
-
-			if strings.Contains(resp.Message, "The same snapshot had been made") {
-				// I suspect this is a rare case and it makes the code kind of ass
-				slogInfo("SPN claimed existing snapshot, querying CDX", "url", u)
-				rows, err := c.CDXClient.Query(cdx.QueryParams{
-					URL: u,
-					Filters: []string{
-						"statuscode:2..",
-					},
-					Limit: 1,
-				})
-				if err != nil || len(rows) == 0 {
-					return out, fmt.Errorf("SPN claimed existing snapshot but '%s' not in cdx", u)
-				}
-				cdxRow = &rows[0]
-				break
-			}
-
-			if resp.JobID == "" {
-				slogInfo("spn response lacked job id", "resp", resp)
-				return out, SPNError{
-					Message: resp.Message,
-					URL:     resp.URL,
-				}
-			}
-
-			jobID = resp.JobID
 		}
 
-		// There's a slim chance that the thing we want is already in CDX and we skip the SPN request.
-		if cdxRow == nil {
-			// poll until job completes
-			var spnJobResult spn.JobStatus
-			for {
-				spnJobResult, err = c.SPNClient.StatusJob(jobID)
-				if err != nil {
-					slogInfo("spn job status failure", "err", err.Error())
-					return out, fmt.Errorf("could not get spn job status: %w", err)
-				}
+		c.slogInfo("FOUND A CDX ROW", "row", row)
 
-				if spnJobResult.Status == "pending" {
-					slogInfo("sleeping while spn pending")
-					time.Sleep(viper.GetDuration("crawling.spn_job_poll_interval"))
-					continue
-				}
+		if row.StatusCode > 399 {
+			c.slogInfo("error code %d", row.StatusCode)
+			out.FailReason = fmt.Sprintf("status-%d", row.StatusCode)
+			return *out, nil
+		}
 
-				break
-			}
+		var resp *http.Response
 
-			if spnJobResult.Status != "success" {
-				slogInfo("spn failure", "result", spnJobResult)
-				return out, SPNError{
-					Message: spnJobResult.Message,
-					URL:     spnJobResult.OriginalURL,
-					JobID:   spnJobResult.JobID,
-				}
-			}
-
-			// TODO  original code had a check for 'original_url' starting with /; did
-			// not see that coming up in the last month+ of sc logs so i'm leaving it
-			// out. There was an additional check seeing if :// was not in a url; this
-			// used a status called spn2-success-partial-url but I didn't see any cases
-			// of that in the sc db
-
-			// TODO investigate high number of spn2-cdx-lookup-failure. Grabbing a
-			// recent one, it's something we tried to get today and indeed have found
-			// in the wayback machine now. The current delay for a CDX lookup is 9
-			// seconds so we should up that; going to start with 30 seconds.
-
-			// TODO we have code around ftp:// resources but have only ever processed
-			// 2500 of those and not since 2020 so dropping for now
-
-			rows, err := c.CDXClient.Query(cdx.QueryParams{
-				From: spnJobResult.Time,
-				To:   spnJobResult.Time,
-				URL:  spnJobResult.OriginalURL,
-				Filters: []string{
-					"statuscode:2..",
-				},
-				Limit: 1,
-			})
+		if row.StatusCode == 302 {
+			resp, err := c.fetchWaybackNoRedirect(row.URL, row.Datetime)
 			if err != nil {
-				// TODO think through this. As it stands, this will fail the temporal
-				// activity and lead to a retry. That's pretty much what I want, right?
-				slogInfo("spn succeeded but did not find in CDX", "err", err.Error())
-				return out, fmt.Errorf("failed to find successful SPN job in CDX: %w", err)
+				return *out, fmt.Errorf("could not get replay from wb: %w", err)
 			}
-
-			if len(rows) == 0 {
-				return out, fmt.Errorf("no error from CDX but 0 rows in result for %s",
-					spnJobResult.OriginalURL)
+			fmt.Printf("DBG %#v\n", resp.Header)
+			loc := resp.Header.Get("Location")
+			if loc == "" {
+				return *out, fmt.Errorf("empty location header in redirect for '%s'", u)
 			}
-
-			cdxRow = &rows[0]
+			c.slogInfo("found redirect", "from", row.URL, "to", loc)
+			if strings.HasPrefix(loc, "https://web.archive.org/web/") {
+				split := strings.Split(loc, "/")
+				loc = strings.Join(split[5:], "/")
+				c.slogInfo("trimmed wayback prefix for redirect", "result", loc)
+			}
+			out.Chain = append(out.Chain, loc)
+			continue
+		} else if row.StatusCode == 301 || (row.StatusCode >= 200 && row.StatusCode <= 299) {
+			resp, err = c.fetchWaybackRedirect(row.URL, row.Datetime)
+			if err != nil {
+				return *out, fmt.Errorf("could not get replay from wb: %w", err)
+			}
+		} else {
+			return *out, fmt.Errorf("surprising status code %d", row.StatusCode)
 		}
 
-		content, err := c.fetchLiveReplay(cdxRow.URL, cdxRow.Datetime)
-		if err != nil {
-			return out, fmt.Errorf("could not find cdx row '%s' %v in live wayback: %w", cdxRow.URL, cdxRow.Datetime, err)
-		}
+		content := resp.Body
+		mimetype := resp.Header.Get("Content-Type")
 
-		if cdxRow.Mimetype == "application/pdf" {
+		fmt.Printf("DBG %#v\n", mimetype)
+
+		if strings.Contains(mimetype, "application/pdf") {
 			out.Success = true
 			out.Content = content
-			return out, nil
+			return *out, nil
 		}
 
 		// TODO i question the wisdom of proceeding from this point with XML; xhtml, sure.
-		if !c.isHTMLishMimetype(cdxRow.Mimetype) {
+		if !c.isHTMLishMimetype(mimetype) {
 			// TODO set up result for un-proceedable mimetype
 			out.FailReason = "unknown-mimetype"
-			slogInfo("un-processable mimetype", "mimetype", cdxRow.Mimetype)
-			return out, nil
+			c.slogInfo("un-processable mimetype", "mimetype", mimetype)
+			return *out, nil
 		}
 
-		nextLink, err := c.findNextLink(cdxRow.URL, content)
+		nextLink, err := c.findNextLink(row.URL, content)
 		if err != nil {
-			return out, fmt.Errorf("pdf link heuristics failure: %w", err)
+			return *out, fmt.Errorf("pdf link heuristics failure: %w", err)
 		}
 
 		if nextLink == nil {
 			out.FailReason = "dead-end"
-			return out, nil
+			return *out, nil
 		}
 
 		out.Techniques = append(out.Techniques, nextLink.Technique)
@@ -366,7 +328,133 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 	}
 
 	// should be unreachable
-	return out, nil
+	return *out, nil
+}
+
+func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
+	// TODO use if_not_archived_within with a wide timescale -- maybe a week? two weeks?
+	var out *cdx.CDXRow
+
+	req := spn.SaveRequest{
+		URL:                u,
+		CaptureAll:         true,
+		ForceGet:           simpleGet,
+		SkipFirstArchive:   true,
+		DelayForJavascript: !simpleGet,
+		JavascriptTimeout:  30,
+	}
+
+	// poll until we obtain a slot
+	var jobID string
+	attempts := 0
+	spnSlotPollInterval := viper.GetDuration("crawling.spn_slot_poll_interval")
+
+	for jobID == "" {
+		resp, err := c.SPNClient.Save(req)
+		if err != nil {
+			// TODO slog? what to do here? if transient we want temporal to poll;
+			// if related to input, crawl should end; otherwise..? I *this* an
+			// error like this (instead of a message in the payload) implies
+			// transient failure
+			return out, fmt.Errorf("spn api failure: %w", err)
+		}
+
+		if strings.Contains(resp.Message, "reached the limit of active sessions") {
+			c.slogInfo("SPN slots full, polling", "attempt", attempts, "poll", spnSlotPollInterval)
+			// TODO should we bail after N attempts?
+			time.Sleep(spnSlotPollInterval)
+			continue
+		}
+
+		if strings.Contains(resp.Message, "The same snapshot had been made") {
+			// just continue, here, without updating the chain -- it'll execute the
+			// CDX lookup again.  for this to even happen it means that a request
+			// for this url *finished* between our initial CDX check and then the
+			// subsequent SPN req. I could see that race condition happening if
+			// this job is flapping for some reason..?
+			// I suspect this is a rare case and it makes the code kind of ass
+			c.slogInfo("SPN claimed existing snapshot, going back to CDX lookup...", "url", u)
+			continue
+		}
+
+		if resp.JobID == "" {
+			c.slogInfo("spn response lacked job id", "resp", resp)
+			return out, SPNError{
+				Message: resp.Message,
+				URL:     resp.URL,
+			}
+		}
+
+		jobID = resp.JobID
+	}
+
+	var err error
+
+	// poll until job completes
+	var spnJobResult spn.JobStatus
+	for {
+		spnJobResult, err = c.SPNClient.StatusJob(jobID)
+		if err != nil {
+			c.slogInfo("spn job status failure", "err", err.Error())
+			return out, fmt.Errorf("could not get spn job status: %w", err)
+		}
+
+		if spnJobResult.Status == "pending" {
+			c.slogInfo("sleeping while spn pending")
+			time.Sleep(viper.GetDuration("crawling.spn_job_poll_interval"))
+			continue
+		}
+
+		break
+	}
+
+	if spnJobResult.Status != "success" {
+		c.slogInfo("spn failure", "result", spnJobResult)
+		return out, SPNError{
+			Message: spnJobResult.Message,
+			URL:     spnJobResult.OriginalURL,
+			JobID:   spnJobResult.JobID,
+		}
+	}
+	rows, err := c.CDXClient.Query(cdx.QueryParams{
+		From:  spnJobResult.Time,
+		To:    spnJobResult.Time,
+		URL:   spnJobResult.OriginalURL,
+		Limit: 1,
+	})
+	if err != nil {
+		c.slogInfo("spn succeeded but did not find in CDX", "err", err.Error())
+		return out, fmt.Errorf("failed to find successful SPN job in CDX: %w", err)
+	}
+	if len(rows) == 0 {
+		return out, fmt.Errorf("no error from CDX but 0 rows in result for %s",
+			spnJobResult.OriginalURL)
+	}
+
+	return &rows[0], nil
+
+	// TODO  original code had a check for 'original_url' starting with /; did
+	// not see that coming up in the last month+ of sc logs so i'm leaving it
+	// out. There was an additional check seeing if :// was not in a url; this
+	// used a status called spn2-success-partial-url but I didn't see any cases
+	// of that in the sc db
+
+	// TODO investigate high number of spn2-cdx-lookup-failure. Grabbing a
+	// recent one, it's something we tried to get today and indeed have found
+	// in the wayback machine now. The current delay for a CDX lookup is 9
+	// seconds so we should up that; going to start with 30 seconds.
+
+	// TODO we have code around ftp:// resources but have only ever processed
+	// 2500 of those and not since 2020 so dropping for now
+
+}
+
+func (c PDFCrawler) spnGetToCdx(u string) (*cdx.CDXRow, error) {
+	return c.spnToCdx(u, true)
+}
+
+func (c PDFCrawler) spnBrowserToCdx(u string) (*cdx.CDXRow, error) {
+	return c.spnToCdx(u, false)
 }
 
 func decodeHTMLBody(body io.Reader, cset string) (io.Reader, error) {
@@ -919,6 +1007,12 @@ func (c PDFCrawler) maybeRewrite(u string) string {
 	// https://mhealth.jmir.org/2020/7/e17891/PDF
 	if strings.Contains(u, ".jmir.org") && !strings.Contains(u, "/pdf") {
 		return strings.TrimSuffix(u, "/") + "/PDF"
+	}
+
+	// https://array.aami.org/doi/10.2345/0899-8205-54.s3.31
+	// https://array.aami.org/doi/pdf/10.2345/0899-8205-54.s3.31
+	if strings.Contains(u, "array.aami.org/doi/10.") {
+		return strings.Replace(u, "/doi/", "/doi/pdf/", 1) + "?download=true"
 	}
 
 	// ported without much context or meaning

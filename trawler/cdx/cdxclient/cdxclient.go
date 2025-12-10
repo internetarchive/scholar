@@ -198,6 +198,10 @@ func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 
 	// TODO if Auth is unset, validate for the unauthed version (7 column) of output
 
+	if len(payload) < 2 {
+		return out, nil
+	}
+
 	for _, r := range payload[1:] {
 		if len(r) != 11 {
 			return out, fmt.Errorf("cdx api returned malformed row: %v", r)

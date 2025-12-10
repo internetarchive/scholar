@@ -117,18 +117,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-/*
-
-expose as flags etc
-
-type CDXParams struct {
-	URL       string
-	From      *time.Time
-	To        *time.Time
-	MatchType string
-	Limit     int
-	Output    string
-	Filters   []string
-}
-*/

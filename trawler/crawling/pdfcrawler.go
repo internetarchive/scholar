@@ -54,11 +54,13 @@ type PDFCrawler struct {
 }
 
 type CrawlResult struct {
-	Chain      []string
-	Success    bool
-	FailReason string
-	Techniques []string
-	Content    io.Reader
+	Chain       []string
+	Success     bool
+	FailReason  string
+	Techniques  []string
+	Content     io.Reader
+	SnapshotUrl string
+	Mimetype    string
 	// TODO
 }
 
@@ -76,7 +78,7 @@ func (c PDFCrawler) fetchWaybackNoRedirect(URL string, ts time.Time) (*http.Resp
 	return c.fetchWayback(client, URL, ts)
 }
 
-func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) (*http.Response, error) {
+func (c PDFCrawler) toWaybackURL(URL string, ts time.Time) string {
 	u, err := url.Parse(c.WaybackEndpoint)
 	if err != nil {
 		panic(err)
@@ -84,14 +86,19 @@ func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) 
 	// TODO this should live elsewhere; it's been propagating (cdx, spnclient)
 	timeFormat := "20060102150405"
 	timestamp := ts.Format(timeFormat)
-	u = u.JoinPath(timestamp+"id_/", URL)
-	req, err := http.NewRequest("GET", u.String(), nil)
+	return u.JoinPath(timestamp+"id_/", URL).String()
+}
+
+func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) (*http.Response, error) {
+	wbUrl := c.toWaybackURL(URL, ts)
+
+	req, err := http.NewRequest("GET", wbUrl, nil)
 	if err != nil {
 		panic(err)
 	}
 	req.Header.Set("User-Agent", c.UserAgent)
 
-	fmt.Printf("DBG %#v\n", u.String())
+	fmt.Printf("DBG %#v\n", wbUrl)
 
 	attempts := 0
 	retries := viper.GetInt("wayback.retries")
@@ -257,6 +264,10 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			}
 		}
 
+		if row.URL != u {
+			out.Chain = append(out.Chain, row.URL)
+		}
+
 		c.slogInfo("FOUND A CDX ROW", "row", row)
 
 		if row.StatusCode > 399 {
@@ -264,6 +275,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			out.FailReason = fmt.Sprintf("status-%d", row.StatusCode)
 			return *out, nil
 		}
+
+		// TODO i saw warc/revisit coming up
 
 		var resp *http.Response
 
@@ -275,6 +288,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			fmt.Printf("DBG %#v\n", resp.Header)
 			loc := resp.Header.Get("Location")
 			if loc == "" {
+				// TODO i don't think this is an error case, just a crawl ender? unless
+				// we think it represents a transiet wbm issue...
 				return *out, fmt.Errorf("empty location header in redirect for '%s'", u)
 			}
 			c.slogInfo("found redirect", "from", row.URL, "to", loc)
@@ -282,6 +297,15 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				split := strings.Split(loc, "/")
 				loc = strings.Join(split[5:], "/")
 				c.slogInfo("trimmed wayback prefix for redirect", "result", loc)
+			} else if strings.HasPrefix(loc, "/web/") {
+				split := strings.Split(loc, "/")
+				loc = strings.Join(split[3:], "/")
+				c.slogInfo("trimmed wayback prefix for redirect", "result", loc)
+			}
+			if loc == row.URL {
+				c.slogInfo("detected infinite redirect", "url", loc)
+				out.FailReason = "infinite-redirect"
+				return *out, nil
 			}
 			out.Chain = append(out.Chain, loc)
 			continue
@@ -302,6 +326,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		if strings.Contains(mimetype, "application/pdf") {
 			out.Success = true
 			out.Content = content
+			out.SnapshotUrl = c.toWaybackURL(row.URL, row.Datetime)
+			out.Mimetype = mimetype
 			return *out, nil
 		}
 

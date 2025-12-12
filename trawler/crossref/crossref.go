@@ -453,7 +453,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 			continue
 		}
 
-		l.Debug(fmt.Sprintf("%s: got result %v", release.ID, res))
+		l.Debug(fmt.Sprintf("%s: got result %#v", release.ID, res))
 		if res.Success {
 			break
 		}
@@ -477,12 +477,15 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	// TODO can share this pdf byte handling stuff between different upstreams
 
+	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
+
 	file := fatcat2.File{
 		Releases: []fatcat2.Release{release},
+		Mimetype: mimetype,
 		URLs: []fatcat2.FileURL{
 			{
 				Rel: "wayback",
-				URL: res.Chain[len(res.Chain)-1],
+				URL: res.SnapshotUrl,
 			},
 		},
 	}
@@ -506,12 +509,18 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, fmt.Errorf("failed to look up checksum '%s': %w", file.Sha256, err)
 	}
 
+	// TODO we could verify that the existing file is attached to the release ID
+	// we're working with...
+
 	if fileID == uuid.Nil {
 		fid, err := fatcat2.CreateFile(client, file)
 		if err != nil {
-			return out, fmt.Errorf("fc2 api failed to make file '%s': %w", fid, err)
+			return out, fmt.Errorf("fc2 api failed to make file for '%s': %w", file.URLs[0].URL, err)
 		}
+		// TODO url is lacking wayback prefix
 		l.Debug(fmt.Sprintf("created file %s", fid))
+	} else {
+		l.Debug(fmt.Sprintf("ignoring known sha256 '%s' (rid: '%s'", file.Sha256, release.ID))
 	}
 
 	out.Releases.Acquired++
@@ -533,6 +542,8 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 		Issue:       xrefdoc.Issue,
 		Pages:       xrefdoc.Page,
 		Language:    xrefdoc.Language,
+		// TODO fix source setting
+		Source: "dev",
 	}
 
 	var releaseType string

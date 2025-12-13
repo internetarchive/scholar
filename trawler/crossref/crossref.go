@@ -548,6 +548,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, fmt.Errorf("got blank spool url")
 	}
 
+	// blobproc uses sha1. it should be in the spoolUrl and it should match what we derived earlier
 	if !strings.Contains(spoolUrl, file.Sha1) {
 		return out, fmt.Errorf("expected to see file sha1 '%s' in spool url '%s'", file.Sha1, spoolUrl)
 	}
@@ -573,7 +574,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	s3Key := fmt.Sprintf("%s/%s/%s/%s.txt", s3Prefix, file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
-	// blobproc uses sha1. it should be in the spoolUrl and it should match what we derived earlier
+	fmt.Println("TODO get text from " + s3Key)
 
 	// TODO get text from s3
 	// TODO do we want to touch grobid stuff at this point? look at what sandcrawler does now...

@@ -276,8 +276,6 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			return *out, nil
 		}
 
-		// TODO i saw warc/revisit coming up
-
 		var resp *http.Response
 
 		if row.StatusCode == 302 {
@@ -358,7 +356,6 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 }
 
 func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
-	// TODO use if_not_archived_within with a wide timescale -- maybe a week? two weeks?
 	var out *cdx.CDXRow
 
 	req := spn.SaveRequest{

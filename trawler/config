@@ -219,3 +219,12 @@ retries = 4
 replay_endpoint = "https://web.archive.org/web/"
 retries = 4
 backoff = "10s"
+
+[blobproc]
+endpoint = "http://wbgrp-svc263.us.archive.org:9444/spool"
+poll_interval = "2s"
+s3prefix = "sandcrawler/text/"
+# TODO these will go away once the seaweed merger/upgrade is done
+s3endpoint = "wbgrp-svc171.us.archive.org"
+s3accesskey = ""
+s3secretkey = ""

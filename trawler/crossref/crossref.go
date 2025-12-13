@@ -512,22 +512,71 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// TODO we could verify that the existing file is attached to the release ID
 	// we're working with...
 
-	if fileID == uuid.Nil {
-		fid, err := fatcat2.CreateFile(client, file)
-		if err != nil {
-			return out, fmt.Errorf("fc2 api failed to make file for '%s': %w", file.URLs[0].URL, err)
-		}
-		// TODO url is lacking wayback prefix
-		l.Debug(fmt.Sprintf("created file %s", fid))
-	} else {
+	if fileID != uuid.Nil {
 		l.Debug(fmt.Sprintf("ignoring known sha256 '%s' (rid: '%s'", file.Sha256, release.ID))
+		return out, nil
 	}
 
+	fid, err := fatcat2.CreateFile(client, file)
+	if err != nil {
+		return out, fmt.Errorf("fc2 api failed to make file for '%s': %w", file.URLs[0].URL, err)
+	}
+	// TODO url is lacking wayback prefix
+	l.Debug(fmt.Sprintf("created file %s", fid))
 	out.Releases.Acquired++
 
-	// TODO pdf bytes are in res.Content as io.Reader, need to shunt to blobproc
-	// TODO poll for blobproc result
-	// TODO check metadata against FC record
+	//	"Send your PDF payload to %s/spool - a 200 OK status only confirms receipt, not successful postprocessing, which may take more time. Check Location header for spool id."}`
+
+	req, err := http.NewRequest("POST", viper.GetString("blobproc.endpoint"), res.Content)
+	if err != nil {
+		return out, fmt.Errorf("could not form blobproc request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/pdf")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("error response from blobproc: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return out, fmt.Errorf("unexpected status from blobproc '%d'", resp.StatusCode)
+	}
+
+	spoolUrl := resp.Header.Get("Location")
+	if spoolUrl == "" {
+		return out, fmt.Errorf("got blank spool url")
+	}
+
+	if !strings.Contains(spoolUrl, file.Sha1) {
+		return out, fmt.Errorf("expected to see file sha1 '%s' in spool url '%s'", file.Sha1, spoolUrl)
+	}
+
+	req, err = http.NewRequest("GET", spoolUrl, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		time.Sleep(viper.GetDuration("blobproc.poll_interval"))
+		resp, err = client.Do(req)
+		if err != nil {
+			return out, fmt.Errorf("error polling blobproc: %w", err)
+		}
+
+		if resp.StatusCode == 404 {
+			break
+		}
+	}
+
+	s3Prefix := viper.GetString("blobproc.s3prefix")
+
+	s3Key := fmt.Sprintf("%s/%s/%s/%s.txt", s3Prefix, file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
+
+	// blobproc uses sha1. it should be in the spoolUrl and it should match what we derived earlier
+
+	// TODO get text from s3
+	// TODO do we want to touch grobid stuff at this point? look at what sandcrawler does now...
+
 	// TODO ingest PDF (Ingested++)
 	return out, nil
 }

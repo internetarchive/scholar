@@ -312,6 +312,42 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			if err != nil {
 				return *out, fmt.Errorf("could not get replay from wb: %w", err)
 			}
+		} else if row.Mimetype == "warc/revisit" {
+			// TODO i don't like this...
+			resp, err = c.fetchWaybackNoRedirect(row.URL, row.Datetime)
+			if err != nil {
+				return *out, fmt.Errorf("could not get replay from wb: %w", err)
+			}
+			if resp.StatusCode == 301 || resp.StatusCode == 302 {
+				// TODO unfortunate copypasta
+				loc := resp.Header.Get("Location")
+				if loc == "" {
+					// TODO i don't think this is an error case, just a crawl ender? unless
+					// we think it represents a transiet wbm issue...
+					return *out, fmt.Errorf("empty location header in redirect for '%s'", u)
+				}
+				c.slogInfo("found redirect", "from", row.URL, "to", loc)
+				if strings.HasPrefix(loc, "https://web.archive.org/web/") {
+					split := strings.Split(loc, "/")
+					loc = strings.Join(split[5:], "/")
+					c.slogInfo("trimmed wayback prefix for redirect", "result", loc)
+				} else if strings.HasPrefix(loc, "/web/") {
+					split := strings.Split(loc, "/")
+					loc = strings.Join(split[3:], "/")
+					c.slogInfo("trimmed wayback prefix for redirect", "result", loc)
+				}
+				if loc == row.URL {
+					c.slogInfo("detected infinite redirect", "url", loc)
+					out.FailReason = "infinite-redirect"
+					return *out, nil
+				}
+				out.Chain = append(out.Chain, loc)
+				continue
+			} else if resp.StatusCode > 302 {
+				c.slogInfo("error code %d", resp.StatusCode)
+				out.FailReason = fmt.Sprintf("status-%d", resp.StatusCode)
+				return *out, nil
+			} // else handle resp below
 		} else {
 			return *out, fmt.Errorf("surprising status code %d", row.StatusCode)
 		}
@@ -389,16 +425,21 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 			continue
 		}
 
-		if strings.Contains(resp.Message, "The same snapshot had been made") {
-			// just continue, here, without updating the chain -- it'll execute the
-			// CDX lookup again.  for this to even happen it means that a request
-			// for this url *finished* between our initial CDX check and then the
-			// subsequent SPN req. I could see that race condition happening if
-			// this job is flapping for some reason..?
-			// I suspect this is a rare case and it makes the code kind of ass
-			c.slogInfo("SPN claimed existing snapshot, going back to CDX lookup...", "url", u)
-			continue
-		}
+		/*
+			TODO used to do this check when this code was in the outer loop. given that
+			we check cdx right before invoking this, it feels like a far too edgy edge
+			case to worry about
+			if strings.Contains(resp.Message, "The same snapshot had been made") {
+				// just continue, here, without updating the chain -- it'll execute the
+				// CDX lookup again.  for this to even happen it means that a request
+				// for this url *finished* between our initial CDX check and then the
+				// subsequent SPN req. I could see that race condition happening if
+				// this job is flapping for some reason..?
+				// I suspect this is a rare case and it makes the code kind of ass
+				c.slogInfo("SPN claimed existing snapshot, going back to CDX lookup...", "url", u)
+				continue
+			}
+		*/
 
 		if resp.JobID == "" {
 			c.slogInfo("spn response lacked job id", "resp", resp)
@@ -439,6 +480,12 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 			JobID:   spnJobResult.JobID,
 		}
 	}
+	// TODO this shouldn't be necessary as we have sleeping in the cdx client;
+	// however, i hit a case where CDX's output couldn't be json parsed. I didn't
+	// have debug on so i don't know what exactly it returned. I'm going to
+	// gomment this out but put debug on in the hopes that I get that case again
+	// c.slogInfo("sleeping before CDX lookup")
+	//time.Sleep(5 * time.Second)
 	rows, err := c.CDXClient.Query(cdx.QueryParams{
 		From:  spnJobResult.Time,
 		To:    spnJobResult.Time,

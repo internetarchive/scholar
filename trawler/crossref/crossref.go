@@ -430,6 +430,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		UserAgent: viper.GetString("cdx.user_agent"),
 		Retries:   viper.GetInt("cdx.retries"),
 		Backoff:   viper.GetDuration("cdx.backoff"),
+		Debug:     true,
 	})
 
 	var res crawling.CrawlResult

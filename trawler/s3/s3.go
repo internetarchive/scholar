@@ -40,8 +40,8 @@ func GetObject(ctx context.Context, s3key string) (*minio.Object, error) {
 // TODO TODO TODO blobproc is still using 171, until that's all sorted out, this thing...
 func GetBlobprocObject(ctx context.Context, s3key string) (*minio.Object, error) {
 	endpoint := viper.GetString("blobproc.s3endpoint")
-	//accessKeyID := viper.GetString("s3.access_id")
-	//secretAccessKey := viper.GetString("s3.secret_key")
+	accessKeyID := viper.GetString("blobproc.s3accesskey")
+	secretAccessKey := viper.GetString("blobproc.s3secretkey")
 	// useSSL := true
 	useSSL := false // thonk
 	mc, err := minio.New(endpoint, &minio.Options{

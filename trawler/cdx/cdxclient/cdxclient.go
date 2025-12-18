@@ -163,9 +163,15 @@ func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 
 	attempts := 0
 	for {
+		if attempts == c.cfg.Retries {
+			break
+		}
+
 		attempts++
+
 		resp, err = c.client.Do(req)
-		if err == nil || attempts == c.cfg.Retries {
+
+		if err == nil || resp.StatusCode != 504 {
 			break
 		}
 

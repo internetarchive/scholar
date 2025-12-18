@@ -858,6 +858,19 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 		}
 	}
 
+	// TODO i need to do a freshness check on cdx lookups. for this site, for eg,
+	// i'm pulling a snapshot from 2024 which is not possible to scrape properly.
+	// i think it's okay to do something like "within 6 months" or "within four weeks"
+	// TODO test for this
+	if strings.Contains(URL, "sciengine.com/") {
+		issn, _ := doc.Find("meta[name='citation_issn']").Attr("content")
+		articleId, _ := doc.Find("meta[name='citation_id']").Attr("content")
+		if issn != "" && articleId != "" {
+			newUrl := fmt.Sprintf("https://www.sciengine.com/cfs/files/pdfs/view/%s/%s.pdf", issn, articleId)
+			return newPDFLinkResult(URL, newUrl, "sciengine"), nil
+		}
+	}
+
 	if strings.Contains(URL, "ieeexplore.ieee.org/stamp/stamp.jsp?arnumber") {
 		attr, ok := doc.Find("iframe").Attr("src")
 		if ok {
@@ -914,35 +927,6 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 	if ok {
 		return newPDFLinkResult(URL, attr, "download-pdf"), nil
 	}
-
-	// TODO port all the "old" style parsers
-
-	// the original code first tried to use selectolax+css selectors then an older approach which is a mix of beautiful soup and regexes over raw HTML.
-	// Ominously, the older code has comments like "[this function] is partially
-	// deprecated" and "note: most of these have migrated to the html_biblio code
-	// path". I ran through all of the old hacks and could not find exact matches
-	// for any of them in the newer code. From the logs of the past couple days,
-	// 6% of the pdf link detection attempts fell into the old code path. Of that
-	// 6%, the techniques that were applied:
-	//
-	// 42% osf-by-url -- all of these fail
-	// 52% elsevier-linkinghub -- most go to sciencedirect which fail. not all do
-	// 2% ojs-galley-href -- some success
-	// 1% ahajournals-url -- all of these succeed
-	// 1% google-drive -- many succeed
-	// <1% sciencedirect-munge-json -- led to pdf but got captcha'd
-
-	// of the 94% that were html_biblio, 6% of those were "self pointing" which
-	// is a situation I can't justify ever allowing and it's a mystery why Bryan
-	// did. The point of this work is to find a next hop that might go to a PDF
-	// -- a self link is not going to do that. The answer might lie on the "fuzzy
-	// equals" function for urls; no, that is just stripping www. and :80 and
-	// trailing / for an equals.
-
-	// I'd like more data but this is all journalctl knows about. still, I have some takeaways:
-	// - some of these are just url rewrties. I can move them into maybeRewrite.
-	// - some of these should just go to blocklist (already did sciencedirect)
-	// - some of these are purely regex based
 
 	return nil, nil
 }

@@ -152,6 +152,13 @@ func Test_findPDFLink(t *testing.T) {
 			expectedTechnique: "jspdfurl",
 		},
 		{
+			name:              "sciengine",
+			htmlPath:          "sciengine.html",
+			url:               "https://www.sciengine.com/APS2/doi/10.3724/SP.J.1042.2020.00381",
+			expectedURL:       "https://www.sciengine.com/cfs/files/pdfs/view/1671-3710/932593AEBB094599A958C01C32A3FF89.pdf",
+			expectedTechnique: "sciengine",
+		},
+		{
 			name:              "elifesciences",
 			htmlPath:          "elifesciences.html",
 			url:               "https://elifesciences.org/articles/59841",

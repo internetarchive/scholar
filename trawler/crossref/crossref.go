@@ -1,6 +1,7 @@
 package crossref
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -519,32 +521,41 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	//	"Send your PDF payload to %s/spool - a 200 OK status only confirms receipt, not successful postprocessing, which may take more time. Check Location header for spool id."}`
 
-	req, err := http.NewRequest("POST", viper.GetString("blobproc.endpoint"), res.Content)
+	blobprocEndpoint := viper.GetString("blobproc.endpoint")
+	req, err := http.NewRequest("POST", blobprocEndpoint, bytes.NewBuffer(pdfBs))
 	if err != nil {
 		return out, fmt.Errorf("could not form blobproc request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/pdf")
 
+	l.Debug(fmt.Sprintf("%s: submitting to blobproc", release.ID))
 	resp, err := client.Do(req)
 	if err != nil {
-		return out, fmt.Errorf("error response from blobproc: %w", err)
+		return out, fmt.Errorf("blobproc request error: %w", err)
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != 202 {
 		return out, fmt.Errorf("unexpected status from blobproc '%d'", resp.StatusCode)
 	}
 
-	spoolUrl := resp.Header.Get("Location")
-	if spoolUrl == "" {
+	loc := resp.Header.Get("Location")
+	if loc == "" {
 		return out, fmt.Errorf("got blank spool url")
 	}
 
-	// blobproc uses sha1. it should be in the spoolUrl and it should match what we derived earlier
-	if !strings.Contains(spoolUrl, file.Sha1) {
-		return out, fmt.Errorf("expected to see file sha1 '%s' in spool url '%s'", file.Sha1, spoolUrl)
+	pu, err := url.Parse(loc)
+	if err != nil {
+		panic(err)
 	}
 
-	req, err = http.NewRequest("GET", spoolUrl, nil)
+	pollUrl := blobprocEndpoint + pu.Path
+
+	// blobproc uses sha1. it should be in the spoolUrl and it should match what we derived earlier
+	if !strings.Contains(pollUrl, file.Sha1) {
+		return out, fmt.Errorf("expected to see file sha1 '%s' in spool url '%s'", file.Sha1, loc)
+	}
+
+	req, err = http.NewRequest("GET", pollUrl, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -559,16 +570,26 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		if resp.StatusCode == 404 {
 			break
 		}
+		l.Debug(fmt.Sprintf("%s: waiting on blobproc", release.ID))
 	}
 
-	s3Prefix := viper.GetString("blobproc.s3prefix")
+	s3bucket := viper.GetString("blobproc.s3bucket")
+	s3folder := viper.GetString("blobproc.s3folder")
 
-	s3Key := fmt.Sprintf("%s/%s/%s/%s.txt", s3Prefix, file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
+	s3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
+		s3bucket, s3folder, file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
-	fmt.Println("TODO get text from " + s3Key)
+	obj, err := s3.GetBlobprocObject(ctx, s3Key)
+	if err != nil {
+		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
+	}
 
-	// TODO get text from s3
-	// TODO do we want to touch grobid stuff at this point? look at what sandcrawler does now...
+	pdfText, err := io.ReadAll(obj)
+	if err != nil {
+		return out, fmt.Errorf("could not read '%s': %w", s3Key, err)
+	}
+
+	fmt.Printf("DBG %#v\n", string(pdfText[:100])+"...")
 
 	// TODO ingest PDF (Ingested++)
 	return out, nil

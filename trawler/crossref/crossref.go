@@ -591,6 +591,18 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	fmt.Printf("DBG %#v\n", string(pdfText[:100])+"...")
 
+	// regarding ingestion
+
+	/*
+		The correct way to do ingestion is batching. for now, given time
+		constraints and the fact that this is 80% proof of concept, i'm going to do
+		one at a time. Looking back at 30 days of sandcrawler ingest rate graphs,
+		we had peaks of 300 docs/sec; I assume at that point we ought to have batch
+		processing. To get to the end of the year though I'm doing one off just to
+		make sure it's all working; once it is, I'd like to have this workflow
+		return a list of s3 keys to ingest so they can be done as a single batch.
+	*/
+
 	// TODO ingest PDF (Ingested++)
 	return out, nil
 }

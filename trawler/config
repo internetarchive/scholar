@@ -224,8 +224,9 @@ backoff = "10s"
 [blobproc]
 endpoint = "http://wbgrp-svc263.us.archive.org:9444/spool"
 poll_interval = "2s"
-s3prefix = "sandcrawler/text/"
+s3bucket = "sandcrawler"
+s3folder = "text"
 # TODO these will go away once the seaweed merger/upgrade is done
-s3endpoint = "wbgrp-svc171.us.archive.org"
+s3endpoint = "wbgrp-svc171.us.archive.org:8333"
 s3accesskey = ""
 s3secretkey = ""

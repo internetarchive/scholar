@@ -31,6 +31,7 @@ default_limit = 1000 # for dev; typically would be -1 for unlimited
 endpoint = "https://scholar.archive.org/api/fatcat/v1"
 
 [crawling]
+cdx_freshness_cutoff = "672h" # four weeks
 spn_slot_poll_interval = "6s"
 spn_job_poll_interval = "30s"
 user_agent = "Mozilla/5.0 ias_trawler"

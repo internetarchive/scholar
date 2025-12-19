@@ -41,6 +41,8 @@ func (e BlockedError) Error() string {
 	return fmt.Sprintf("blocked '%s' due to pattern '%s'", e.ParsedURL, e.Pattern)
 }
 
+// TODO create a newCrawler constructor...
+
 type PDFCrawler struct {
 	SPNClient       spn.Client
 	CDXClient       cdx.Client
@@ -165,6 +167,8 @@ func (c PDFCrawler) slogInfo(msg string, args ...any) {
 func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 	out := &CrawlResult{}
 
+	freshnessCutoff := viper.GetDuration("crawling.cdx_freshness_cutoff")
+
 	trace, err := uuid.NewV7()
 	if err != nil {
 		return *out, fmt.Errorf("could not generate trace ID: %w", err)
@@ -223,26 +227,6 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		}
 		u = ru
 
-		// TODO TODO TODO TODO
-		// OK SO HERE IS THE THING
-		// Now that I understand this flow a lot better and have even drawn out FSA
-		// diagrams I want to do a second pass on this code so it looks something like:
-
-		// 000 u <- last(chain)
-		// 010 row <- recentCdxRow(u)
-		// 020 if not row:
-		// 030    row <- spnToRow(u)
-		// 040 if row is pdf:
-		// 050    end crawl,
-		// 055 if row is error:
-		// 056    end crawl
-		// 060 if row is html:
-		// 070    link <- findLink(row)
-		// 080    if link:
-		// 085       chain.append(link)
-		// 090       GOTO 00
-		// 100 end crawl
-
 		// TODO the old code fetched N rows then tried to find the most recent 200
 		// response. I'm choosing to only look at the single most recent row for now.
 		var row *cdx.CDXRow
@@ -251,7 +235,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			Limit: -1,
 		})
 
-		if len(rows) > 0 {
+		if len(rows) > 0 && time.Since(rows[0].Datetime) < freshnessCutoff {
 			row = &rows[0]
 		} else {
 			if simpleGet {
@@ -262,6 +246,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			if err != nil {
 				return *out, err
 			}
+			// TODO we could and probably should choose to go ahead with old
+			// snapshots if spn fails; refactor around this i think
 		}
 
 		if row.URL != u {
@@ -271,7 +257,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		c.slogInfo("FOUND A CDX ROW", "row", row)
 
 		if row.StatusCode > 399 {
-			c.slogInfo("error code %d", row.StatusCode)
+			c.slogInfo("cdx error", "status", row.StatusCode)
 			out.FailReason = fmt.Sprintf("status-%d", row.StatusCode)
 			return *out, nil
 		}
@@ -344,7 +330,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				out.Chain = append(out.Chain, loc)
 				continue
 			} else if resp.StatusCode > 302 {
-				c.slogInfo("error code %d", resp.StatusCode)
+				c.slogInfo("sad replay code", "status", resp.StatusCode)
 				out.FailReason = fmt.Sprintf("status-%d", resp.StatusCode)
 				return *out, nil
 			} // else handle resp below
@@ -492,6 +478,7 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 		URL:   spnJobResult.OriginalURL,
 		Limit: 1,
 	})
+	// TODO hitting 504 here
 	if err != nil {
 		c.slogInfo("spn succeeded but did not find in CDX", "err", err.Error())
 		return out, fmt.Errorf("failed to find successful SPN job in CDX: %w", err)

@@ -36,6 +36,7 @@ type FindLineBatchOutput struct {
 // offsets extracted from different regions of the file at the same time.
 func FindLineBatch(ctx context.Context, in FindLineBatchInput) (FindLineBatchOutput, error) {
 	l := activity.GetLogger(ctx)
+
 	l.Info(fmt.Sprintf("doing a range read from '%s'", in.S3Key))
 
 	f, err := s3.GetObject(ctx, in.S3Key)

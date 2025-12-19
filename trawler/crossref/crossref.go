@@ -467,15 +467,6 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, nil
 	}
 
-	// do I want to add file rows before or after blobproc? I think after,
-	// because we don't need to make a file record if we can't parse the PDF,
-	// right? or is there value in saving whatever we find? I can see value
-	// either way...esp if blobproc is down, we can always revisit the files
-	// later. so make a file entry then submit to blobproc.
-
-	// i should check to see if we have a file, though? maybe it doesn't matter.
-	// but i need checksums either way; and for that, i'll need the bytes in ram.
-
 	// TODO can share this pdf byte handling stuff between different upstreams
 
 	mimetype, _, _ := strings.Cut(res.Mimetype, ";")

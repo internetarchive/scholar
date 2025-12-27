@@ -206,12 +206,12 @@ invocation: `/bin/bash -c "pipenv run ./sandcrawler_worker.py --env {{ sandcrawl
 
 ### sandcrawler-persist-grobid-worker
 
-runs on svc171, svc314, svc506
+runs on svc314, svc506 (disabled 171)
 
 ```
 svc506 sandcrawler_persist_mode="--db-only" 
-svc171 sandcrawler_persist_mode="--s3-only" sandcrawler_kafka_group_suffix="-replica171"
 svc314 sandcrawler_persist_mode="--s3-only"
+svc171 sandcrawler_persist_mode="--s3-only" sandcrawler_kafka_group_suffix="-replica171"
 ```
 
 invocation: `/bin/bash -c "pipenv run ./sandcrawler_worker.py --env {{ sandcrawler_kafka_env }} --kafka-hosts {{ sandcrawler_kafka_hosts }} --s3-bucket {{ sandcrawler_grobid_bucket }} --s3-url {{ sandcrawler_blob_url }} --kafka-group-suffix={{ sandcrawler_kafka_group_suffix }} persist-grobid {{ sandcrawler_persist_mode }}"`
@@ -228,7 +228,7 @@ Since svc171 identifies itself as being in a different consumer group than svc31
 
 ### sandcrawler-persist-html-teixml-worker
 
-runs on svc171, svc314
+runs on svc314 (disabled on 171)
 
 ```
 svc171 sandcrawler_kafka_group_suffix="-replica171"
@@ -263,7 +263,7 @@ consumer group `persist-ingest`
 
 ### sandcrawler-persist-pdftext-worker
 
-runs on svc506, svc314, svc171
+runs on svc506, svc314 (disabled on svc171)
 
 invocation: `ExecStart=/bin/bash -c "pipenv run ./sandcrawler_worker.py --env {{ sandcrawler_kafka_env }} --kafka-hosts {{ sandcrawler_kafka_hosts }} --s3-bucket {{ sandcrawler_text_bucket }} --s3-url {{ sandcrawler_blob_url }} --kafka-group-suffix={{ sandcrawler_kafka_group_suffix }} persist-pdftext {{ sandcrawler_persist_mode }}"`
 
@@ -290,7 +290,7 @@ in group `persist-pdftrio`
 
 ### sandcrawler-persist-thumbnail-worker
 
-runs on svc171, svc314
+runs on svc314 (disabled on 171)
 
 invocation: `/bin/bash -c "pipenv run ./sandcrawler_worker.py --env {{ sandcrawler_kafka_env }} --kafka-hosts {{ sandcrawler_kafka_hosts }} --s3-bucket {{ sandcrawler_thumbnail_bucket }} --s3-url {{ sandcrawler_blob_url }} --kafka-group-suffix={{ sandcrawler_kafka_group_suffix }} persist-thumbnail"`
 
@@ -304,7 +304,7 @@ Since svc171 identifies itself as being in a different consumer group than svc31
 
 ### sandcrawler-persist-xml-doc-worker
 
-runs on svc171, svc314
+runs on svc314 (disabled on 171)
 
 invocation: `/bin/bash -c "pipenv run ./sandcrawler_worker.py --env {{ sandcrawler_kafka_env }} --kafka-hosts {{ sandcrawler_kafka_hosts }} --s3-bucket {{ sandcrawler_text_bucket }} --s3-url {{ sandcrawler_blob_url }} --kafka-group-suffix={{ sandcrawler_kafka_group_suffix }} persist-xml-doc"`
 

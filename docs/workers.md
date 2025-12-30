@@ -92,7 +92,7 @@ invocation: `/bin/bash -c ".venv/bin/python -mscholar.worker index-docs-worker"`
 
 ### sandcrawler-grobid-worker
 
-runs on svc098 in theory?
+runs on svc098 in theory? but on 506 in practice, it seems
 
 invocation: `/bin/bash -c "pipenv run ./sandcrawler_worker.py --env {{ sandcrawler_kafka_env }} --kafka-hosts {{ sandcrawler_kafka_hosts }} --grobid-host {{ sandcrawler_grobid_uri }} grobid-extract"`
 

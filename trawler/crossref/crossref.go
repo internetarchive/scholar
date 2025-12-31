@@ -152,9 +152,7 @@ func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (fatcat2.Rel
 		if err != nil {
 			return out, err
 		}
-		if id != uuid.Nil {
-			out.CreatorID = &id
-		}
+		out.CreatorID = id
 	}
 
 	out.RawName = cc.Given

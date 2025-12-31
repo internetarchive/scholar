@@ -63,24 +63,26 @@ type ExternalID struct {
 }
 
 type Release struct {
-	ID            uuid.UUID      `json:"id"`
-	WorkID        *uuid.UUID     `json:"work_id"`
-	Title         string         `json:"title,omitempty"`
-	OriginalTitle string         `json:"original_title,omitempty"`
-	Subtitle      string         `json:"subtitle,omitempty"`
-	Type          string         `json:"release_type,omitempty"`
-	Stage         string         `json:"release_stage,omitempty"`
-	ReleaseDate   *time.Time     `json:"release_date"`
-	ReleaseYear   int            `json:"release_year,omitempty"`
-	Source        string         `json:"source,omitempty"`
-	Volume        string         `json:"volume,omitempty"`
-	Issue         string         `json:"issue,omitempty"`
-	Pages         string         `json:"pages,omitempty"`
-	Publisher     string         `json:"publisher,omitempty"`
-	Language      string         `json:"language,omitempty"`
-	LegacyRevID   uuid.UUID      `json:"legacy_rev_id,omitempty"`
-	LicenseSlug   string         `json:"license_slug,omitempty"`
-	Extra         map[string]any `json:"extra,omitempty"`
+	ID              uuid.UUID      `json:"id"`
+	WorkID          *uuid.UUID     `json:"work_id"`
+	Title           string         `json:"title,omitempty"`
+	OriginalTitle   string         `json:"original_title,omitempty"`
+	Subtitle        string         `json:"subtitle,omitempty"`
+	Type            string         `json:"release_type,omitempty"`
+	Stage           string         `json:"release_stage,omitempty"`
+	ReleaseDate     *time.Time     `json:"release_date"`
+	ReleaseYear     int            `json:"release_year,omitempty"`
+	Source          string         `json:"source,omitempty"`
+	Volume          string         `json:"volume,omitempty"`
+	Issue           string         `json:"issue,omitempty"`
+	Pages           string         `json:"pages,omitempty"`
+	Publisher       string         `json:"publisher,omitempty"`
+	Language        string         `json:"language,omitempty"`
+	LegacyRevID     uuid.UUID      `json:"legacy_rev_id,omitempty"`
+	LicenseSlug     string         `json:"license_slug,omitempty"`
+	Extra           map[string]any `json:"extra,omitempty"`
+	WithdrawnStatus string         `json:"withdrawn_status,omitempty"`
+	Number          string         `json:"number,omitempty"`
 
 	// Foreign keys
 

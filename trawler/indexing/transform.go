@@ -1,6 +1,7 @@
 package indexing
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
+	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
 )
 
@@ -215,13 +217,77 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		}
 	}
 
+	// TODO port check_exclude_web for determining if a work should be excluded
+	// from linking from search results. I'm considering just *not* indexing
+	// anything like that so this means I should port the check but then not
+	// ingest.
+
+	// abstracts
+	unwantedAbstractPrefixes := []string{
+		"Abstract No Abstract ",
+		"Publisher Summary ",
+		"Abstract ",
+		"ABSTRACT ",
+		"Summary ",
+		"Background: ",
+		"Background ",
+		"N/a.",
+		"No abstract.",
+		"Introduction: ",
+		"ACKNOWLEDGEMENTS ",
+		"a b s t r a c t ",
+	}
+
+	seenLangs := []string{}
+	for _, a := range release.Abstracts {
+		if slices.Contains(seenLangs, a.Language) {
+			continue
+		}
+		body := cleanString(deTag(a.Content))
+		for _, up := range unwantedAbstractPrefixes {
+			body = strings.TrimPrefix(body, up)
+		}
+		if body == "" || len(strings.Fields(body)) <= 1 {
+			continue
+		}
+		out.Abstracts = append(out.Abstracts, AbstractV1{
+			Body:     body,
+			Language: a.Language,
+		})
+		seenLangs = append(seenLangs, a.Language)
+	}
+
 	// TODO Fulltext
 	// TODO Tags
-	// TODO Abstracts
 	// TODO Releases
 	// TODO Access
 
 	return out
+}
+
+// deTag takes a string, parses it as HTML, then returns just its rendered text
+func deTag(s string) string {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewBufferString(s))
+	if err != nil {
+		// TODO fallback to a naive regex
+	}
+	return doc.Text()
+}
+
+var singleQuotes = []string{"`", "‘", "’", "‛", "⸂", "⸃", "⸌", "⸍", "⸜", "⸝"}
+
+func cleanString(s string) string {
+	// i wouldn't be this inefficient in python but shrug
+	s = strings.ReplaceAll(s, "…", "...")
+	for _, sq := range singleQuotes {
+		s = strings.ReplaceAll(s, sq, "'")
+	}
+	s = strings.ReplaceAll(s, "„", "\"")
+	s = strings.ReplaceAll(s, "“", "\"")
+	s = strings.ReplaceAll(s, "''", "\"")
+	s = strings.ReplaceAll(s, ",,", "\"")
+
+	return s
 }
 
 func contribToName(c *http.Client, contrib fatcat2.ReleaseContrib) string {

@@ -92,11 +92,7 @@ type Release struct {
 	ExternalIDs []ExternalID     `json:"extids,omitempty"`
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 
-	// unused in xref but may want later:
-	// Pages string
-	// WithdrawnStatus string
-	// TODO
-	// understand when the structured ReleaseRefs are added in the old system
+	// TODO understand when the structured ReleaseRefs are added in the old system
 }
 
 func (r Release) DOI() string {

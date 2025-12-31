@@ -236,6 +236,16 @@ func (f *File) SetMetadata(bs []byte) error {
 	return nil
 }
 
+type Creator struct {
+	ID          uuid.UUID `json:"id,omitempty"`
+	DisplayName string    `json:"display_name,omitempty"`
+	GivenName   string    `json:"given_name,omitempty"`
+	Surname     string    `json:"surname,omitempty"`
+	Orcid       string    `json:"orcid,omitempty"`
+
+	// TODO Entity fields like source, timestamps, etc
+}
+
 // CreateContainer creates a new container in fc2 and returns its ID
 func CreateContainer(client *http.Client, c Container) (uuid.UUID, error) {
 	c.Source = "dev" // TODO thread this value through from invocation of workflow
@@ -368,6 +378,33 @@ func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
 	}
 
 	return r.ID, nil
+}
+
+// GetCreator looks up a creator via its ID
+func GetCreator(c *http.Client, id uuid.UUID) (Creator, error) {
+	out := Creator{}
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/creator/"+id.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 /creator/%s failed: %w", id.String(), err)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return out, fmt.Errorf("could not read creator '%s': %w", id.String(), err)
+	}
+
+	err = json.Unmarshal(bs, &out)
+	if err != nil {
+		return out, fmt.Errorf("could not unmarshal creator '%s': %w", id.String(), err)
+	}
+
+	return out, nil
 }
 
 func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData, error) {

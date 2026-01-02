@@ -3,6 +3,7 @@ package indexing
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -28,7 +29,7 @@ import (
 // a PoC i want done asap and this code path is *just* for new to us DOIs so i
 // should continue in that mindset
 
-func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat2.Container) FulltextDocV1 {
+func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat2.Container, pdfText string) FulltextDocV1 {
 	out := FulltextDocV1{}
 
 	out.Type = "work"
@@ -217,11 +218,6 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		}
 	}
 
-	// TODO port check_exclude_web for determining if a work should be excluded
-	// from linking from search results. I'm considering just *not* indexing
-	// anything like that so this means I should port the check but then not
-	// ingest.
-
 	// abstracts
 	unwantedAbstractPrefixes := []string{
 		"Abstract No Abstract ",
@@ -257,12 +253,73 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		seenLangs = append(seenLangs, a.Language)
 	}
 
+	// NB there was a concept of excluding fulltext access for certain things
+	// (check_exclude_web) but upon closer inspection all it did was hide stuff
+	// with a sherpa color of white. the rest was a no-op (ie, it supported a
+	// list of containers/publishers to exclude for but those lists are empty).
+	// since sherpa stuff is deprecated it seemed pointless to me to port over.
+
+	out.Tags = generateTags(out.Biblio, container)
+	// this gets my goat. works only end up with one release in practice but
+	// bryan went with a slightly different schema for releases in here. keeping
+	// the pattern around because i don't want to break any code that expects
+	// this shape of the releases payload.
+	out.Releases = []ReleaseV1{
+		{
+			BiblioCommonV1: out.Biblio.BiblioCommonV1,
+			LegacyIdent:    out.Biblio.LegacyReleaseIdent,
+			// NB I'm leaving out revision
+		},
+	}
+
 	// TODO Fulltext
-	// TODO Tags
-	// TODO Releases
 	// TODO Access
 
 	return out
+}
+
+func generateTags(biblio BiblioV1, container fatcat2.Container) []string {
+	tags := map[string]bool{}
+	if strings.HasPrefix(strings.ToLower(biblio.LicenseSlug), "cc-") {
+		tags["oa"] = true
+	}
+
+	if biblio.DOIPrefix == "10.2307" || biblio.JstorID != "" {
+		tags["jstor"] = true
+	}
+
+	if container.Extra != nil {
+		if _, ok := container.Extra["doaj"]; ok {
+			tags["doaj"] = true
+			tags["oa"] = true
+		}
+		if _, ok := container.Extra["road"]; ok {
+			tags["road"] = true
+			tags["oa"] = true
+		}
+		if _, ok := container.Extra["szczepanski"]; ok {
+			tags["szczepanski"] = true
+			if biblio.PublisherType != "big5" {
+				tags["oa"] = true
+			}
+		}
+		if ia, ok := container.Extra["ia"]; ok {
+			if _, ok := ia.(map[string]any)["longtail_oa"]; ok {
+				tags["longtail"] = true
+				tags["oa"] = true
+			}
+		}
+		if dl, ok := container.Extra["default_license"]; ok {
+			if strings.HasPrefix(strings.ToLower(dl.(string)), "cc-") {
+				tags["oa"] = true
+			}
+		}
+		if p, ok := container.Extra["platform"]; ok {
+			tags[strings.ToLower(p.(string))] = true
+		}
+	}
+
+	return slices.Collect(maps.Keys(tags))
 }
 
 // deTag takes a string, parses it as HTML, then returns just its rendered text

@@ -577,6 +577,11 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	s3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
 		s3bucket, s3folder, file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
+	// TODO also need the grobid payload as it's the preferred source of text;
+	// what i grabbed was pdftotext output (ie the grobid fallback). so refactor
+	// to pull from `grobid` path and remember how to process that xml (martin's
+	// library); also get the thumbnail path ready for ES.
+
 	obj, err := s3.GetBlobprocObject(ctx, s3Key)
 	if err != nil {
 		return out, fmt.Errorf("blobproc s3 read failed: %w", err)

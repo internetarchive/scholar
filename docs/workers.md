@@ -132,7 +132,7 @@ however, this worker has `try_spn2` set to false which means it will _not_ attem
 
 ### sandcrawler-ingest-file-priority-worker
 
-runs on svc506
+runs on svc506 in theory, i'm not convinced this sees use anymore
 
 invocation: `14:/bin/bash -c "pipenv run ./sandcrawler_worker.py --env {{ sandcrawler_kafka_env }} --kafka-hosts {{ sandcrawler_kafka_hosts }} --grobid-host {{ sandcrawler_grobid_uri }} ingest-file --priority"`
 
@@ -278,7 +278,7 @@ Since svc171 identifies itself as being in a different consumer group than svc31
 
 ### sandcrawler-persist-pdftrio-worker
 
-runs on svc506
+runs on svc506 in theory, i'm not convinced it's in use
 
 invocation: `/bin/bash -c "pipenv run ./sandcrawler_worker.py --env {{ sandcrawler_kafka_env }} --kafka-hosts {{ sandcrawler_kafka_hosts }} persist-pdftrio"`
 

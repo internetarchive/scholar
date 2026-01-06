@@ -64,7 +64,7 @@ type ExternalID struct {
 
 type Release struct {
 	ID              uuid.UUID      `json:"id"`
-	WorkID          *uuid.UUID     `json:"work_id"`
+	WorkID          uuid.UUID      `json:"work_id"`
 	Title           string         `json:"title,omitempty"`
 	OriginalTitle   string         `json:"original_title,omitempty"`
 	Subtitle        string         `json:"subtitle,omitempty"`
@@ -88,7 +88,7 @@ type Release struct {
 
 	Refs        []RawRef         `json:"refs,omitempty"`
 	Abstracts   []Abstract       `json:"abstracts,omitempty"`
-	ContainerID *uuid.UUID       `json:"container_id"`
+	ContainerID uuid.UUID        `json:"container_id"`
 	ExternalIDs []ExternalID     `json:"extids,omitempty"`
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 

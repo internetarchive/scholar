@@ -13,7 +13,10 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
+	"github.com/miku/grobidclient/tei"
 )
+
+const maxBodySize = 512 * 1024
 
 // TODO i am once again worked up about multiple releases in works. are we
 // currently adding releases to works when we find new versions? how do we
@@ -29,11 +32,23 @@ import (
 // a PoC i want done asap and this code path is *just* for new to us DOIs so i
 // should continue in that mindset
 
-func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat2.Container, pdfText string) FulltextDocV1 {
+type IngestCtx struct {
+	HttpClient *http.Client
+	Release    fatcat2.Release
+	File       fatcat2.File
+	Container  *fatcat2.Container
+	GrobidXML  []byte
+	PdfText    []byte
+	// TODO thumbnail?
+}
+
+func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
 	out := FulltextDocV1{}
+	release := ictx.Release
+	container := ictx.Container
 
 	out.Type = "work"
-	out.LegacyWorkIdent = fatcat2.UuidToLegacy(*release.WorkID)
+	out.LegacyWorkIdent = fatcat2.UuidToLegacy(release.WorkID)
 	out.Key = fmt.Sprintf("work_%s", out.LegacyWorkIdent)
 	out.IndexTime = time.Now()
 	out.CollapseKey = out.LegacyWorkIdent
@@ -218,6 +233,41 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		}
 	}
 
+	// fulltext
+	out.Fulltext = FulltextV1{}
+
+	gdoc, err := tei.ParseDocument(bytes.NewReader(ictx.GrobidXML))
+	if err == nil {
+		out.Fulltext.Language = gdoc.LanguageCode
+		out.Fulltext.Body = gdoc.Body
+		out.Fulltext.Acknowledgement = gdoc.Acknowledgement
+		out.Fulltext.Annex = gdoc.Annex
+	} else {
+		// TODO logging would be nice
+	}
+
+	if out.Fulltext.Language == "" {
+		out.Fulltext.Language = release.Language
+	}
+
+	if out.Fulltext.Body == "" {
+		out.Fulltext.Body = string(ictx.PdfText)
+	}
+
+	if len(out.Fulltext.Body) > maxBodySize {
+		out.Fulltext.Body = out.Fulltext.Body[:maxBodySize]
+	}
+
+	out.Fulltext.LegacyReleaseIdent = fatcat2.UuidToLegacy(release.ID)
+	out.Fulltext.FileSha1 = ictx.File.Sha1
+	out.Fulltext.LegacyFileIdent = fatcat2.UuidToLegacy(ictx.File.ID)
+	out.Fulltext.FileMimetype = ictx.File.Mimetype
+	out.Fulltext.Size = ictx.File.Size
+
+	// TODO post-xref-poc might be other urls in here but for now there's only going to be one
+	out.Fulltext.AccessURL = ictx.File.URLs[0].URL
+	out.Fulltext.AccessType = "wayback"
+
 	// abstracts
 	unwantedAbstractPrefixes := []string{
 		"Abstract No Abstract ",
@@ -253,6 +303,13 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		seenLangs = append(seenLangs, a.Language)
 	}
 
+	if len(out.Abstracts) == 0 && len(gdoc.Abstract) > 0 {
+		out.Abstracts = append(out.Abstracts, AbstractV1{
+			Language: gdoc.LanguageCode,
+			Body:     cleanString(deTag(gdoc.Abstract)),
+		})
+	}
+
 	// NB there was a concept of excluding fulltext access for certain things
 	// (check_exclude_web) but upon closer inspection all it did was hide stuff
 	// with a sherpa color of white. the rest was a no-op (ie, it supported a
@@ -272,13 +329,25 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		},
 	}
 
-	// TODO Fulltext
-	// TODO Access
+	// NB I'm leaving out Thumbnail since it's synthesizable from sha1 and other info.
+
+	// NB I hate this whole idea of multiple access points; I also hate how we're
+	// using ES as a data store. ES should have a bare minimum of stuff in it --
+	// release ID, fulltext. the rest can be gotten from PG.
+	out.Access = []AccessV1{
+		{
+			Type:               out.Fulltext.AccessType,
+			Url:                out.Fulltext.AccessURL,
+			Mimetype:           out.Fulltext.FileMimetype,
+			LegacyFileIdent:    out.Fulltext.LegacyFileIdent,
+			LegacyReleaseIdent: out.Fulltext.LegacyReleaseIdent,
+		},
+	}
 
 	return out
 }
 
-func generateTags(biblio BiblioV1, container fatcat2.Container) []string {
+func generateTags(biblio BiblioV1, container *fatcat2.Container) []string {
 	tags := map[string]bool{}
 	if strings.HasPrefix(strings.ToLower(biblio.LicenseSlug), "cc-") {
 		tags["oa"] = true
@@ -288,7 +357,7 @@ func generateTags(biblio BiblioV1, container fatcat2.Container) []string {
 		tags["jstor"] = true
 	}
 
-	if container.Extra != nil {
+	if container != nil && container.Extra != nil {
 		if _, ok := container.Extra["doaj"]; ok {
 			tags["doaj"] = true
 			tags["oa"] = true

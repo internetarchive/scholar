@@ -380,6 +380,35 @@ func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
 	return r.ID, nil
 }
 
+// TODO generalize
+
+// GetContainer looks up a container via its ID
+func GetContainer(c *http.Client, id uuid.UUID) (Container, error) {
+	out := Container{}
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/container/"+id.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 /container/%s failed: %w", id.String(), err)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return out, fmt.Errorf("could not read container '%s': %w", id.String(), err)
+	}
+
+	err = json.Unmarshal(bs, &out)
+	if err != nil {
+		return out, fmt.Errorf("could not unmarshal container '%s': %w", id.String(), err)
+	}
+
+	return out, nil
+}
+
 // GetCreator looks up a creator via its ID
 func GetCreator(c *http.Client, id uuid.UUID) (Creator, error) {
 	out := Creator{}

@@ -8,21 +8,62 @@ import (
 	"net/http"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"github.com/spf13/viper"
 )
 
-type FulltextDocV1 struct {
-	Key             string       `json:"key"`
-	Type            string       `json:"doc_type"`
-	LegacyWorkIdent string       `json:"work_ident"`
-	Fulltext        FulltextV1   `json:"fulltext"`
-	IndexTime       time.Time    `json:"doc_index_ts"`
-	CollapseKey     string       `json:"collapse_key"`
-	Tags            []string     `json:"tags"`
-	Biblio          BiblioV1     `json:"biblio"`
-	Abstracts       []AbstractV1 `json:"abstracts"`
-	Releases        []ReleaseV1  `json:"releases"`
-	Access          []AccessV1   `json:"access"`
+/*
+
+TODO
+
+need to understand the other indexing workers:
+
+- fatcat-elasticsearch-changelog-worker
+- fatcat-elasticsearch-container-worker
+- fatcat-elasticsearch-file-worker
+- fatcat-elasticsearch-release-worker
+
+I think we can punt on the changelog worker for now; changelog isn't much of a
+thing anymore. it made sense to index it when a changelog entry could consist
+of a bunch of different operations on different entities.
+
+but the others we should consider and each one comes up in this new pipeline.
+
+a complicating factor is not having qa versions of these indices, so:
+
+- [ ] create QA indices for container, file, release
+- [ ] port the transform code over for each entity
+- [ ] decide when to do the indexing...right after adding? yes, should probably do that
+- [ ] how different is fatcat release index payload from scholar? probably a lot :(
+- [ ] get mapping for release
+- [ ] get mapping for container
+- [ ] get mapping for file
+
+*/
+
+type IngestCtx struct {
+	HttpClient *http.Client
+	Release    fatcat2.Release
+	File       fatcat2.File
+	Container  *fatcat2.Container
+	GrobidXML  []byte
+	PdfText    []byte
+	// TODO thumbnail?
+}
+
+// ScholarDocV1 is what we store in elasticsearch for a fulltext PDF searchable via scholar.archive.org
+type ScholarDocV1 struct {
+	Key             string              `json:"key"`
+	Type            string              `json:"doc_type"`
+	LegacyWorkIdent string              `json:"work_ident"`
+	Fulltext        ScholarFulltextV1   `json:"fulltext"`
+	IndexTime       time.Time           `json:"doc_index_ts"`
+	CollapseKey     string              `json:"collapse_key"`
+	Tags            []string            `json:"tags"`
+	Biblio          ScholarBiblioV1     `json:"biblio"`
+	Abstracts       []ScholarAbstractV1 `json:"abstracts"`
+	Releases        []ScholarReleaseV1  `json:"releases"`
+	Access          []ScholarAccessV1   `json:"access"`
 
 	// known unneeded for now (lots of this in ES currently but we have no plans atm to add more)
 	// ia_sim
@@ -30,7 +71,7 @@ type FulltextDocV1 struct {
 
 // TODO i should probably use the legacy style fatcat ids for indexing just to keep things consistent
 
-type BiblioV1 struct {
+type ScholarBiblioV1 struct {
 	BiblioCommonV1
 	LegacyReleaseIdent    string   `json:"release_ident"`
 	Subtitle              string   `json:"subtitle,omitempty"`
@@ -56,7 +97,7 @@ type BiblioV1 struct {
 	Affiliations          []string `json:"affiliations,omitempty"`
 }
 
-type FulltextV1 struct {
+type ScholarFulltextV1 struct {
 	Language           string `json:"lang_code,omitempty"`
 	Body               string `json:"body,omitempty"`
 	Acknowledgement    string `json:"acknowledgement,omitempty"`
@@ -73,20 +114,20 @@ type FulltextV1 struct {
 	AccessType string `json:"access_type,omitempty"`
 }
 
-type AbstractV1 struct {
+type ScholarAbstractV1 struct {
 	Body     string `json:"body"`
 	Language string `json:"lang_code"`
 }
 
 // TODO i should probably use the legacy style fatcat ids for indexing just to keep things consistent
 
-type ReleaseV1 struct {
+type ScholarReleaseV1 struct {
 	BiblioCommonV1
 	LegacyIdent string `json:"ident"`
 	Revision    string `json:"revision,omitempty"`
 }
 
-type AccessV1 struct {
+type ScholarAccessV1 struct {
 	Type               string `json:"access_type"`
 	Url                string `json:"access_url"`
 	Mimetype           string `json:"mimetype"`
@@ -193,8 +234,8 @@ type ElasticPayload struct {
 	Source string `json:"_source"`
 }
 
-func Ingest(client *http.Client, doc FulltextDocV1) error {
-	u := fmt.Sprintf("%s/%s/_doc/%d",
+func IngestFulltextDoc(client *http.Client, doc ScholarDocV1) error {
+	u := fmt.Sprintf("%s/%s/_doc/%s",
 		viper.GetString("indexing.elastic_url"),
 		viper.GetString("indexing.elastic_index"),
 		doc.Key)

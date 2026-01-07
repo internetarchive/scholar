@@ -639,8 +639,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		ictx.Container = &container
 	}
 
-	esDoc := indexing.PrepareElasticDoc(client, ictx)
-	err = indexing.Ingest(client, esDoc)
+	esDoc := indexing.PrepareFulltextDoc(client, ictx)
+	err = indexing.IngestFulltextDoc(client, esDoc)
 
 	fmt.Println(esDoc)
 

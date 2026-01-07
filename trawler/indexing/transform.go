@@ -32,18 +32,8 @@ const maxBodySize = 512 * 1024
 // a PoC i want done asap and this code path is *just* for new to us DOIs so i
 // should continue in that mindset
 
-type IngestCtx struct {
-	HttpClient *http.Client
-	Release    fatcat2.Release
-	File       fatcat2.File
-	Container  *fatcat2.Container
-	GrobidXML  []byte
-	PdfText    []byte
-	// TODO thumbnail?
-}
-
-func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
-	out := FulltextDocV1{}
+func PrepareFulltextDoc(client *http.Client, ictx IngestCtx) ScholarDocV1 {
+	out := ScholarDocV1{}
 	release := ictx.Release
 	container := ictx.Container
 
@@ -54,7 +44,7 @@ func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
 	out.CollapseKey = out.LegacyWorkIdent
 
 	// biblio field
-	out.Biblio = BiblioV1{}
+	out.Biblio = ScholarBiblioV1{}
 	if release.Publisher != "" {
 		out.Biblio.Publisher = release.Publisher
 	} else {
@@ -234,7 +224,7 @@ func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
 	}
 
 	// fulltext
-	out.Fulltext = FulltextV1{}
+	out.Fulltext = ScholarFulltextV1{}
 
 	gdoc, err := tei.ParseDocument(bytes.NewReader(ictx.GrobidXML))
 	if err == nil {
@@ -296,7 +286,7 @@ func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
 		if body == "" || len(strings.Fields(body)) <= 1 {
 			continue
 		}
-		out.Abstracts = append(out.Abstracts, AbstractV1{
+		out.Abstracts = append(out.Abstracts, ScholarAbstractV1{
 			Body:     body,
 			Language: a.Language,
 		})
@@ -304,7 +294,7 @@ func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
 	}
 
 	if len(out.Abstracts) == 0 && len(gdoc.Abstract) > 0 {
-		out.Abstracts = append(out.Abstracts, AbstractV1{
+		out.Abstracts = append(out.Abstracts, ScholarAbstractV1{
 			Language: gdoc.LanguageCode,
 			Body:     cleanString(deTag(gdoc.Abstract)),
 		})
@@ -321,7 +311,7 @@ func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
 	// bryan went with a slightly different schema for releases in here. keeping
 	// the pattern around because i don't want to break any code that expects
 	// this shape of the releases payload.
-	out.Releases = []ReleaseV1{
+	out.Releases = []ScholarReleaseV1{
 		{
 			BiblioCommonV1: out.Biblio.BiblioCommonV1,
 			LegacyIdent:    out.Biblio.LegacyReleaseIdent,
@@ -334,7 +324,7 @@ func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
 	// NB I hate this whole idea of multiple access points; I also hate how we're
 	// using ES as a data store. ES should have a bare minimum of stuff in it --
 	// release ID, fulltext. the rest can be gotten from PG.
-	out.Access = []AccessV1{
+	out.Access = []ScholarAccessV1{
 		{
 			Type:               out.Fulltext.AccessType,
 			Url:                out.Fulltext.AccessURL,
@@ -347,7 +337,7 @@ func PrepareElasticDoc(client *http.Client, ictx IngestCtx) FulltextDocV1 {
 	return out
 }
 
-func generateTags(biblio BiblioV1, container *fatcat2.Container) []string {
+func generateTags(biblio ScholarBiblioV1, container *fatcat2.Container) []string {
 	tags := map[string]bool{}
 	if strings.HasPrefix(strings.ToLower(biblio.LicenseSlug), "cc-") {
 		tags["oa"] = true

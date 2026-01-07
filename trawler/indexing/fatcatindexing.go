@@ -55,16 +55,15 @@ type FatcatReleaseDocV1 struct {
 	ContainerName   string `json:"container_name"`
 
 	// ext ids
-	DOI         string `json:"doi,omitempty"`
-	PMID        string `json:"pmid,omitempty"`
-	PMCID       string `json:"pmcid,omitempty"`
-	ISBN13      string `json:"isbn13,omitempty"`
-	WikidataQID string `json:"wikidata_qid,omitempty"`
-	ArxivID     string `json:"arxiv_id,omitempty"`
-	JstorID     string `json:"jstor_id,omitempty"`
-	DOAJID      string `json:"doaj_id,omitempty"`
-	DBLPID      string `json:"dblp_id,omitempty"`
-	OAIID       string `json:"oai_id,omitempty"`
+	DOI     string `json:"doi,omitempty"`
+	PMID    string `json:"pmid,omitempty"`
+	PMCID   string `json:"pmcid,omitempty"`
+	ISBN13  string `json:"isbn13,omitempty"`
+	ArxivID string `json:"arxiv_id,omitempty"`
+	JstorID string `json:"jstor_id,omitempty"`
+	DOAJID  string `json:"doaj_id,omitempty"`
+	DBLPID  string `json:"dblp_id,omitempty"`
+	OAIID   string `json:"oai_id,omitempty"`
 
 	DOIPrefix    string `json:"doi_prefix,omitempty"`
 	DOIRegistrar string `json:"doi_registrar,omitempty"`
@@ -112,87 +111,64 @@ type FatcatReleaseDocV1 struct {
 	// ark_id
 	// mag_id
 	// hdl
+	// wikidata_qid
 	// in_dweb
 	// in_shadows
 }
 
-/*
-"state": "active",
-"revision": "4946836e-261b-41de-a8d2-50260f700ec6",
-"name": "Journal of information science",
-"publisher": "ELSEVIER LTD",
-"container_type": null,
-"publication_status": null,
-"issnl": "1352-7460",
-"issne": null,
-"issnp": null,
-"wikidata_qid": null,
-"languages": [
-  "en"
-],
-"issns": [
-  "1352-7460"
-],
-"sherpa_romeo_color": null,
-"sim_pubid": null,
-"ia_sim_collection": null,
-"is_superceded": false,
-"keepers": [],
-"in_doaj": false,
-"in_road": false,
-"any_kbart": false,
-"is_oa": false,
-"is_longtail_oa": false,
-"any_jstor": false,
-"any_ia_sim": true,
-"preservation_none": 0,
-"releases_total": 0,
-"preservation_bright": 0,
-"preservation_dark": 0,
-"preservation_shadows_only": 0
-*/
-
 type FatcatContainerDocV1 struct {
-	LegacyIdent string `json:"ident"`
+	LegacyIdent       string   `json:"ident"`
+	State             string   `json:"state"`
+	Name              string   `json:"name"`
+	Publisher         string   `json:"publisher"`
+	Type              string   `json:"container_type"`
+	PublicationStatus string   `json:"publication_status"`
+	Issnl             string   `json:"issnl,omitempty"`
+	Issne             string   `json:"issne,omitempty"`
+	Issnp             string   `json:"issnp,omitempty"`
+	Languages         []string `json:"languages"`
+	Issns             []string `json:"issns"`
+	SimPubID          string   `json:"sim_pubid,omitempty"`
+	IaSimCollection   string   `json:"ia_sim_collection,omitempty"`
+	IsOA              bool     `json:"is_oa"`
+	IsLongtailOA      bool     `json:"is_longtail_oa"`
+
 	// TODO
+
+	// TODO post-xref-poc
+	// keepers
+	// in_doaj
+	// in_road
+	// any_kbart
+	// any_jstor
+	// any_ia_sim
+	// preservation_none
+	// releases_total
+	// preservation_bright
+	// preservation_dark
+	// preservation_shadows_only
+
+	// NB elided
+	// revision
+	// wikidata_qid
+	// sherpa_romeo_color
+	// is_superceded
 }
 
-/*
-"state": "active",
-"revision": "1c4bca76-f027-4f6c-a148-255a06b6f6d7",
-"release_ids": [
-
-	"ohwxjbtojbg5rexxlvezutq4jq"
-
-],
-"release_count": 1,
-"mimetype": "application/pdf",
-"size_bytes": 6956115,
-"sha1": "76d72d3d79cb7876d1fca0ff160a92fdd16b7da4",
-"sha256": "4dd54e03678e906301b368498cade11e5452a9ec28d81c0951a3c60b37969440",
-"md5": "f9fb72982ab79f9ee5c09456baff0c7a",
-"hosts": [
-
-	"web.archive.org",
-	"core.ac.uk"
-
-],
-"domains": [
-
-	"archive.org",
-	"core.ac.uk"
-
-],
-"rels": [
-
-	"aggregator",
-	"webarchive"
-
-],
-"in_ia": true,
-"in_ia_petabox": false,
-"best_url": "https://web.archive.org/web/20190321155050/https://core.ac.uk/download/pdf/82346661.pdf"
-*/
 type FatcatFileDocV1 struct {
-	LegacyIdent string `json:"ident"`
+	LegacyIdent         string   `json:"ident"`
+	State               string   `json:"state"`
+	ReleaseLegacyIdents []string `json:"release_ids"`
+	Mimetype            string   `json:"mimetype"`
+	Size                int      `json:"size_bytes"`
+	Sha1                string   `json:"sha1"`
+	Sha256              string   `json:"sha256"`
+	Md5                 string   `json:"md5"`
+	Hosts               []string `json:"hosts"`
+	Domains             []string `json:"domains"`
+	Rels                []string `json:"rels"`
+	InIA                bool     `json:"in_ia"`
+	InIaPetabox         bool     `json:"in_ia_petabox"`
+	BestURL             bool     `json:"best_url"`
+	ReleaseCount        int      `json:"release_count"`
 }

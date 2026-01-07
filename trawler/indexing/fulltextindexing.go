@@ -12,35 +12,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-/*
-
-TODO
-
-need to understand the other indexing workers:
-
-- fatcat-elasticsearch-changelog-worker
-- fatcat-elasticsearch-container-worker
-- fatcat-elasticsearch-file-worker
-- fatcat-elasticsearch-release-worker
-
-I think we can punt on the changelog worker for now; changelog isn't much of a
-thing anymore. it made sense to index it when a changelog entry could consist
-of a bunch of different operations on different entities.
-
-but the others we should consider and each one comes up in this new pipeline.
-
-a complicating factor is not having qa versions of these indices, so:
-
-- [ ] create QA indices for container, file, release
-- [ ] port the transform code over for each entity
-- [ ] decide when to do the indexing...right after adding? yes, should probably do that
-- [ ] how different is fatcat release index payload from scholar? probably a lot :(
-- [ ] get mapping for release
-- [ ] get mapping for container
-- [ ] get mapping for file
-
-*/
-
 type IngestCtx struct {
 	HttpClient *http.Client
 	Release    fatcat2.Release

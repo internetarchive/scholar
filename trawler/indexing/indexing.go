@@ -1,7 +1,14 @@
 package indexing
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 type FulltextDocV1 struct {
@@ -176,3 +183,46 @@ revision
 container_type
 
 */
+
+// TODO would use this for bulk ops
+type ElasticPayload struct {
+	Index  string `json:"_index"`
+	OpType string `json:"_op_type"`
+	ID     string `json:"_id"`
+	// Source is a JSON representation of the document you want to ingest
+	Source string `json:"_source"`
+}
+
+func Ingest(client *http.Client, doc FulltextDocV1) error {
+	u := fmt.Sprintf("%s/%s/_doc/%d",
+		viper.GetString("indexing.elastic_url"),
+		viper.GetString("indexing.elastic_index"),
+		doc.Key)
+
+	docJson, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("could not serialize es doc: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", u, bytes.NewReader(docJson))
+	if err != nil {
+		return fmt.Errorf("could not prepare elasticsearch POST: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to POST elasticsearch: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		var body string
+		bs, err := io.ReadAll(resp.Body)
+		if err == nil {
+			body = string(bs)
+		}
+
+		return fmt.Errorf("elasticsearch failed to index: '%s'", body)
+	}
+
+	return nil
+}

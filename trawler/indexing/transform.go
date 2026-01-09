@@ -18,19 +18,178 @@ import (
 
 const maxBodySize = 512 * 1024
 
-// TODO i am once again worked up about multiple releases in works. are we
-// currently adding releases to works when we find new versions? how do we
-// determine new versions? or was that only through manual edits? the pipeline
-// i'm augmenting with indexing right now is just adding new releases and thus
-// new works so for now I can treat work <-> release as one to one. but i'd
-// feel a lot better if i knew how many works in fatcat had >1 release (1 and
-// 2) so i'm going to finish that line of inquiry. my notes say i asked this
-// question back in january but i don't see an answer anywhere with cursory
-// grepping.
-//
-// but, what i need to keep repeating to myself is that this is a code path for
-// a PoC i want done asap and this code path is *just* for new to us DOIs so i
-// should continue in that mindset
+// TODO better name for this...
+type IngestCtx struct {
+	HttpClient *http.Client
+	Release    fatcat2.Release
+	File       *fatcat2.File
+	Container  *fatcat2.Container
+	GrobidXML  []byte
+	PdfText    []byte
+	// TODO thumbnail?
+}
+
+// TODO need doc_index_ts
+
+func PrepareFatcatReleaseDoc(client *http.Client, ictx IngestCtx) FatcatReleaseDocV1 {
+	out := FatcatReleaseDocV1{}
+	release := ictx.Release
+	container := ictx.Container
+	file := ictx.File
+	extra := release.Extra
+	if extra == nil {
+		extra = map[string]any{}
+	}
+
+	// TODO conceivable we want to continue using this to mark deletion but hardcoding for now
+	out.State = "active"
+	out.IndexTime = time.Now()
+	out.LegacyIdent = fatcat2.UuidToLegacy(release.ID)
+	out.LegacyWorkIdent = fatcat2.UuidToLegacy(release.WorkID)
+	out.Title = release.Title
+	out.Subtitle = release.Subtitle
+	out.OriginalTitle = release.OriginalTitle
+	out.Type = release.Type
+	out.Stage = release.Stage
+	out.WithdrawnStatus = release.WithdrawnStatus
+	out.Language = release.Language
+	out.Volume = release.Volume
+	out.Issue = release.Issue
+	out.Pages = release.Pages
+	out.Number = release.Number
+	out.License = release.LicenseSlug
+	if container != nil {
+		out.ContainerName = container.Name
+	}
+	out.Version = release.Version
+
+	out.Publisher = release.Publisher
+	if out.Publisher == "" {
+		out.Publisher = container.Publisher
+	}
+
+	// NB copypasta
+	for _, eid := range release.ExternalIDs {
+		if eid.Type == "doi" {
+			out.DOI = eid.Value
+			out.DOIPrefix = doiPrefix(eid.Value)
+			if release.Extra != nil {
+				if _, ok := release.Extra["crossref"]; ok {
+					// TODO post-xref-poc other registrars
+					// TODO is there even evidence that this is useful
+					out.DOIRegistrar = "crossref"
+				}
+			}
+		}
+		// TODO post-xref-poc
+		//PMID    string `json:"pmid,omitempty"`
+		//PMCID   string `json:"pmcid,omitempty"`
+		//ISBN13  string `json:"isbn13,omitempty"`
+		//ArxivID string `json:"arxiv_id,omitempty"`
+		//JstorID string `json:"jstor_id,omitempty"`
+		//DoajID  string `json:"doaj_id,omitempty"`
+		//DblpID  string `json:"dblp_id,omitempty"`
+		//OAIID   string `json:"oai_id,omitempty"`
+	}
+
+	out.InDOAJ = out.DoajID != ""
+	out.InJSTOR = out.JstorID != ""
+
+	// TODO post-xref-poc
+	// based on a note in the old code bryan thought that all crossref stuff is
+	// in kbart so we'll continue this line of thinking?
+	if _, ok := extra["crossref"]; ok {
+		out.InKBART = true
+	}
+
+	out.ReleaseYear = release.ReleaseYear
+	if release.ReleaseDate != nil {
+		out.ReleaseDate = release.ReleaseDate.Format("2006-01-02")
+	}
+
+	if len(release.Abstracts) > 0 {
+		out.AnyAbstract = true
+	}
+
+	out.RefCount = len(release.Refs)
+
+	out.ContribCount = len(release.Contribs)
+	out.ContribNames = []string{}
+	out.CreatorLegacyIdents = []string{}
+	out.Affiliations = []string{}
+	for _, c := range release.Contribs {
+		out.ContribNames = append(out.ContribNames, contribToName(client, c))
+		out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fatcat2.UuidToLegacy(c.CreatorID))
+		out.Affiliations = append(out.Affiliations, c.RawAffiliation)
+	}
+
+	if file != nil {
+		// TODO post-xref-poc probably can't keep assuming the state of URLs like this
+		out.FileCount = 1
+		out.BestPdfUrl = file.URLs[0].URL
+		if strings.Contains(file.URLs[0].URL, ".archive.org") {
+			out.IaPdfUrl = file.URLs[0].URL
+			out.InIA = true
+		}
+	}
+
+	out.FirstPage, _, _ = strings.Cut(release.Pages, "-")
+
+	license := strings.ToLower(release.LicenseSlug)
+	// TODO if this index sticks around this logic should be consolidated with
+	// whats in generateTags
+	if strings.HasPrefix(license, "cc-") {
+		out.IsOA = true
+	} else if strings.HasPrefix(license, "arxiv-") {
+		out.IsOA = true
+	} else if container != nil && container.Extra != nil {
+		if dl, ok := container.Extra["default_license"]; ok {
+			if strings.HasPrefix(strings.ToLower(dl.(string)), "cc-") {
+				out.IsOA = true
+			}
+		}
+	} else if _, ok := extra["crossref"]; ok {
+		if file != nil {
+			// we found this release via xref and found a file for it; that implies OA
+			out.IsOA = true
+		}
+	} else if eoa, ok := extra["is_oa"]; ok {
+		out.IsOA = eoa.(bool)
+	} else if loa, ok := extra["longtail_oa"]; ok && loa.(bool) {
+		out.IsOA = true
+		out.IsLongtailOA = true
+	} else if out.InDOAJ {
+		out.IsOA = true
+	}
+
+	if out.InIA || out.InKBART || out.InJSTOR || out.PMCID != "" || out.ArxivID != "" {
+		out.IsPreserved = true
+	}
+
+	if out.InIA {
+		out.Preservation = "bright"
+	} else if out.IsPreserved {
+		out.Preservation = "dark"
+	} else {
+		out.Preservation = "none"
+	}
+
+	// TODO
+
+	// NB i am leaving out the in_shadows prop for now
+
+	// NB these depended on a field that was never set in the old system so ignoring
+	// RefReleaseLegacyIdents []string `json:"ref_release_ids"`
+	// RefLinkedCount         int      `json:"ref_linked_count"`
+
+	// NB this was never set
+	// Tags  []string `json:"tags"`
+	// InWeb bool `json:"in_web"`
+
+	// TODO post-xref-poc
+	// InIASim      bool `json:"in_ia_sim"`
+	return out
+}
 
 func PrepareFulltextDoc(client *http.Client, ictx IngestCtx) ScholarDocV1 {
 	out := ScholarDocV1{}

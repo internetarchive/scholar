@@ -1,5 +1,7 @@
 package indexing
 
+import "time"
+
 /*
 
 TODO
@@ -20,12 +22,14 @@ but the others we should consider and each one comes up in this new pipeline.
 a complicating factor is not having qa versions of these indices, so:
 
 - [ ] create QA indices for container, file, release
-- [ ] port the transform code over for each entity
+- [X] release transform code
+- [ ] container transform code
+- [ ] file transform code
 - [ ] decide when to do the indexing...right after adding? yes, should probably do that
 - [ ] how different is fatcat release index payload from scholar? probably a lot :(
 - [X] get mapping/sample for release
-- [ ] get mapping/sample for container
-- [ ] get mapping/sample for file
+- [X] get mapping/sample for container
+- [X] get mapping/sample for file
 - [X] when is fatcat_ref populated? it isn't mentioned in workers doc
   - only via refcat stuff so ignoring for now
 
@@ -35,24 +39,25 @@ a complicating factor is not having qa versions of these indices, so:
 Doc ID is ident
 */
 type FatcatReleaseDocV1 struct {
-	LegacyIdent     string `json:"ident,omitempty"`
-	State           string `json:"state,omitempty"`
-	LegacyWorkIdent string `json:"work_id,omitempty"`
-	Title           string `json:"title,omitempty"`
-	Subtitle        string `json:"subtitle,omitempty"`
-	OriginalTitle   string `json:"original_title,omitempty"`
-	ReleaseType     string `json:"release_type,omitempty"`
-	ReleaseStage    string `json:"release_stage,omitempty"`
-	WithdrawnStatus string `json:"withdrawn_status,omitempty"`
-	Language        string `json:"language,omitempty"`
-	Volume          string `json:"volume,omitempty"`
-	Issue           string `json:"issue,omitempty"`
-	Pages           string `json:"pages,omitempty"`
-	Number          string `json:"number,omitempty"`
-	License         string `json:"license,omitempty"`
-	Version         string `json:"version,omitempty"`
-	Publisher       string `json:"publisher,omitempty"`
-	ContainerName   string `json:"container_name"`
+	LegacyIdent     string    `json:"ident,omitempty"`
+	IndexTime       time.Time `json:"doc_index_ts"`
+	State           string    `json:"state,omitempty"`
+	LegacyWorkIdent string    `json:"work_id,omitempty"`
+	Title           string    `json:"title,omitempty"`
+	Subtitle        string    `json:"subtitle,omitempty"`
+	OriginalTitle   string    `json:"original_title,omitempty"`
+	Type            string    `json:"release_type,omitempty"`
+	Stage           string    `json:"release_stage,omitempty"`
+	WithdrawnStatus string    `json:"withdrawn_status,omitempty"`
+	Language        string    `json:"language,omitempty"`
+	Volume          string    `json:"volume,omitempty"`
+	Issue           string    `json:"issue,omitempty"`
+	Pages           string    `json:"pages,omitempty"`
+	Number          string    `json:"number,omitempty"`
+	License         string    `json:"license,omitempty"`
+	Version         string    `json:"version,omitempty"`
+	Publisher       string    `json:"publisher,omitempty"`
+	ContainerName   string    `json:"container_name"`
 
 	// ext ids
 	DOI     string `json:"doi,omitempty"`
@@ -61,8 +66,8 @@ type FatcatReleaseDocV1 struct {
 	ISBN13  string `json:"isbn13,omitempty"`
 	ArxivID string `json:"arxiv_id,omitempty"`
 	JstorID string `json:"jstor_id,omitempty"`
-	DOAJID  string `json:"doaj_id,omitempty"`
-	DBLPID  string `json:"dblp_id,omitempty"`
+	DoajID  string `json:"doaj_id,omitempty"`
+	DblpID  string `json:"dblp_id,omitempty"`
 	OAIID   string `json:"oai_id,omitempty"`
 
 	DOIPrefix    string `json:"doi_prefix,omitempty"`
@@ -77,13 +82,14 @@ type FatcatReleaseDocV1 struct {
 	IsPreserved  bool `json:"is_preserved"`
 	InWeb        bool `json:"in_web"`
 	InIA         bool `json:"in_ia"`
-	InIASim      bool `json:"in_ia_sim"`
-	InKbart      bool `json:"in_kbart"`
-	InJstor      bool `json:"in_jstor"`
-	InDoaj       bool `json:"in_doaj"`
+	InIaSim      bool `json:"in_ia_sim"`
+	InKBART      bool `json:"in_kbart"`
+	InJSTOR      bool `json:"in_jstor"`
+	InDOAJ       bool `json:"in_doaj"`
 
-	ReleaseYear int  `json:"release_year"`
-	AnyAbstract bool `json:"any_abstract"`
+	ReleaseYear int    `json:"release_year"`
+	ReleaseDate string `json:"release_date,omitempty"`
+	AnyAbstract bool   `json:"any_abstract"`
 
 	RefReleaseLegacyIdents []string `json:"ref_release_ids"`
 	RefCount               int      `json:"ref_count"`
@@ -117,21 +123,22 @@ type FatcatReleaseDocV1 struct {
 }
 
 type FatcatContainerDocV1 struct {
-	LegacyIdent       string   `json:"ident"`
-	State             string   `json:"state"`
-	Name              string   `json:"name"`
-	Publisher         string   `json:"publisher"`
-	Type              string   `json:"container_type"`
-	PublicationStatus string   `json:"publication_status"`
-	Issnl             string   `json:"issnl,omitempty"`
-	Issne             string   `json:"issne,omitempty"`
-	Issnp             string   `json:"issnp,omitempty"`
-	Languages         []string `json:"languages"`
-	Issns             []string `json:"issns"`
-	SimPubID          string   `json:"sim_pubid,omitempty"`
-	IaSimCollection   string   `json:"ia_sim_collection,omitempty"`
-	IsOA              bool     `json:"is_oa"`
-	IsLongtailOA      bool     `json:"is_longtail_oa"`
+	LegacyIdent       string    `json:"ident"`
+	IndexTime         time.Time `json:"doc_index_ts"`
+	State             string    `json:"state"`
+	Name              string    `json:"name"`
+	Publisher         string    `json:"publisher"`
+	Type              string    `json:"container_type"`
+	PublicationStatus string    `json:"publication_status"`
+	Issnl             string    `json:"issnl,omitempty"`
+	Issne             string    `json:"issne,omitempty"`
+	Issnp             string    `json:"issnp,omitempty"`
+	Languages         []string  `json:"languages"`
+	Issns             []string  `json:"issns"`
+	SimPubID          string    `json:"sim_pubid,omitempty"`
+	IaSimCollection   string    `json:"ia_sim_collection,omitempty"`
+	IsOA              bool      `json:"is_oa"`
+	IsLongtailOA      bool      `json:"is_longtail_oa"`
 
 	// TODO
 
@@ -156,19 +163,20 @@ type FatcatContainerDocV1 struct {
 }
 
 type FatcatFileDocV1 struct {
-	LegacyIdent         string   `json:"ident"`
-	State               string   `json:"state"`
-	ReleaseLegacyIdents []string `json:"release_ids"`
-	Mimetype            string   `json:"mimetype"`
-	Size                int      `json:"size_bytes"`
-	Sha1                string   `json:"sha1"`
-	Sha256              string   `json:"sha256"`
-	Md5                 string   `json:"md5"`
-	Hosts               []string `json:"hosts"`
-	Domains             []string `json:"domains"`
-	Rels                []string `json:"rels"`
-	InIA                bool     `json:"in_ia"`
-	InIaPetabox         bool     `json:"in_ia_petabox"`
-	BestURL             bool     `json:"best_url"`
-	ReleaseCount        int      `json:"release_count"`
+	LegacyIdent         string    `json:"ident"`
+	IndexTime           time.Time `json:"doc_index_ts"`
+	State               string    `json:"state"`
+	ReleaseLegacyIdents []string  `json:"release_ids"`
+	Mimetype            string    `json:"mimetype"`
+	Size                int       `json:"size_bytes"`
+	Sha1                string    `json:"sha1"`
+	Sha256              string    `json:"sha256"`
+	Md5                 string    `json:"md5"`
+	Hosts               []string  `json:"hosts"`
+	Domains             []string  `json:"domains"`
+	Rels                []string  `json:"rels"`
+	InIA                bool      `json:"in_ia"`
+	InIaPetabox         bool      `json:"in_ia_petabox"`
+	BestURL             bool      `json:"best_url"`
+	ReleaseCount        int       `json:"release_count"`
 }

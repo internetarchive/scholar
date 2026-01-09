@@ -8,19 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"github.com/spf13/viper"
 )
-
-type IngestCtx struct {
-	HttpClient *http.Client
-	Release    fatcat2.Release
-	File       fatcat2.File
-	Container  *fatcat2.Container
-	GrobidXML  []byte
-	PdfText    []byte
-	// TODO thumbnail?
-}
 
 // ScholarDocV1 is what we store in elasticsearch for a fulltext PDF searchable via scholar.archive.org
 type ScholarDocV1 struct {

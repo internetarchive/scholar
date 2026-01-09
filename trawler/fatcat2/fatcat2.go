@@ -83,6 +83,7 @@ type Release struct {
 	Extra           map[string]any `json:"extra,omitempty"`
 	WithdrawnStatus string         `json:"withdrawn_status,omitempty"`
 	Number          string         `json:"number,omitempty"`
+	Version         string         `json:"version,omitempty"`
 
 	// Foreign keys
 

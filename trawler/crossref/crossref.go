@@ -626,7 +626,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	ictx := indexing.IngestCtx{
 		HttpClient: client,
 		Release:    release,
-		File:       file,
+		File:       &file,
 		PdfText:    pdfText,
 		GrobidXML:  grobidXML,
 	}
@@ -639,7 +639,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		ictx.Container = &container
 	}
 
-	esDoc := indexing.PrepareFulltextDoc(client, ictx)
+	esDoc := indexing.PrepareFulltextDoc(ictx)
 	err = indexing.IngestFulltextDoc(client, esDoc)
 
 	fmt.Println(esDoc)

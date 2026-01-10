@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
 	"github.com/miku/grobidclient/tei"
+	"golang.org/x/net/publicsuffix"
 )
 
 const maxBodySize = 512 * 1024
@@ -31,12 +33,13 @@ type IngestCtx struct {
 
 // TODO need doc_index_ts
 
-func PrepareFatcatReleaseDoc(client *http.Client, ictx IngestCtx) FatcatReleaseDocV1 {
+func PrepareFatcatReleaseDoc(ictx IngestCtx) FatcatReleaseDocV1 {
 	out := FatcatReleaseDocV1{}
 	release := ictx.Release
 	container := ictx.Container
 	file := ictx.File
 	extra := release.Extra
+	client := ictx.HttpClient
 	if extra == nil {
 		extra = map[string]any{}
 	}
@@ -191,10 +194,109 @@ func PrepareFatcatReleaseDoc(client *http.Client, ictx IngestCtx) FatcatReleaseD
 	return out
 }
 
-func PrepareFulltextDoc(client *http.Client, ictx IngestCtx) ScholarDocV1 {
+func PrepareFatcatContainerDoc(ictx IngestCtx) FatcatContainerDocV1 {
+	out := FatcatContainerDocV1{}
+	container := ictx.Container
+	if container == nil {
+		panic("got nil container")
+	}
+	// TODO post-xref-poc handle other states
+	out.State = "active"
+
+	out.IndexTime = time.Now()
+	out.LegacyIdent = fatcat2.UuidToLegacy(container.ID)
+	out.Name = container.Name
+	out.Publisher = container.Publisher
+	out.Type = container.Type
+	out.Issnl = container.ISSNL
+	out.Issne = container.ISSNE
+	out.Issnp = container.ISSNP
+	out.Issns = []string{}
+	if out.Issnl != "" {
+		out.Issns = append(out.Issns, out.Issnl)
+	}
+	if out.Issne != "" {
+		out.Issns = append(out.Issns, out.Issne)
+	}
+	if out.Issnp != "" {
+		out.Issns = append(out.Issns, out.Issnp)
+	}
+
+	/*
+		  TODO post-xref-poc handle anything in container.extra which for xref is unused
+			Languages         []string  `json:"languages"`
+			SimPubID          string    `json:"sim_pubid,omitempty"`
+			IaSimCollection   string    `json:"ia_sim_collection,omitempty"`
+			IsOA              bool      `json:"is_oa"`
+			IsLongtailOA      bool      `json:"is_longtail_oa"`
+	*/
+	return out
+}
+
+func PrepareFileDoc(ictx IngestCtx) FatcatFileDocV1 {
+	out := FatcatFileDocV1{}
+	file := ictx.File
+	out.LegacyIdent = fatcat2.UuidToLegacy(file.ID)
+	// TODO post-xref-poc
+	out.State = "active"
+
+	out.IndexTime = time.Now()
+	out.ReleaseLegacyIdents = []string{
+		fatcat2.UuidToLegacy(ictx.Release.ID),
+	}
+	out.Mimetype = file.Mimetype
+	out.Size = file.Size
+	out.Sha1 = file.Sha1
+	out.Sha256 = file.Sha256
+	out.Md5 = file.Md5
+
+	if len(file.URLs) == 0 {
+		return out
+	}
+
+	out.Hosts = []string{}
+	out.Domains = []string{}
+	out.Rels = []string{}
+
+	for _, u := range file.URLs {
+		out.Rels = append(out.Rels, u.Rel)
+		pu, err := url.Parse(u.URL)
+		if err != nil {
+			continue
+		}
+		out.Hosts = append(out.Hosts, pu.Host)
+		d, err := publicsuffix.EffectiveTLDPlusOne(pu.Host)
+		if err != nil {
+			continue
+		}
+
+		out.Domains = append(out.Domains, d)
+
+		if strings.Contains(d, "archive.org") {
+			out.InIA = true
+			out.BestURL = u.URL
+		}
+
+		if out.BestURL == "" {
+			out.BestURL = u.URL
+		}
+	}
+
+	if out.BestURL == "" {
+		// pick an arbitrary one
+		out.BestURL = file.URLs[0].URL
+	}
+
+	out.InIaPetabox = slices.Contains(out.Hosts, "archive.org")
+
+	return out
+}
+
+func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
 	out := ScholarDocV1{}
 	release := ictx.Release
 	container := ictx.Container
+	client := ictx.HttpClient
 
 	out.Type = "work"
 	out.LegacyWorkIdent = fatcat2.UuidToLegacy(release.WorkID)

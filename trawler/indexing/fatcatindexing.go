@@ -123,22 +123,21 @@ type FatcatReleaseDocV1 struct {
 }
 
 type FatcatContainerDocV1 struct {
-	LegacyIdent       string    `json:"ident"`
-	IndexTime         time.Time `json:"doc_index_ts"`
-	State             string    `json:"state"`
-	Name              string    `json:"name"`
-	Publisher         string    `json:"publisher"`
-	Type              string    `json:"container_type"`
-	PublicationStatus string    `json:"publication_status"`
-	Issnl             string    `json:"issnl,omitempty"`
-	Issne             string    `json:"issne,omitempty"`
-	Issnp             string    `json:"issnp,omitempty"`
-	Languages         []string  `json:"languages"`
-	Issns             []string  `json:"issns"`
-	SimPubID          string    `json:"sim_pubid,omitempty"`
-	IaSimCollection   string    `json:"ia_sim_collection,omitempty"`
-	IsOA              bool      `json:"is_oa"`
-	IsLongtailOA      bool      `json:"is_longtail_oa"`
+	LegacyIdent     string    `json:"ident"`
+	IndexTime       time.Time `json:"doc_index_ts"`
+	State           string    `json:"state"`
+	Name            string    `json:"name"`
+	Publisher       string    `json:"publisher"`
+	Type            string    `json:"container_type"`
+	Issnl           string    `json:"issnl,omitempty"`
+	Issne           string    `json:"issne,omitempty"`
+	Issnp           string    `json:"issnp,omitempty"`
+	Languages       []string  `json:"languages"`
+	Issns           []string  `json:"issns"`
+	SimPubID        string    `json:"sim_pubid,omitempty"`
+	IaSimCollection string    `json:"ia_sim_collection,omitempty"`
+	IsOA            bool      `json:"is_oa"`
+	IsLongtailOA    bool      `json:"is_longtail_oa"`
 
 	// TODO
 
@@ -156,6 +155,7 @@ type FatcatContainerDocV1 struct {
 	// preservation_shadows_only
 
 	// NB elided
+	// publication_status
 	// revision
 	// wikidata_qid
 	// sherpa_romeo_color
@@ -177,6 +177,6 @@ type FatcatFileDocV1 struct {
 	Rels                []string  `json:"rels"`
 	InIA                bool      `json:"in_ia"`
 	InIaPetabox         bool      `json:"in_ia_petabox"`
-	BestURL             bool      `json:"best_url"`
+	BestURL             string    `json:"best_url"`
 	ReleaseCount        int       `json:"release_count"`
 }

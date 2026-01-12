@@ -230,3 +230,7 @@ s3folder = "text"
 s3endpoint = "wbgrp-svc171.us.archive.org:8333"
 s3accesskey = ""
 s3secretkey = ""
+
+[indexing]
+elastic_index = "qa_scholar_fulltext"
+elastic_url = "https://scholar.archive.org/_es"

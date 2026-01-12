@@ -64,7 +64,7 @@ type ExternalID struct {
 
 type Release struct {
 	ID              uuid.UUID      `json:"id"`
-	WorkID          *uuid.UUID     `json:"work_id"`
+	WorkID          uuid.UUID      `json:"work_id"`
 	Title           string         `json:"title,omitempty"`
 	OriginalTitle   string         `json:"original_title,omitempty"`
 	Subtitle        string         `json:"subtitle,omitempty"`
@@ -83,12 +83,13 @@ type Release struct {
 	Extra           map[string]any `json:"extra,omitempty"`
 	WithdrawnStatus string         `json:"withdrawn_status,omitempty"`
 	Number          string         `json:"number,omitempty"`
+	Version         string         `json:"version,omitempty"`
 
 	// Foreign keys
 
 	Refs        []RawRef         `json:"refs,omitempty"`
 	Abstracts   []Abstract       `json:"abstracts,omitempty"`
-	ContainerID *uuid.UUID       `json:"container_id"`
+	ContainerID uuid.UUID        `json:"container_id"`
 	ExternalIDs []ExternalID     `json:"extids,omitempty"`
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 
@@ -378,6 +379,35 @@ func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
 	}
 
 	return r.ID, nil
+}
+
+// TODO generalize
+
+// GetContainer looks up a container via its ID
+func GetContainer(c *http.Client, id uuid.UUID) (Container, error) {
+	out := Container{}
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/container/"+id.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 /container/%s failed: %w", id.String(), err)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return out, fmt.Errorf("could not read container '%s': %w", id.String(), err)
+	}
+
+	err = json.Unmarshal(bs, &out)
+	if err != nil {
+		return out, fmt.Errorf("could not unmarshal container '%s': %w", id.String(), err)
+	}
+
+	return out, nil
 }
 
 // GetCreator looks up a creator via its ID

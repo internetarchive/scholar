@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,33 +14,298 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
+	"github.com/miku/grobidclient/tei"
+	"golang.org/x/net/publicsuffix"
 )
 
-// TODO i am once again worked up about multiple releases in works. are we
-// currently adding releases to works when we find new versions? how do we
-// determine new versions? or was that only through manual edits? the pipeline
-// i'm augmenting with indexing right now is just adding new releases and thus
-// new works so for now I can treat work <-> release as one to one. but i'd
-// feel a lot better if i knew how many works in fatcat had >1 release (1 and
-// 2) so i'm going to finish that line of inquiry. my notes say i asked this
-// question back in january but i don't see an answer anywhere with cursory
-// grepping.
-//
-// but, what i need to keep repeating to myself is that this is a code path for
-// a PoC i want done asap and this code path is *just* for new to us DOIs so i
-// should continue in that mindset
+const maxBodySize = 512 * 1024
 
-func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat2.Container, pdfText string) FulltextDocV1 {
-	out := FulltextDocV1{}
+// TODO better name for this...
+type IngestCtx struct {
+	HttpClient *http.Client
+	Release    fatcat2.Release
+	File       *fatcat2.File
+	Container  *fatcat2.Container
+	GrobidXML  []byte
+	PdfText    []byte
+	// TODO thumbnail?
+}
+
+// TODO need doc_index_ts
+
+func PrepareFatcatReleaseDoc(ictx IngestCtx) FatcatReleaseDocV1 {
+	out := FatcatReleaseDocV1{}
+	release := ictx.Release
+	container := ictx.Container
+	file := ictx.File
+	extra := release.Extra
+	client := ictx.HttpClient
+	if extra == nil {
+		extra = map[string]any{}
+	}
+
+	// TODO conceivable we want to continue using this to mark deletion but hardcoding for now
+	out.State = "active"
+	out.IndexTime = time.Now()
+	out.LegacyIdent = fatcat2.UuidToLegacy(release.ID)
+	out.LegacyWorkIdent = fatcat2.UuidToLegacy(release.WorkID)
+	out.Title = release.Title
+	out.Subtitle = release.Subtitle
+	out.OriginalTitle = release.OriginalTitle
+	out.Type = release.Type
+	out.Stage = release.Stage
+	out.WithdrawnStatus = release.WithdrawnStatus
+	out.Language = release.Language
+	out.Volume = release.Volume
+	out.Issue = release.Issue
+	out.Pages = release.Pages
+	out.Number = release.Number
+	out.License = release.LicenseSlug
+	if container != nil {
+		out.ContainerName = container.Name
+	}
+	out.Version = release.Version
+
+	out.Publisher = release.Publisher
+	if out.Publisher == "" {
+		out.Publisher = container.Publisher
+	}
+
+	// NB copypasta
+	for _, eid := range release.ExternalIDs {
+		if eid.Type == "doi" {
+			out.DOI = eid.Value
+			out.DOIPrefix = doiPrefix(eid.Value)
+			if release.Extra != nil {
+				if _, ok := release.Extra["crossref"]; ok {
+					// TODO post-xref-poc other registrars
+					// TODO is there even evidence that this is useful
+					out.DOIRegistrar = "crossref"
+				}
+			}
+		}
+		// TODO post-xref-poc
+		//PMID    string `json:"pmid,omitempty"`
+		//PMCID   string `json:"pmcid,omitempty"`
+		//ISBN13  string `json:"isbn13,omitempty"`
+		//ArxivID string `json:"arxiv_id,omitempty"`
+		//JstorID string `json:"jstor_id,omitempty"`
+		//DoajID  string `json:"doaj_id,omitempty"`
+		//DblpID  string `json:"dblp_id,omitempty"`
+		//OAIID   string `json:"oai_id,omitempty"`
+	}
+
+	out.InDOAJ = out.DoajID != ""
+	out.InJSTOR = out.JstorID != ""
+
+	// TODO post-xref-poc
+	// based on a note in the old code bryan thought that all crossref stuff is
+	// in kbart so we'll continue this line of thinking?
+	if _, ok := extra["crossref"]; ok {
+		out.InKBART = true
+	}
+
+	out.ReleaseYear = release.ReleaseYear
+	if release.ReleaseDate != nil {
+		out.ReleaseDate = release.ReleaseDate.Format("2006-01-02")
+	}
+
+	if len(release.Abstracts) > 0 {
+		out.AnyAbstract = true
+	}
+
+	out.RefCount = len(release.Refs)
+
+	out.ContribCount = len(release.Contribs)
+	out.ContribNames = []string{}
+	out.CreatorLegacyIdents = []string{}
+	out.Affiliations = []string{}
+	for _, c := range release.Contribs {
+		out.ContribNames = append(out.ContribNames, contribToName(client, c))
+		out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fatcat2.UuidToLegacy(c.CreatorID))
+		out.Affiliations = append(out.Affiliations, c.RawAffiliation)
+	}
+
+	if file != nil {
+		// TODO post-xref-poc probably can't keep assuming the state of URLs like this
+		out.FileCount = 1
+		out.BestPdfUrl = file.URLs[0].URL
+		if strings.Contains(file.URLs[0].URL, ".archive.org") {
+			out.IaPdfUrl = file.URLs[0].URL
+			out.InIA = true
+		}
+	}
+
+	out.FirstPage, _, _ = strings.Cut(release.Pages, "-")
+
+	license := strings.ToLower(release.LicenseSlug)
+	// TODO if this index sticks around this logic should be consolidated with
+	// whats in generateTags
+	if strings.HasPrefix(license, "cc-") {
+		out.IsOA = true
+	} else if strings.HasPrefix(license, "arxiv-") {
+		out.IsOA = true
+	} else if container != nil && container.Extra != nil {
+		if dl, ok := container.Extra["default_license"]; ok {
+			if strings.HasPrefix(strings.ToLower(dl.(string)), "cc-") {
+				out.IsOA = true
+			}
+		}
+	} else if _, ok := extra["crossref"]; ok {
+		if file != nil {
+			// we found this release via xref and found a file for it; that implies OA
+			out.IsOA = true
+		}
+	} else if eoa, ok := extra["is_oa"]; ok {
+		out.IsOA = eoa.(bool)
+	} else if loa, ok := extra["longtail_oa"]; ok && loa.(bool) {
+		out.IsOA = true
+		out.IsLongtailOA = true
+	} else if out.InDOAJ {
+		out.IsOA = true
+	}
+
+	if out.InIA || out.InKBART || out.InJSTOR || out.PMCID != "" || out.ArxivID != "" {
+		out.IsPreserved = true
+	}
+
+	if out.InIA {
+		out.Preservation = "bright"
+	} else if out.IsPreserved {
+		out.Preservation = "dark"
+	} else {
+		out.Preservation = "none"
+	}
+
+	// TODO
+
+	// NB i am leaving out the in_shadows prop for now
+
+	// NB these depended on a field that was never set in the old system so ignoring
+	// RefReleaseLegacyIdents []string `json:"ref_release_ids"`
+	// RefLinkedCount         int      `json:"ref_linked_count"`
+
+	// NB this was never set
+	// Tags  []string `json:"tags"`
+	// InWeb bool `json:"in_web"`
+
+	// TODO post-xref-poc
+	// InIASim      bool `json:"in_ia_sim"`
+	return out
+}
+
+func PrepareFatcatContainerDoc(ictx IngestCtx) FatcatContainerDocV1 {
+	out := FatcatContainerDocV1{}
+	container := ictx.Container
+	if container == nil {
+		panic("got nil container")
+	}
+	// TODO post-xref-poc handle other states
+	out.State = "active"
+
+	out.IndexTime = time.Now()
+	out.LegacyIdent = fatcat2.UuidToLegacy(container.ID)
+	out.Name = container.Name
+	out.Publisher = container.Publisher
+	out.Type = container.Type
+	out.Issnl = container.ISSNL
+	out.Issne = container.ISSNE
+	out.Issnp = container.ISSNP
+	out.Issns = []string{}
+	if out.Issnl != "" {
+		out.Issns = append(out.Issns, out.Issnl)
+	}
+	if out.Issne != "" {
+		out.Issns = append(out.Issns, out.Issne)
+	}
+	if out.Issnp != "" {
+		out.Issns = append(out.Issns, out.Issnp)
+	}
+
+	/*
+		  TODO post-xref-poc handle anything in container.extra which for xref is unused
+			Languages         []string  `json:"languages"`
+			SimPubID          string    `json:"sim_pubid,omitempty"`
+			IaSimCollection   string    `json:"ia_sim_collection,omitempty"`
+			IsOA              bool      `json:"is_oa"`
+			IsLongtailOA      bool      `json:"is_longtail_oa"`
+	*/
+	return out
+}
+
+func PrepareFileDoc(ictx IngestCtx) FatcatFileDocV1 {
+	out := FatcatFileDocV1{}
+	file := ictx.File
+	out.LegacyIdent = fatcat2.UuidToLegacy(file.ID)
+	// TODO post-xref-poc
+	out.State = "active"
+
+	out.IndexTime = time.Now()
+	out.ReleaseLegacyIdents = []string{
+		fatcat2.UuidToLegacy(ictx.Release.ID),
+	}
+	out.Mimetype = file.Mimetype
+	out.Size = file.Size
+	out.Sha1 = file.Sha1
+	out.Sha256 = file.Sha256
+	out.Md5 = file.Md5
+
+	if len(file.URLs) == 0 {
+		return out
+	}
+
+	out.Hosts = []string{}
+	out.Domains = []string{}
+	out.Rels = []string{}
+
+	for _, u := range file.URLs {
+		out.Rels = append(out.Rels, u.Rel)
+		pu, err := url.Parse(u.URL)
+		if err != nil {
+			continue
+		}
+		out.Hosts = append(out.Hosts, pu.Host)
+		d, err := publicsuffix.EffectiveTLDPlusOne(pu.Host)
+		if err != nil {
+			continue
+		}
+
+		out.Domains = append(out.Domains, d)
+
+		if strings.Contains(d, "archive.org") {
+			out.InIA = true
+			out.BestURL = u.URL
+		}
+
+		if out.BestURL == "" {
+			out.BestURL = u.URL
+		}
+	}
+
+	if out.BestURL == "" {
+		// pick an arbitrary one
+		out.BestURL = file.URLs[0].URL
+	}
+
+	out.InIaPetabox = slices.Contains(out.Hosts, "archive.org")
+
+	return out
+}
+
+func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
+	out := ScholarDocV1{}
+	release := ictx.Release
+	container := ictx.Container
+	client := ictx.HttpClient
 
 	out.Type = "work"
-	out.LegacyWorkIdent = fatcat2.UuidToLegacy(*release.WorkID)
+	out.LegacyWorkIdent = fatcat2.UuidToLegacy(release.WorkID)
 	out.Key = fmt.Sprintf("work_%s", out.LegacyWorkIdent)
 	out.IndexTime = time.Now()
 	out.CollapseKey = out.LegacyWorkIdent
 
 	// biblio field
-	out.Biblio = BiblioV1{}
+	out.Biblio = ScholarBiblioV1{}
 	if release.Publisher != "" {
 		out.Biblio.Publisher = release.Publisher
 	} else {
@@ -218,6 +484,41 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		}
 	}
 
+	// fulltext
+	out.Fulltext = ScholarFulltextV1{}
+
+	gdoc, err := tei.ParseDocument(bytes.NewReader(ictx.GrobidXML))
+	if err == nil {
+		out.Fulltext.Language = gdoc.LanguageCode
+		out.Fulltext.Body = gdoc.Body
+		out.Fulltext.Acknowledgement = gdoc.Acknowledgement
+		out.Fulltext.Annex = gdoc.Annex
+	} else {
+		// TODO logging would be nice
+	}
+
+	if out.Fulltext.Language == "" {
+		out.Fulltext.Language = release.Language
+	}
+
+	if out.Fulltext.Body == "" {
+		out.Fulltext.Body = string(ictx.PdfText)
+	}
+
+	if len(out.Fulltext.Body) > maxBodySize {
+		out.Fulltext.Body = out.Fulltext.Body[:maxBodySize]
+	}
+
+	out.Fulltext.LegacyReleaseIdent = fatcat2.UuidToLegacy(release.ID)
+	out.Fulltext.FileSha1 = ictx.File.Sha1
+	out.Fulltext.LegacyFileIdent = fatcat2.UuidToLegacy(ictx.File.ID)
+	out.Fulltext.FileMimetype = ictx.File.Mimetype
+	out.Fulltext.Size = ictx.File.Size
+
+	// TODO post-xref-poc might be other urls in here but for now there's only going to be one
+	out.Fulltext.AccessURL = ictx.File.URLs[0].URL
+	out.Fulltext.AccessType = "wayback"
+
 	// abstracts
 	unwantedAbstractPrefixes := []string{
 		"Abstract No Abstract ",
@@ -246,11 +547,18 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		if body == "" || len(strings.Fields(body)) <= 1 {
 			continue
 		}
-		out.Abstracts = append(out.Abstracts, AbstractV1{
+		out.Abstracts = append(out.Abstracts, ScholarAbstractV1{
 			Body:     body,
 			Language: a.Language,
 		})
 		seenLangs = append(seenLangs, a.Language)
+	}
+
+	if len(out.Abstracts) == 0 && len(gdoc.Abstract) > 0 {
+		out.Abstracts = append(out.Abstracts, ScholarAbstractV1{
+			Language: gdoc.LanguageCode,
+			Body:     cleanString(deTag(gdoc.Abstract)),
+		})
 	}
 
 	// NB there was a concept of excluding fulltext access for certain things
@@ -264,7 +572,7 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 	// bryan went with a slightly different schema for releases in here. keeping
 	// the pattern around because i don't want to break any code that expects
 	// this shape of the releases payload.
-	out.Releases = []ReleaseV1{
+	out.Releases = []ScholarReleaseV1{
 		{
 			BiblioCommonV1: out.Biblio.BiblioCommonV1,
 			LegacyIdent:    out.Biblio.LegacyReleaseIdent,
@@ -272,13 +580,25 @@ func FromFatcatV2(client *http.Client, release fatcat2.Release, container fatcat
 		},
 	}
 
-	// TODO Fulltext
-	// TODO Access
+	// NB I'm leaving out Thumbnail since it's synthesizable from sha1 and other info.
+
+	// NB I hate this whole idea of multiple access points; I also hate how we're
+	// using ES as a data store. ES should have a bare minimum of stuff in it --
+	// release ID, fulltext. the rest can be gotten from PG.
+	out.Access = []ScholarAccessV1{
+		{
+			Type:               out.Fulltext.AccessType,
+			Url:                out.Fulltext.AccessURL,
+			Mimetype:           out.Fulltext.FileMimetype,
+			LegacyFileIdent:    out.Fulltext.LegacyFileIdent,
+			LegacyReleaseIdent: out.Fulltext.LegacyReleaseIdent,
+		},
+	}
 
 	return out
 }
 
-func generateTags(biblio BiblioV1, container fatcat2.Container) []string {
+func generateTags(biblio ScholarBiblioV1, container *fatcat2.Container) []string {
 	tags := map[string]bool{}
 	if strings.HasPrefix(strings.ToLower(biblio.LicenseSlug), "cc-") {
 		tags["oa"] = true
@@ -288,7 +608,7 @@ func generateTags(biblio BiblioV1, container fatcat2.Container) []string {
 		tags["jstor"] = true
 	}
 
-	if container.Extra != nil {
+	if container != nil && container.Extra != nil {
 		if _, ok := container.Extra["doaj"]; ok {
 			tags["doaj"] = true
 			tags["oa"] = true

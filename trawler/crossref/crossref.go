@@ -19,6 +19,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
+	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/s3"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
@@ -517,7 +518,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	l.Debug(fmt.Sprintf("created file %s", fid))
 	out.Releases.Acquired++
 
-	//	"Send your PDF payload to %s/spool - a 200 OK status only confirms receipt, not successful postprocessing, which may take more time. Check Location header for spool id."}`
+	//	"Send your PDF payload to %s/spool - a 200 OK status only confirms
+	//	receipt, not successful postprocessing, which may take more time. Check
+	//	Location header for spool id."
 
 	blobprocEndpoint := viper.GetString("blobproc.endpoint")
 	req, err := http.NewRequest("POST", blobprocEndpoint, bytes.NewBuffer(pdfBs))
@@ -571,18 +574,32 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		l.Debug(fmt.Sprintf("%s: waiting on blobproc", release.ID))
 	}
 
+	// get blobproc stuff for ingestion
+
 	s3bucket := viper.GetString("blobproc.s3bucket")
-	s3folder := viper.GetString("blobproc.s3folder")
 
 	s3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
-		s3bucket, s3folder, file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
+		s3bucket, "grobid", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
+
+	obj, err := s3.GetBlobprocObject(ctx, s3Key)
+	if err != nil {
+		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
+	}
+
+	grobidXML, err := io.ReadAll(obj)
+	if err != nil {
+		return out, fmt.Errorf("could not read '%s': %w", s3Key, err)
+	}
+
+	s3Key = fmt.Sprintf("%s/%s/%s/%s/%s.txt",
+		s3bucket, "text", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
 	// TODO also need the grobid payload as it's the preferred source of text;
 	// what i grabbed was pdftotext output (ie the grobid fallback). so refactor
 	// to pull from `grobid` path and remember how to process that xml (martin's
 	// library); also get the thumbnail path ready for ES.
 
-	obj, err := s3.GetBlobprocObject(ctx, s3Key)
+	obj, err = s3.GetBlobprocObject(ctx, s3Key)
 	if err != nil {
 		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
 	}
@@ -605,6 +622,27 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		make sure it's all working; once it is, I'd like to have this workflow
 		return a list of s3 keys to ingest so they can be done as a single batch.
 	*/
+
+	ictx := indexing.IngestCtx{
+		HttpClient: client,
+		Release:    release,
+		File:       &file,
+		PdfText:    pdfText,
+		GrobidXML:  grobidXML,
+	}
+
+	if release.ContainerID != uuid.Nil {
+		container, err := fatcat2.GetContainer(client, release.ContainerID)
+		if err != nil {
+			return out, fmt.Errorf("could not fetch container '%s': %w", release.ContainerID, err)
+		}
+		ictx.Container = &container
+	}
+
+	esDoc := indexing.PrepareFulltextDoc(ictx)
+	err = indexing.IngestFulltextDoc(client, esDoc)
+
+	fmt.Println(esDoc)
 
 	// TODO ingest PDF (Ingested++)
 	return out, nil
@@ -763,7 +801,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 	// (This article is only available as a PDF document.)
 
 	// "extra" stuff (ugh)
-	if release.ContainerID == nil && len(xrefdoc.ContainerTitle) > 1 {
+	if release.ContainerID == uuid.Nil && len(xrefdoc.ContainerTitle) > 1 {
 		release.Extra["container_name"] = xrefdoc.ContainerTitle[0]
 	}
 
@@ -930,9 +968,7 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 		cs.Containers.Ignored++
 	}
 
-	if containerID != uuid.Nil {
-		release.ContainerID = &containerID
-	}
+	release.ContainerID = containerID
 
 	// licenses
 

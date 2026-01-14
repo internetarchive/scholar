@@ -575,5 +575,5 @@ func fc2uuid(fatcatIdent string) (uuid.UUID, error) {
 }
 
 func UuidToLegacy(u uuid.UUID) string {
-	return strings.ToLower(base32.StdEncoding.EncodeToString(u[:]))
+	return strings.ToLower(base32.StdEncoding.EncodeToString(u[:])[:26])
 }

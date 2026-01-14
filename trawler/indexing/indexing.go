@@ -12,28 +12,22 @@ import (
 	"github.com/spf13/viper"
 )
 
-// IndexFile fetches a file from fc2 and its associated release and indexes the file into elasticsearch
+// TODO will probably kick client into the sig for these
+
+// IndexFile fetches a file from fc2 and indexes it into elasticsearch
 func IndexFile(fid uuid.UUID) error {
-	// TODO
-	/*
-		client := &http.Client{}
-		c, err := fatcat2.GetFile(client, fid)
-		if err != nil {
-			return err
-		}
+	client := &http.Client{}
+	f, err := fatcat2.GetFile(client, fid)
+	if err != nil {
+		return err
+	}
+	d := PrepareFatcatFileDoc(f)
+	bs, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
 
-
-
-		d := PrepareFatcatFile(r, f)
-
-		bs, err := json.Marshal(d)
-		if err != nil {
-			return err
-		}
-
-		return doElasticIndex(client, viper.GetString("indexing.fatcat_container_ix"), d.LegacyIdent, bs)
-	*/
-	return nil
+	return doElasticIndex(client, viper.GetString("indexing.fatcat_file_ix"), d.LegacyIdent, bs)
 }
 
 // IndexContainer fetches a container from fc2 api and indexes it in elasticsearch

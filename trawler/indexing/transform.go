@@ -226,7 +226,7 @@ func PrepareFatcatContainerDoc(container fatcat2.Container) FatcatContainerDocV1
 	return out
 }
 
-func PrepareFileDoc(releases []fatcat2.Release, file fatcat2.File) FatcatFileDocV1 {
+func PrepareFatcatFileDoc(file fatcat2.File) FatcatFileDocV1 {
 	// TODO i'm wary of the multiple releases per file thing, should investigate
 	out := FatcatFileDocV1{}
 	out.LegacyIdent = fatcat2.UuidToLegacy(file.ID)
@@ -234,10 +234,10 @@ func PrepareFileDoc(releases []fatcat2.Release, file fatcat2.File) FatcatFileDoc
 	out.State = "active"
 
 	out.IndexTime = time.Now()
-	for _, r := range releases {
+	for _, r := range file.Releases {
 		out.ReleaseLegacyIdents = append(out.ReleaseLegacyIdents, fatcat2.UuidToLegacy(r.ID))
 	}
-	out.ReleaseCount = len(releases)
+	out.ReleaseCount = len(file.Releases)
 	out.Mimetype = file.Mimetype
 	out.Size = file.Size
 	out.Sha1 = file.Sha1

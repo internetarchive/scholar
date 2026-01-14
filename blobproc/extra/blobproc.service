@@ -1,0 +1,10 @@
+[Unit]
+Description=Receive blob from heritrix and postprocess them
+
+[Service]
+ExecStart=/usr/local/bin/blobproc -addr 0.0.0.0:9090 -spool /1/blobproc/spool
+User=fatcat
+Group=fatcat
+
+[Install]
+WantedBy=multi-user.target

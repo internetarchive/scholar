@@ -226,16 +226,18 @@ func PrepareFatcatContainerDoc(container fatcat2.Container) FatcatContainerDocV1
 	return out
 }
 
-func PrepareFileDoc(release fatcat2.Release, file fatcat2.File) FatcatFileDocV1 {
+func PrepareFileDoc(releases []fatcat2.Release, file fatcat2.File) FatcatFileDocV1 {
+	// TODO i'm wary of the multiple releases per file thing, should investigate
 	out := FatcatFileDocV1{}
 	out.LegacyIdent = fatcat2.UuidToLegacy(file.ID)
 	// TODO post-xref-poc
 	out.State = "active"
 
 	out.IndexTime = time.Now()
-	out.ReleaseLegacyIdents = []string{
-		fatcat2.UuidToLegacy(release.ID),
+	for _, r := range releases {
+		out.ReleaseLegacyIdents = append(out.ReleaseLegacyIdents, fatcat2.UuidToLegacy(r.ID))
 	}
+	out.ReleaseCount = len(releases)
 	out.Mimetype = file.Mimetype
 	out.Size = file.Size
 	out.Sha1 = file.Sha1

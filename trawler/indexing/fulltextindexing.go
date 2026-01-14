@@ -13,8 +13,8 @@ import (
 
 // ScholarDocV1 is what we store in elasticsearch for a fulltext PDF searchable via scholar.archive.org
 type ScholarDocV1 struct {
-	Key             string              `json:"key"`
 	Type            string              `json:"doc_type"`
+	Key             string              `json:"key"`
 	LegacyWorkIdent string              `json:"work_ident"`
 	Fulltext        ScholarFulltextV1   `json:"fulltext"`
 	IndexTime       time.Time           `json:"doc_index_ts"`
@@ -124,8 +124,8 @@ type BiblioCommonV1 struct {
 
 func IngestFulltextDoc(client *http.Client, doc ScholarDocV1) error {
 	u := fmt.Sprintf("%s/%s/_doc/%s",
-		viper.GetString("indexing.elastic_url"),
-		viper.GetString("indexing.elastic_index"),
+		viper.GetString("indexing.elasticsearch_url"),
+		viper.GetString("indexing.fulltext_ix"),
 		doc.Key)
 
 	docJson, err := json.Marshal(doc)

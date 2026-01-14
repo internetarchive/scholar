@@ -20,8 +20,7 @@ import (
 
 const maxBodySize = 512 * 1024
 
-// TODO better name for this...
-type IngestCtx struct {
+type ReleaseTransformCtx struct {
 	HttpClient *http.Client
 	Release    fatcat2.Release
 	File       *fatcat2.File
@@ -31,9 +30,7 @@ type IngestCtx struct {
 	// TODO thumbnail?
 }
 
-// TODO need doc_index_ts
-
-func PrepareFatcatReleaseDoc(ictx IngestCtx) FatcatReleaseDocV1 {
+func PrepareFatcatReleaseDoc(ictx ReleaseTransformCtx) FatcatReleaseDocV1 {
 	out := FatcatReleaseDocV1{}
 	release := ictx.Release
 	container := ictx.Container
@@ -194,12 +191,8 @@ func PrepareFatcatReleaseDoc(ictx IngestCtx) FatcatReleaseDocV1 {
 	return out
 }
 
-func PrepareFatcatContainerDoc(ictx IngestCtx) FatcatContainerDocV1 {
+func PrepareFatcatContainerDoc(container fatcat2.Container) FatcatContainerDocV1 {
 	out := FatcatContainerDocV1{}
-	container := ictx.Container
-	if container == nil {
-		panic("got nil container")
-	}
 	// TODO post-xref-poc handle other states
 	out.State = "active"
 
@@ -233,16 +226,15 @@ func PrepareFatcatContainerDoc(ictx IngestCtx) FatcatContainerDocV1 {
 	return out
 }
 
-func PrepareFileDoc(ictx IngestCtx) FatcatFileDocV1 {
+func PrepareFileDoc(release fatcat2.Release, file fatcat2.File) FatcatFileDocV1 {
 	out := FatcatFileDocV1{}
-	file := ictx.File
 	out.LegacyIdent = fatcat2.UuidToLegacy(file.ID)
 	// TODO post-xref-poc
 	out.State = "active"
 
 	out.IndexTime = time.Now()
 	out.ReleaseLegacyIdents = []string{
-		fatcat2.UuidToLegacy(ictx.Release.ID),
+		fatcat2.UuidToLegacy(release.ID),
 	}
 	out.Mimetype = file.Mimetype
 	out.Size = file.Size
@@ -292,7 +284,7 @@ func PrepareFileDoc(ictx IngestCtx) FatcatFileDocV1 {
 	return out
 }
 
-func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
+func PrepareFulltextDoc(ictx ReleaseTransformCtx) ScholarDocV1 {
 	out := ScholarDocV1{}
 	release := ictx.Release
 	container := ictx.Container

@@ -623,7 +623,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return a list of s3 keys to ingest so they can be done as a single batch.
 	*/
 
-	ictx := indexing.IngestCtx{
+	ictx := indexing.ReleaseTransformCtx{
 		HttpClient: client,
 		Release:    release,
 		File:       &file,

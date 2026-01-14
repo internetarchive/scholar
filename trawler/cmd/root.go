@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"git.archive.org/webgroup/scholar/trawler/cmd/crossrefcmd"
+	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -34,6 +35,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file override")
 
 	rootCmd.AddCommand(crossrefcmd.Cmd)
+	rootCmd.AddCommand(indexcmd.IndexCmd)
 }
 
 func initConfig() {

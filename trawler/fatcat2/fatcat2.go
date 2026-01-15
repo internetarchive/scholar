@@ -381,6 +381,31 @@ func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
 	return r.ID, nil
 }
 
+func ReleaseFiles(c *http.Client, rid uuid.UUID) ([]File, error) {
+	out := []File{}
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/release/"+rid.String()+"/files", nil)
+	if err != nil {
+		panic(err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 /release/%s/files failed: %w", rid.String(), err)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return out, fmt.Errorf("could not read release '%s' files: %w", rid.String(), err)
+	}
+
+	err = json.Unmarshal(bs, &out)
+	if err != nil {
+		return out, fmt.Errorf("could not unmarshal release '%s' files: %w", rid.String(), err)
+	}
+
+	return out, nil
+}
+
 // TODO generalize
 func GetRelease(c *http.Client, id uuid.UUID) (Release, error) {
 	out := Release{}

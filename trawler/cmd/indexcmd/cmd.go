@@ -30,8 +30,10 @@ var IndexCmd = &cobra.Command{
 			f = indexing.IndexContainer
 		case "file":
 			f = indexing.IndexFile
-		case "fulltext":
 		case "release":
+			f = indexing.IndexRelease
+		case "fulltext":
+			// TODO
 		default:
 			panic("unreachable")
 		}

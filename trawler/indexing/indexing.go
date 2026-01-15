@@ -14,6 +14,22 @@ import (
 
 // TODO will probably kick client into the sig for these
 
+// IndexRelease fetches a release from fc2 and indexes it into elasticsearch
+func IndexRelease(rid uuid.UUID) error {
+	client := &http.Client{}
+	r, err := fatcat2.GetRelease(client, rid)
+	if err != nil {
+		return err
+	}
+	d := PrepareFatcatReleaseDoc(client, r)
+	bs, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+
+	return doElasticIndex(client, viper.GetString("indexing.fatcat_file_ix"), d.LegacyIdent, bs)
+}
+
 // IndexFile fetches a file from fc2 and indexes it into elasticsearch
 func IndexFile(fid uuid.UUID) error {
 	client := &http.Client{}

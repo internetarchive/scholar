@@ -907,7 +907,8 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 			d, err := time.Parse("2006-01-02",
 				fmt.Sprintf("%d-%02d-%02d", rawDate[0], rawDate[1], rawDate[2]))
 			if err == nil {
-				release.ReleaseDate = &d
+				rd := fatcat2.ReleaseDate(d)
+				release.ReleaseDate = &rd
 			}
 		} else if len(rawDate) > 0 {
 			release.ReleaseYear = rawDate[0]

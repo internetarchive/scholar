@@ -62,6 +62,26 @@ type ExternalID struct {
 	Value     string     `json:"id_value"`
 }
 
+type ReleaseDate time.Time
+
+func (rd *ReleaseDate) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		return nil
+	}
+	s := strings.Trim(string(b), `"`)
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return err
+	}
+	*rd = ReleaseDate(t)
+	return nil
+}
+
+func (rd ReleaseDate) Format(s string) string {
+	t := time.Time(rd)
+	return t.Format(s)
+}
+
 type Release struct {
 	ID              uuid.UUID      `json:"id"`
 	WorkID          uuid.UUID      `json:"work_id"`
@@ -70,7 +90,7 @@ type Release struct {
 	Subtitle        string         `json:"subtitle,omitempty"`
 	Type            string         `json:"release_type,omitempty"`
 	Stage           string         `json:"release_stage,omitempty"`
-	ReleaseDate     *time.Time     `json:"release_date"`
+	ReleaseDate     *ReleaseDate   `json:"release_date"`
 	ReleaseYear     int            `json:"release_year,omitempty"`
 	Source          string         `json:"source,omitempty"`
 	Volume          string         `json:"volume,omitempty"`

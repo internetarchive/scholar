@@ -27,7 +27,7 @@ func IndexRelease(rid uuid.UUID) error {
 		return err
 	}
 
-	return doElasticIndex(client, viper.GetString("indexing.fatcat_file_ix"), d.LegacyIdent, bs)
+	return doElasticIndex(client, viper.GetString("indexing.fatcat_release_ix"), d.LegacyIdent, bs)
 }
 
 // IndexFile fetches a file from fc2 and indexes it into elasticsearch

@@ -130,7 +130,9 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) FatcatRel
 	for _, c := range release.Contribs {
 		out.ContribNames = append(out.ContribNames, contribToName(client, c))
 		out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fc2.UuidToLegacy(c.CreatorID))
-		out.Affiliations = append(out.Affiliations, c.RawAffiliation)
+		if c.RawAffiliation != "" {
+			out.Affiliations = append(out.Affiliations, c.RawAffiliation)
+		}
 	}
 
 	if len(files) > 0 {
@@ -202,6 +204,9 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) FatcatRel
 	} else {
 		out.Preservation = "none"
 	}
+
+	// TODO those "aaaa..." in creator ids seem very wrong
+	// TODO not seeing file handling for 9a886e02-6832-4c68-9675-8bfc65dea753 which def has files
 
 	// TODO
 
@@ -384,7 +389,8 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 	// NB these fields used to get set to nil if the year was greater than 2025
 	// (lol) or less than 1500. That disturbed me; we should endeavour to clean
 	// that data prior to indexing. I have left it out.
-	out.Biblio.ReleaseDate = release.ReleaseDate
+	t := time.Time(*release.ReleaseDate)
+	out.Biblio.ReleaseDate = &t
 	out.Biblio.ReleaseYear = release.ReleaseYear
 
 	out.Biblio.ReleaseType = release.Type

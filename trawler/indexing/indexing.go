@@ -21,7 +21,10 @@ func IndexRelease(rid uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	d := PrepareFatcatReleaseDoc(client, r)
+	d, err := PrepareFatcatReleaseDoc(client, r)
+	if err != nil {
+		return err
+	}
 	bs, err := json.Marshal(d)
 	if err != nil {
 		return err

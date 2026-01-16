@@ -30,7 +30,7 @@ type FulltextTransformCtx struct {
 	// TODO thumbnail?
 }
 
-func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) FatcatReleaseDocV1 {
+func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatReleaseDocV1, error) {
 	out := FatcatReleaseDocV1{}
 	extra := release.Extra
 	if extra == nil {
@@ -40,15 +40,15 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) FatcatRel
 	var container *fc2.Container
 	if release.ContainerID != uuid.Nil {
 		c, err := fc2.GetContainer(client, release.ContainerID)
-		if err == nil {
-			container = &c
+		if err != nil {
+			return out, err
 		}
+		container = &c
 	}
 
-	files := []fc2.File{}
-	fs, err := fc2.ReleaseFiles(client, release.ID)
-	if err == nil {
-		files = fs
+	files, err := fc2.ReleaseFiles(client, release.ID)
+	if err != nil {
+		return out, err
 	}
 
 	// TODO conceivable we want to continue using this to mark deletion but hardcoding for now
@@ -129,7 +129,9 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) FatcatRel
 	out.Affiliations = []string{}
 	for _, c := range release.Contribs {
 		out.ContribNames = append(out.ContribNames, contribToName(client, c))
-		out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fc2.UuidToLegacy(c.CreatorID))
+		if c.CreatorID != uuid.Nil {
+			out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fc2.UuidToLegacy(c.CreatorID))
+		}
 		if c.RawAffiliation != "" {
 			out.Affiliations = append(out.Affiliations, c.RawAffiliation)
 		}
@@ -205,24 +207,18 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) FatcatRel
 		out.Preservation = "none"
 	}
 
-	// TODO those "aaaa..." in creator ids seem very wrong
-	// TODO not seeing file handling for 9a886e02-6832-4c68-9675-8bfc65dea753 which def has files
-
-	// TODO
-
 	// NB i am leaving out the in_shadows prop for now
 
-	// NB these depended on a field that was never set in the old system so ignoring
+	// NB these were never set
+	// Tags  []string `json:"tags"`
+	// InWeb bool `json:"in_web"`
 	// RefReleaseLegacyIdents []string `json:"ref_release_ids"`
 	// RefLinkedCount         int      `json:"ref_linked_count"`
 
-	// NB this was never set
-	// Tags  []string `json:"tags"`
-	// InWeb bool `json:"in_web"`
-
 	// TODO post-xref-poc
 	// InIASim      bool `json:"in_ia_sim"`
-	return out
+
+	return out, nil
 }
 
 func PrepareFatcatContainerDoc(container fc2.Container) FatcatContainerDocV1 {

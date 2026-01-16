@@ -402,6 +402,9 @@ func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
 }
 
 func ReleaseFiles(c *http.Client, rid uuid.UUID) ([]File, error) {
+	type payload struct {
+		Items []File
+	}
 	out := []File{}
 	fc2url := viper.GetString("fatcat2.endpoint")
 	req, err := http.NewRequest("GET", fc2url+"/release/"+rid.String()+"/files", nil)
@@ -418,12 +421,13 @@ func ReleaseFiles(c *http.Client, rid uuid.UUID) ([]File, error) {
 		return out, fmt.Errorf("could not read release '%s' files: %w", rid.String(), err)
 	}
 
-	err = json.Unmarshal(bs, &out)
+	var p payload
+	err = json.Unmarshal(bs, &p)
 	if err != nil {
 		return out, fmt.Errorf("could not unmarshal release '%s' files: %w", rid.String(), err)
 	}
 
-	return out, nil
+	return p.Items, nil
 }
 
 // TODO generalize

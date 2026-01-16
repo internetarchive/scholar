@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
-	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/s3"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -109,7 +108,7 @@ func IndexFulltext(rid uuid.UUID) error {
 		PdfText:    pdfText,
 	}
 
-	esDoc := indexing.PrepareFulltextDoc(tctx)
+	esDoc := PrepareFulltextDoc(tctx)
 
 	bs, err := json.Marshal(esDoc)
 	if err != nil {

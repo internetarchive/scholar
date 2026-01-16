@@ -225,12 +225,10 @@ backoff = "10s"
 endpoint = "http://wbgrp-svc263.us.archive.org:9444/spool"
 poll_interval = "2s"
 s3bucket = "sandcrawler"
-s3folder = "text"
-# TODO these will go away once the seaweed merger/upgrade is done
-s3endpoint = "wbgrp-svc171.us.archive.org:8333"
-s3accesskey = ""
-s3secretkey = ""
 
 [indexing]
-elastic_index = "qa_scholar_fulltext"
-elastic_url = "https://scholar.archive.org/_es"
+elasticsearch_url = "https://scholar.archive.org/_es"
+fulltext_ix = "qa_scholar_fulltext"
+fatcat_container_ix = "qa_fatcat_container"
+fatcat_release_ix = "qa_fatcat_release"
+fatcat_file_ix = "qa_fatcat_file"

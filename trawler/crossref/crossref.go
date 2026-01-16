@@ -581,7 +581,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	s3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
 		s3bucket, "grobid", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
-	obj, err := s3.GetBlobprocObject(ctx, s3Key)
+	obj, err := s3.GetObject(ctx, s3Key)
 	if err != nil {
 		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
 	}
@@ -599,7 +599,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// to pull from `grobid` path and remember how to process that xml (martin's
 	// library); also get the thumbnail path ready for ES.
 
-	obj, err = s3.GetBlobprocObject(ctx, s3Key)
+	obj, err = s3.GetObject(ctx, s3Key)
 	if err != nil {
 		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
 	}
@@ -640,11 +640,21 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	esDoc := indexing.PrepareFulltextDoc(ictx)
-	err = indexing.IngestFulltextDoc(client, esDoc)
 
 	fmt.Println(esDoc)
 
-	// TODO ingest PDF (Ingested++)
+	bs, err := json.Marshal(esDoc)
+	if err != nil {
+		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
+	}
+
+	err = indexing.DoElasticIndex(client, viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
+	if err != nil {
+		return out, fmt.Errorf("indexing fulltext failed: %w", err)
+	}
+
+	out.Releases.Ingested++
+
 	return out, nil
 }
 

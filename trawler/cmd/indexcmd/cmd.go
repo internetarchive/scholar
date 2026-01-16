@@ -33,7 +33,7 @@ var IndexCmd = &cobra.Command{
 		case "release":
 			f = indexing.IndexRelease
 		case "fulltext":
-			// TODO
+			f = indexing.IndexFulltext
 		default:
 			panic("unreachable")
 		}

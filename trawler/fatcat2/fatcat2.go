@@ -62,6 +62,26 @@ type ExternalID struct {
 	Value     string     `json:"id_value"`
 }
 
+type ReleaseDate time.Time
+
+func (rd *ReleaseDate) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		return nil
+	}
+	s := strings.Trim(string(b), `"`)
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return err
+	}
+	*rd = ReleaseDate(t)
+	return nil
+}
+
+func (rd ReleaseDate) Format(s string) string {
+	t := time.Time(rd)
+	return t.Format(s)
+}
+
 type Release struct {
 	ID              uuid.UUID      `json:"id"`
 	WorkID          uuid.UUID      `json:"work_id"`
@@ -70,7 +90,7 @@ type Release struct {
 	Subtitle        string         `json:"subtitle,omitempty"`
 	Type            string         `json:"release_type,omitempty"`
 	Stage           string         `json:"release_stage,omitempty"`
-	ReleaseDate     *time.Time     `json:"release_date"`
+	ReleaseDate     *ReleaseDate   `json:"release_date"`
 	ReleaseYear     int            `json:"release_year,omitempty"`
 	Source          string         `json:"source,omitempty"`
 	Volume          string         `json:"volume,omitempty"`
@@ -381,7 +401,87 @@ func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
 	return r.ID, nil
 }
 
+func ReleaseFiles(c *http.Client, rid uuid.UUID) ([]File, error) {
+	type payload struct {
+		Items []File
+	}
+	out := []File{}
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/release/"+rid.String()+"/files", nil)
+	if err != nil {
+		panic(err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 /release/%s/files failed: %w", rid.String(), err)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return out, fmt.Errorf("could not read release '%s' files: %w", rid.String(), err)
+	}
+
+	var p payload
+	err = json.Unmarshal(bs, &p)
+	if err != nil {
+		return out, fmt.Errorf("could not unmarshal release '%s' files: %w", rid.String(), err)
+	}
+
+	return p.Items, nil
+}
+
 // TODO generalize
+func GetRelease(c *http.Client, id uuid.UUID) (Release, error) {
+	out := Release{}
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/release/"+id.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 /release/%s failed: %w", id.String(), err)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return out, fmt.Errorf("could not read release '%s': %w", id.String(), err)
+	}
+
+	err = json.Unmarshal(bs, &out)
+	if err != nil {
+		return out, fmt.Errorf("could not unmarshal release '%s': %w", id.String(), err)
+	}
+
+	return out, nil
+}
+
+func GetFile(c *http.Client, id uuid.UUID) (File, error) {
+	out := File{}
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/file/"+id.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 /file/%s failed: %w", id.String(), err)
+	}
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return out, fmt.Errorf("could not read file '%s': %w", id.String(), err)
+	}
+
+	err = json.Unmarshal(bs, &out)
+	if err != nil {
+		return out, fmt.Errorf("could not unmarshal file '%s': %w", id.String(), err)
+	}
+
+	return out, nil
+}
 
 // GetContainer looks up a container via its ID
 func GetContainer(c *http.Client, id uuid.UUID) (Container, error) {
@@ -575,5 +675,5 @@ func fc2uuid(fatcatIdent string) (uuid.UUID, error) {
 }
 
 func UuidToLegacy(u uuid.UUID) string {
-	return strings.ToLower(base32.StdEncoding.EncodeToString(u[:]))
+	return strings.ToLower(base32.StdEncoding.EncodeToString(u[:])[:26])
 }

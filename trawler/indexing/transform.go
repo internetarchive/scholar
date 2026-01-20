@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"git.archive.org/webgroup/scholar/trawler/fatcat2"
+	fc2 "git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
 	"github.com/miku/grobidclient/tei"
@@ -20,35 +20,42 @@ import (
 
 const maxBodySize = 512 * 1024
 
-// TODO better name for this...
-type IngestCtx struct {
+type FulltextTransformCtx struct {
 	HttpClient *http.Client
-	Release    fatcat2.Release
-	File       *fatcat2.File
-	Container  *fatcat2.Container
+	Release    fc2.Release
+	File       *fc2.File
+	Container  *fc2.Container
 	GrobidXML  []byte
 	PdfText    []byte
 	// TODO thumbnail?
 }
 
-// TODO need doc_index_ts
-
-func PrepareFatcatReleaseDoc(ictx IngestCtx) FatcatReleaseDocV1 {
+func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatReleaseDocV1, error) {
 	out := FatcatReleaseDocV1{}
-	release := ictx.Release
-	container := ictx.Container
-	file := ictx.File
 	extra := release.Extra
-	client := ictx.HttpClient
 	if extra == nil {
 		extra = map[string]any{}
+	}
+
+	var container *fc2.Container
+	if release.ContainerID != uuid.Nil {
+		c, err := fc2.GetContainer(client, release.ContainerID)
+		if err != nil {
+			return out, err
+		}
+		container = &c
+	}
+
+	files, err := fc2.ReleaseFiles(client, release.ID)
+	if err != nil {
+		return out, err
 	}
 
 	// TODO conceivable we want to continue using this to mark deletion but hardcoding for now
 	out.State = "active"
 	out.IndexTime = time.Now()
-	out.LegacyIdent = fatcat2.UuidToLegacy(release.ID)
-	out.LegacyWorkIdent = fatcat2.UuidToLegacy(release.WorkID)
+	out.LegacyIdent = fc2.UuidToLegacy(release.ID)
+	out.LegacyWorkIdent = fc2.UuidToLegacy(release.WorkID)
 	out.Title = release.Title
 	out.Subtitle = release.Subtitle
 	out.OriginalTitle = release.OriginalTitle
@@ -122,17 +129,39 @@ func PrepareFatcatReleaseDoc(ictx IngestCtx) FatcatReleaseDocV1 {
 	out.Affiliations = []string{}
 	for _, c := range release.Contribs {
 		out.ContribNames = append(out.ContribNames, contribToName(client, c))
-		out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fatcat2.UuidToLegacy(c.CreatorID))
-		out.Affiliations = append(out.Affiliations, c.RawAffiliation)
+		if c.CreatorID != uuid.Nil {
+			out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fc2.UuidToLegacy(c.CreatorID))
+		}
+		if c.RawAffiliation != "" {
+			out.Affiliations = append(out.Affiliations, c.RawAffiliation)
+		}
 	}
 
-	if file != nil {
-		// TODO post-xref-poc probably can't keep assuming the state of URLs like this
-		out.FileCount = 1
-		out.BestPdfUrl = file.URLs[0].URL
-		if strings.Contains(file.URLs[0].URL, ".archive.org") {
-			out.IaPdfUrl = file.URLs[0].URL
-			out.InIA = true
+	if len(files) > 0 {
+		anyUrl := ""
+		out.FileCount = len(files)
+		for _, f := range files {
+			if strings.Contains(out.BestPdfUrl, "//web.archive.org") {
+				break
+			}
+			for _, u := range f.URLs {
+				if strings.Contains(u.URL, "//web.archive.org") {
+					out.BestPdfUrl = u.URL
+					out.IaPdfUrl = u.URL
+					out.InIA = true
+					break
+				} else if strings.Contains(u.URL, "//archive.org") {
+					out.BestPdfUrl = u.URL
+					out.IaPdfUrl = u.URL
+					out.InIA = true
+				} else {
+					anyUrl = u.URL
+				}
+			}
+		}
+
+		if out.BestPdfUrl == "" {
+			out.BestPdfUrl = anyUrl
 		}
 	}
 
@@ -152,8 +181,9 @@ func PrepareFatcatReleaseDoc(ictx IngestCtx) FatcatReleaseDocV1 {
 			}
 		}
 	} else if _, ok := extra["crossref"]; ok {
-		if file != nil {
+		if len(files) > 0 {
 			// we found this release via xref and found a file for it; that implies OA
+			// TODO this logic is questionable but ok for now
 			out.IsOA = true
 		}
 	} else if eoa, ok := extra["is_oa"]; ok {
@@ -177,34 +207,27 @@ func PrepareFatcatReleaseDoc(ictx IngestCtx) FatcatReleaseDocV1 {
 		out.Preservation = "none"
 	}
 
-	// TODO
-
 	// NB i am leaving out the in_shadows prop for now
 
-	// NB these depended on a field that was never set in the old system so ignoring
+	// NB these were never set
+	// Tags  []string `json:"tags"`
+	// InWeb bool `json:"in_web"`
 	// RefReleaseLegacyIdents []string `json:"ref_release_ids"`
 	// RefLinkedCount         int      `json:"ref_linked_count"`
 
-	// NB this was never set
-	// Tags  []string `json:"tags"`
-	// InWeb bool `json:"in_web"`
-
 	// TODO post-xref-poc
 	// InIASim      bool `json:"in_ia_sim"`
-	return out
+
+	return out, nil
 }
 
-func PrepareFatcatContainerDoc(ictx IngestCtx) FatcatContainerDocV1 {
+func PrepareFatcatContainerDoc(container fc2.Container) FatcatContainerDocV1 {
 	out := FatcatContainerDocV1{}
-	container := ictx.Container
-	if container == nil {
-		panic("got nil container")
-	}
 	// TODO post-xref-poc handle other states
 	out.State = "active"
 
 	out.IndexTime = time.Now()
-	out.LegacyIdent = fatcat2.UuidToLegacy(container.ID)
+	out.LegacyIdent = fc2.UuidToLegacy(container.ID)
 	out.Name = container.Name
 	out.Publisher = container.Publisher
 	out.Type = container.Type
@@ -233,17 +256,18 @@ func PrepareFatcatContainerDoc(ictx IngestCtx) FatcatContainerDocV1 {
 	return out
 }
 
-func PrepareFileDoc(ictx IngestCtx) FatcatFileDocV1 {
+func PrepareFatcatFileDoc(file fc2.File) FatcatFileDocV1 {
+	// TODO i'm wary of the multiple releases per file thing, should investigate
 	out := FatcatFileDocV1{}
-	file := ictx.File
-	out.LegacyIdent = fatcat2.UuidToLegacy(file.ID)
+	out.LegacyIdent = fc2.UuidToLegacy(file.ID)
 	// TODO post-xref-poc
 	out.State = "active"
 
 	out.IndexTime = time.Now()
-	out.ReleaseLegacyIdents = []string{
-		fatcat2.UuidToLegacy(ictx.Release.ID),
+	for _, r := range file.Releases {
+		out.ReleaseLegacyIdents = append(out.ReleaseLegacyIdents, fc2.UuidToLegacy(r.ID))
 	}
+	out.ReleaseCount = len(file.Releases)
 	out.Mimetype = file.Mimetype
 	out.Size = file.Size
 	out.Sha1 = file.Sha1
@@ -292,14 +316,14 @@ func PrepareFileDoc(ictx IngestCtx) FatcatFileDocV1 {
 	return out
 }
 
-func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
+func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 	out := ScholarDocV1{}
 	release := ictx.Release
 	container := ictx.Container
 	client := ictx.HttpClient
 
 	out.Type = "work"
-	out.LegacyWorkIdent = fatcat2.UuidToLegacy(release.WorkID)
+	out.LegacyWorkIdent = fc2.UuidToLegacy(release.WorkID)
 	out.Key = fmt.Sprintf("work_%s", out.LegacyWorkIdent)
 	out.IndexTime = time.Now()
 	out.CollapseKey = out.LegacyWorkIdent
@@ -312,7 +336,7 @@ func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
 		out.Biblio.Publisher = container.Publisher
 	}
 
-	out.Biblio.LegacyContainerIdent = fatcat2.UuidToLegacy(container.ID)
+	out.Biblio.LegacyContainerIdent = fc2.UuidToLegacy(container.ID)
 	out.Biblio.ContainerType = container.Type
 	out.Biblio.ContainerISSNL = container.ISSNL
 	out.Biblio.ISSNs = []string{}
@@ -348,7 +372,7 @@ func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
 	out.Biblio.FirstPage, _, _ = strings.Cut(release.Pages, "-")
 	out.Biblio.FirstPageInt = aToSmallInt(out.Biblio.FirstPage)
 
-	out.Biblio.LegacyReleaseIdent = fatcat2.UuidToLegacy(release.ID)
+	out.Biblio.LegacyReleaseIdent = fc2.UuidToLegacy(release.ID)
 
 	// NB these fields used clean_str to run ftfy (unicode cleanup),
 	// beautifulsoup (html strip), some regexes, whitespace collapsing. i'd like
@@ -361,7 +385,8 @@ func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
 	// NB these fields used to get set to nil if the year was greater than 2025
 	// (lol) or less than 1500. That disturbed me; we should endeavour to clean
 	// that data prior to indexing. I have left it out.
-	out.Biblio.ReleaseDate = release.ReleaseDate
+	t := time.Time(*release.ReleaseDate)
+	out.Biblio.ReleaseDate = &t
 	out.Biblio.ReleaseYear = release.ReleaseYear
 
 	out.Biblio.ReleaseType = release.Type
@@ -509,9 +534,9 @@ func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
 		out.Fulltext.Body = out.Fulltext.Body[:maxBodySize]
 	}
 
-	out.Fulltext.LegacyReleaseIdent = fatcat2.UuidToLegacy(release.ID)
+	out.Fulltext.LegacyReleaseIdent = fc2.UuidToLegacy(release.ID)
 	out.Fulltext.FileSha1 = ictx.File.Sha1
-	out.Fulltext.LegacyFileIdent = fatcat2.UuidToLegacy(ictx.File.ID)
+	out.Fulltext.LegacyFileIdent = fc2.UuidToLegacy(ictx.File.ID)
 	out.Fulltext.FileMimetype = ictx.File.Mimetype
 	out.Fulltext.Size = ictx.File.Size
 
@@ -598,7 +623,7 @@ func PrepareFulltextDoc(ictx IngestCtx) ScholarDocV1 {
 	return out
 }
 
-func generateTags(biblio ScholarBiblioV1, container *fatcat2.Container) []string {
+func generateTags(biblio ScholarBiblioV1, container *fc2.Container) []string {
 	tags := map[string]bool{}
 	if strings.HasPrefix(strings.ToLower(biblio.LicenseSlug), "cc-") {
 		tags["oa"] = true
@@ -667,9 +692,9 @@ func cleanString(s string) string {
 	return s
 }
 
-func contribToName(c *http.Client, contrib fatcat2.ReleaseContrib) string {
+func contribToName(c *http.Client, contrib fc2.ReleaseContrib) string {
 	if contrib.CreatorID != uuid.Nil {
-		creator, err := fatcat2.GetCreator(c, contrib.CreatorID)
+		creator, err := fc2.GetCreator(c, contrib.CreatorID)
 		if err == nil && creator.DisplayName != "" {
 			return creator.DisplayName
 		}

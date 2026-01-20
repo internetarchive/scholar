@@ -68,7 +68,7 @@ class ReleaseExtIdFactory(DjangoModelFactory):
 
 
 class ReleaseRefFactory(DjangoModelFactory):
-    position = factory.LazyFunction(lambda: random.randint(0,100))
+    position = factory.LazyFunction(lambda: random.randint(0, 100))
 
     class Meta:
         model = m.ReleaseRef
@@ -78,6 +78,7 @@ class ReleaseAbstractFactory(DjangoModelFactory):
     mimetype = "text/plain"
     sha1 = factory.Faker("sha1")
     content = factory.Faker("paragraph", ext_word_list=["screw", "flanders"])
+
     class Meta:
         model = m.ReleaseAbstract
 

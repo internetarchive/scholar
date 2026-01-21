@@ -19,8 +19,8 @@ import (
 )
 
 type LegacyData struct {
-	Ident    uuid.UUID
-	Revision uuid.UUID
+	Ident    uuid.UUID `json:",omitempty"`
+	Revision uuid.UUID `json:",omitempty"`
 }
 
 type Container struct {
@@ -45,7 +45,7 @@ type Abstract struct {
 }
 
 type ReleaseContrib struct {
-	CreatorID      uuid.UUID      `json:"creator_id"`
+	CreatorID      uuid.UUID      `json:"creator_id,omitempty"`
 	ReleaseID      *uuid.UUID     `json:"release_id"`
 	Position       int            `json:"position"`
 	RawName        string         `json:"raw_name"`
@@ -83,8 +83,8 @@ func (rd ReleaseDate) Format(s string) string {
 }
 
 type Release struct {
-	ID              uuid.UUID      `json:"id"`
-	WorkID          uuid.UUID      `json:"work_id"`
+	ID              uuid.UUID      `json:"id,omitempty"`
+	WorkID          uuid.UUID      `json:"work_id,omitempty"`
 	Title           string         `json:"title,omitempty"`
 	OriginalTitle   string         `json:"original_title,omitempty"`
 	Subtitle        string         `json:"subtitle,omitempty"`
@@ -109,7 +109,7 @@ type Release struct {
 
 	Refs        []RawRef         `json:"refs,omitempty"`
 	Abstracts   []Abstract       `json:"abstracts,omitempty"`
-	ContainerID uuid.UUID        `json:"container_id"`
+	ContainerID uuid.UUID        `json:"container_id,omitempty"`
 	ExternalIDs []ExternalID     `json:"extids,omitempty"`
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 
@@ -211,7 +211,7 @@ type RawRef struct {
 }
 
 type FileURL struct {
-	FileID uuid.UUID `json:"file_id"`
+	FileID uuid.UUID `json:"file_id,omitempty"`
 	Rel    string    `json:"rel"`
 	URL    string    `json:"url"`
 	Source string    `json:"source"`
@@ -220,7 +220,7 @@ type FileURL struct {
 type File struct {
 	Releases    []Release `json:"releases"`
 	URLs        []FileURL `json:"urls"`
-	ID          uuid.UUID `json:"id"`
+	ID          uuid.UUID `json:"id,omitempty"`
 	Source      string    `json:"source"`
 	Size        int       `json:"size_bytes"`
 	Sha1        string    `json:"sha1"`

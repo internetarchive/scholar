@@ -740,12 +740,12 @@ def create_file(request, file_in: FileSchema) -> HttpResponse:
                                      status=HTTPStatus.BAD_REQUEST)
     data = file_in.dict()
     urls = data.pop("urls")
-    releases = data.pop("releases") # TODO chotou...
+    releases = data.pop("releases")  # TODO chotou...
     with transaction.atomic():
         f = m.File(**data)
         f.save()
         m.FileURL.objects.bulk_create(
-                [m.FileURL(**url|{"file_id": f.id}) for url in urls])
+                [m.FileURL(**url | {"file_id": f.id}) for url in urls])
         m.ReleaseFile.objects.bulk_create(
                 [m.ReleaseFile(release_id=r["id"], file_id=f.id) for r in releases])
     return v2api.create_response(request, "file created", status=HTTPStatus.CREATED)

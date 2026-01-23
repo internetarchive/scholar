@@ -77,6 +77,14 @@ func (rd *ReleaseDate) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func (rd *ReleaseDate) MarshalJSON() ([]byte, error) {
+	if rd == nil {
+		return json.Marshal(nil)
+	}
+	t := time.Time(*rd)
+	return t.MarshalJSON()
+}
+
 func (rd ReleaseDate) Format(s string) string {
 	t := time.Time(rd)
 	return t.Format(s)

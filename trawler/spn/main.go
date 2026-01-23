@@ -141,6 +141,7 @@ func init() {
 	saveCmd.Flags().StringVar(&saveReq.TargetPassword, "target-password", "", "Login password to use when capturing")
 	saveCmd.Flags().BoolVar(&saveReq.DelayForJavascript, "js-delay", false, "Wait for javascript to settle during a capture")
 	saveCmd.Flags().IntVar(&saveReq.JavascriptTimeout, "js-timeout", 5, "How long to wait for javascript to settle")
+	saveCmd.Flags().IntVar(&saveReq.IfNotArchivedWithinSecs, "not-archived-within", 0, "seconds within which to consider an existing capture recent enough")
 }
 
 func main() {

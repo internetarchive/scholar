@@ -402,7 +402,12 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		l.Debug(fmt.Sprintf("created release %s", release.ID))
 		out.Releases.Added++
 	} else {
-		release.ID = foundId
+		// TODO here is where we could update release with info from xref should we so desire
+		release, err = fatcat2.GetRelease(client, foundId)
+		if err != nil {
+			return out, fmt.Errorf("could not look up existing release: %w", err)
+		}
+
 		l.Debug(fmt.Sprintf("found release %s", release.ID))
 	}
 

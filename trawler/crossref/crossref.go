@@ -515,13 +515,24 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, nil
 	}
 
-	fid, err := fatcat2.CreateFile(client, file)
+	fid, err := fatcat2.CreateFile(client, &file)
 	if err != nil {
 		return out, fmt.Errorf("fc2 api failed to make file for '%s': %w", file.URLs[0].URL, err)
 	}
-	// TODO url is lacking wayback prefix
 	l.Debug(fmt.Sprintf("created file %s", fid))
 	out.Releases.Acquired++
+
+	fileDoc := indexing.PrepareFatcatFileDoc(file)
+	bs, err := json.Marshal(fileDoc)
+	if err != nil {
+		return out, fmt.Errorf("failed to marshal file es doc: %w", err)
+	}
+
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
+	if err != nil {
+		return out, fmt.Errorf("failed to index doc for file '%s': %w", file.ID, err)
+	}
 
 	//	"Send your PDF payload to %s/spool - a 200 OK status only confirms
 	//	receipt, not successful postprocessing, which may take more time. Check

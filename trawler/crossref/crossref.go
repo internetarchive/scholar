@@ -664,9 +664,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	esDoc := indexing.PrepareFulltextDoc(ictx)
 
-	fmt.Println(esDoc)
+	//fmt.Println(esDoc)
 
-	bs, err := json.Marshal(esDoc)
+	bs, err = json.Marshal(esDoc)
 	if err != nil {
 		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
 	}
@@ -989,11 +989,27 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 				Publisher: xrefdoc.Publisher,
 				Type:      containerTypeMap[release.Type],
 			}
-			containerID, err = fatcat2.CreateContainer(client, c)
+			// TODO clean this up. Create* should modify a referenced struct, not
+			// return a UUID; we should create a container in scope for later instaed
+			// of re-fetching it with GetContainer for indexing
+			containerID, err = fatcat2.CreateContainer(client, &c)
 			if err != nil {
 				return err
 			}
 			cs.Containers.Added++
+
+			// NB if this fails we won't hit this code path on re-run. a smell that
+			// suggests we should just be consulting changelog for this indexing.
+			containerDoc := indexing.PrepareFatcatContainerDoc(c)
+			bs, err := json.Marshal(containerDoc)
+			if err != nil {
+				return fmt.Errorf("could not marshal container doc: %w", err)
+			}
+			err = indexing.DoElasticIndex(client, viper.GetString("indexing.fatcat_container_ix"),
+				containerDoc.LegacyIdent, bs)
+			if err != nil {
+				return fmt.Errorf("could not index container '%s': %w", c.ID, err)
+			}
 		} else if containerTitle != "" {
 			release.Extra["container_name"] = containerTitle
 			cs.Containers.Skipped++
@@ -1003,8 +1019,6 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 	}
 
 	release.ContainerID = containerID
-
-	// licenses
 
 	id, err := fatcat2.CreateRelease(client, *release)
 	if err != nil {

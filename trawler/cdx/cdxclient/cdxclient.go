@@ -171,7 +171,7 @@ func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 
 		resp, err = c.client.Do(req)
 
-		if err == nil || resp.StatusCode != 504 {
+		if err == nil || (resp != nil && resp.StatusCode != 504) {
 			break
 		}
 

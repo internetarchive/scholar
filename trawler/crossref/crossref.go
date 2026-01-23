@@ -1027,6 +1027,22 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 
 	release.ID = id
 
+	releaseDoc, err := indexing.PrepareFatcatReleaseDoc(client, *release)
+	if err != nil {
+		return fmt.Errorf("failed to transform release '%s' into ES doc: %w", release.ID, err)
+	}
+
+	bs, err := json.Marshal(releaseDoc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal release es doc: %w", err)
+	}
+
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fatcat_release_ix"), releaseDoc.LegacyIdent, bs)
+	if err != nil {
+		return fmt.Errorf("failed to index doc for release '%s': %w", release.ID, err)
+	}
+
 	return nil
 }
 

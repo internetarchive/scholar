@@ -332,33 +332,35 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 	out.Biblio = ScholarBiblioV1{}
 	if release.Publisher != "" {
 		out.Biblio.Publisher = release.Publisher
-	} else {
+	} else if container != nil {
 		out.Biblio.Publisher = container.Publisher
 	}
 
-	out.Biblio.LegacyContainerIdent = fc2.UuidToLegacy(container.ID)
-	out.Biblio.ContainerType = container.Type
-	out.Biblio.ContainerISSNL = container.ISSNL
-	out.Biblio.ISSNs = []string{}
-	issns := []string{container.ISSNL, container.ISSNE, container.ISSNP}
-	for _, i := range issns {
-		// NB this is another spot where the original code used container.extra and
-		// ignored row level fields
-		if i != "" {
-			out.Biblio.ISSNs = append(out.Biblio.ISSNs, i)
+	if container != nil {
+		out.Biblio.LegacyContainerIdent = fc2.UuidToLegacy(container.ID)
+		out.Biblio.ContainerType = container.Type
+		out.Biblio.ContainerISSNL = container.ISSNL
+		out.Biblio.ISSNs = []string{}
+		issns := []string{container.ISSNL, container.ISSNE, container.ISSNP}
+		for _, i := range issns {
+			// NB this is another spot where the original code used container.extra and
+			// ignored row level fields
+			if i != "" {
+				out.Biblio.ISSNs = append(out.Biblio.ISSNs, i)
+			}
 		}
-	}
-	if container.Extra != nil {
-		if publisherType, ok := container.Extra["publisher_type"]; ok {
-			out.Biblio.PublisherType = publisherType.(string)
-		}
-		if originalName, ok := container.Extra["original_name"]; ok {
-			out.Biblio.ContainerOriginalName = originalName.(string)
-		}
-		// NB unlikely to be called for anything new since this system seems fully abandoned
-		if sherpaRomeo, ok := container.Extra["sherpa_romeo"]; ok {
-			if color, ok := sherpaRomeo.(map[string]string)["color"]; ok {
-				out.Biblio.ContainerSherpaColor = color
+		if container.Extra != nil {
+			if publisherType, ok := container.Extra["publisher_type"]; ok {
+				out.Biblio.PublisherType = publisherType.(string)
+			}
+			if originalName, ok := container.Extra["original_name"]; ok {
+				out.Biblio.ContainerOriginalName = originalName.(string)
+			}
+			// NB unlikely to be called for anything new since this system seems fully abandoned
+			if sherpaRomeo, ok := container.Extra["sherpa_romeo"]; ok {
+				if color, ok := sherpaRomeo.(map[string]any)["color"]; ok {
+					out.Biblio.ContainerSherpaColor = color.(string)
+				}
 			}
 		}
 	}
@@ -385,8 +387,10 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 	// NB these fields used to get set to nil if the year was greater than 2025
 	// (lol) or less than 1500. That disturbed me; we should endeavour to clean
 	// that data prior to indexing. I have left it out.
-	t := time.Time(*release.ReleaseDate)
-	out.Biblio.ReleaseDate = &t
+	if release.ReleaseDate != nil {
+		t := time.Time(*release.ReleaseDate)
+		out.Biblio.ReleaseDate = &t
+	}
 	out.Biblio.ReleaseYear = release.ReleaseYear
 
 	out.Biblio.ReleaseType = release.Type
@@ -440,7 +444,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 		out.Biblio.ContainerName = "Figshare"
 	} else if out.Biblio.DOIPrefix == "10.5281" {
 		out.Biblio.ContainerName = "Zenodo"
-	} else {
+	} else if container != nil {
 		out.Biblio.ContainerName = container.Name
 	}
 

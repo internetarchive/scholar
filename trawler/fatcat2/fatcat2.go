@@ -276,7 +276,7 @@ type Creator struct {
 }
 
 // CreateContainer creates a new container in fc2 and returns its ID
-func CreateContainer(client *http.Client, c Container) (uuid.UUID, error) {
+func CreateContainer(client *http.Client, c *Container) (uuid.UUID, error) {
 	c.Source = "dev" // TODO thread this value through from invocation of workflow
 	c.ID = uuid.New()
 
@@ -317,7 +317,7 @@ func CreateContainer(client *http.Client, c Container) (uuid.UUID, error) {
 }
 
 // CreateFile creates a new file in fc2 and returns its ID
-func CreateFile(client *http.Client, f File) (uuid.UUID, error) {
+func CreateFile(client *http.Client, f *File) (uuid.UUID, error) {
 	f.Source = "dev" // TODO thread this value through from invocation of workflow
 	f.ID = uuid.New()
 	legacy, err := lookupLegacyFile(client, f.Sha1)

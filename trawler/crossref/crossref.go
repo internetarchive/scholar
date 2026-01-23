@@ -546,6 +546,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	req.Header.Set("Content-Type", "application/pdf")
 
+	// TODO do s3 read first to see if it's already done, *then* hit blobproc
+
 	l.Debug(fmt.Sprintf("%s: submitting to blobproc", release.ID))
 	resp, err := client.Do(req)
 	if err != nil {
@@ -577,6 +579,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		panic(err)
 	}
 
+	l.Debug(fmt.Sprintf("%s: polling blobproc at %s", release.ID, pollUrl))
+
 	for {
 		time.Sleep(viper.GetDuration("blobproc.poll_interval"))
 		resp, err = client.Do(req)
@@ -592,37 +596,40 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	// get blobproc stuff for ingestion
 
+	/*
+		thoughts...I just had a situation where blobproc couldn't start because of
+		misconfigured s3 endpoint. the resulting behavior was that this code got
+		all the way to s3 object getting. so i guess we got back a location header
+		that immediately 404ed? but my file is still sitting in spool. so how did i
+		get a 404? this warrants investigation...
+	*/
+
 	s3bucket := viper.GetString("blobproc.s3bucket")
 
-	s3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
+	grobidS3Key := fmt.Sprintf("%s/%s/%s/%s/%s.tei.xml",
 		s3bucket, "grobid", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
-	obj, err := s3.GetObject(ctx, s3Key)
+	obj, err := s3.GetObject(ctx, grobidS3Key)
 	if err != nil {
 		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
 	}
 
 	grobidXML, err := io.ReadAll(obj)
 	if err != nil {
-		return out, fmt.Errorf("could not read '%s': %w", s3Key, err)
+		return out, fmt.Errorf("could not read '%s': %w", grobidS3Key, err)
 	}
 
-	s3Key = fmt.Sprintf("%s/%s/%s/%s/%s.txt",
+	pdftotextS3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
 		s3bucket, "text", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
-	// TODO also need the grobid payload as it's the preferred source of text;
-	// what i grabbed was pdftotext output (ie the grobid fallback). so refactor
-	// to pull from `grobid` path and remember how to process that xml (martin's
-	// library); also get the thumbnail path ready for ES.
-
-	obj, err = s3.GetObject(ctx, s3Key)
+	obj, err = s3.GetObject(ctx, pdftotextS3Key)
 	if err != nil {
 		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
 	}
 
 	pdfText, err := io.ReadAll(obj)
 	if err != nil {
-		return out, fmt.Errorf("could not read '%s': %w", s3Key, err)
+		return out, fmt.Errorf("could not read '%s': %w", pdftotextS3Key, err)
 	}
 
 	fmt.Printf("DBG %#v\n", string(pdfText[:100])+"...")

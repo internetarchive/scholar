@@ -402,7 +402,12 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		l.Debug(fmt.Sprintf("created release %s", release.ID))
 		out.Releases.Added++
 	} else {
-		release.ID = foundId
+		// TODO here is where we could update release with info from xref should we so desire
+		release, err = fatcat2.GetRelease(client, foundId)
+		if err != nil {
+			return out, fmt.Errorf("could not look up existing release: %w", err)
+		}
+
 		l.Debug(fmt.Sprintf("found release %s", release.ID))
 	}
 
@@ -510,13 +515,24 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, nil
 	}
 
-	fid, err := fatcat2.CreateFile(client, file)
+	fid, err := fatcat2.CreateFile(client, &file)
 	if err != nil {
 		return out, fmt.Errorf("fc2 api failed to make file for '%s': %w", file.URLs[0].URL, err)
 	}
-	// TODO url is lacking wayback prefix
 	l.Debug(fmt.Sprintf("created file %s", fid))
 	out.Releases.Acquired++
+
+	fileDoc := indexing.PrepareFatcatFileDoc(file)
+	bs, err := json.Marshal(fileDoc)
+	if err != nil {
+		return out, fmt.Errorf("failed to marshal file es doc: %w", err)
+	}
+
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
+	if err != nil {
+		return out, fmt.Errorf("failed to index doc for file '%s': %w", file.ID, err)
+	}
 
 	//	"Send your PDF payload to %s/spool - a 200 OK status only confirms
 	//	receipt, not successful postprocessing, which may take more time. Check
@@ -529,6 +545,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	req.Header.Set("Content-Type", "application/pdf")
+
+	// TODO do s3 read first to see if it's already done, *then* hit blobproc
 
 	l.Debug(fmt.Sprintf("%s: submitting to blobproc", release.ID))
 	resp, err := client.Do(req)
@@ -561,6 +579,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		panic(err)
 	}
 
+	l.Debug(fmt.Sprintf("%s: polling blobproc at %s", release.ID, pollUrl))
+
 	for {
 		time.Sleep(viper.GetDuration("blobproc.poll_interval"))
 		resp, err = client.Do(req)
@@ -576,37 +596,40 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	// get blobproc stuff for ingestion
 
+	/*
+		thoughts...I just had a situation where blobproc couldn't start because of
+		misconfigured s3 endpoint. the resulting behavior was that this code got
+		all the way to s3 object getting. so i guess we got back a location header
+		that immediately 404ed? but my file is still sitting in spool. so how did i
+		get a 404? this warrants investigation...
+	*/
+
 	s3bucket := viper.GetString("blobproc.s3bucket")
 
-	s3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
+	grobidS3Key := fmt.Sprintf("%s/%s/%s/%s/%s.tei.xml",
 		s3bucket, "grobid", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
-	obj, err := s3.GetObject(ctx, s3Key)
+	obj, err := s3.GetObject(ctx, grobidS3Key)
 	if err != nil {
 		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
 	}
 
 	grobidXML, err := io.ReadAll(obj)
 	if err != nil {
-		return out, fmt.Errorf("could not read '%s': %w", s3Key, err)
+		return out, fmt.Errorf("could not read '%s': %w", grobidS3Key, err)
 	}
 
-	s3Key = fmt.Sprintf("%s/%s/%s/%s/%s.txt",
+	pdftotextS3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
 		s3bucket, "text", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
 
-	// TODO also need the grobid payload as it's the preferred source of text;
-	// what i grabbed was pdftotext output (ie the grobid fallback). so refactor
-	// to pull from `grobid` path and remember how to process that xml (martin's
-	// library); also get the thumbnail path ready for ES.
-
-	obj, err = s3.GetObject(ctx, s3Key)
+	obj, err = s3.GetObject(ctx, pdftotextS3Key)
 	if err != nil {
 		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
 	}
 
 	pdfText, err := io.ReadAll(obj)
 	if err != nil {
-		return out, fmt.Errorf("could not read '%s': %w", s3Key, err)
+		return out, fmt.Errorf("could not read '%s': %w", pdftotextS3Key, err)
 	}
 
 	fmt.Printf("DBG %#v\n", string(pdfText[:100])+"...")
@@ -641,9 +664,9 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	esDoc := indexing.PrepareFulltextDoc(ictx)
 
-	fmt.Println(esDoc)
+	//fmt.Println(esDoc)
 
-	bs, err := json.Marshal(esDoc)
+	bs, err = json.Marshal(esDoc)
 	if err != nil {
 		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
 	}
@@ -966,11 +989,27 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 				Publisher: xrefdoc.Publisher,
 				Type:      containerTypeMap[release.Type],
 			}
-			containerID, err = fatcat2.CreateContainer(client, c)
+			// TODO clean this up. Create* should modify a referenced struct, not
+			// return a UUID; we should create a container in scope for later instaed
+			// of re-fetching it with GetContainer for indexing
+			containerID, err = fatcat2.CreateContainer(client, &c)
 			if err != nil {
 				return err
 			}
 			cs.Containers.Added++
+
+			// NB if this fails we won't hit this code path on re-run. a smell that
+			// suggests we should just be consulting changelog for this indexing.
+			containerDoc := indexing.PrepareFatcatContainerDoc(c)
+			bs, err := json.Marshal(containerDoc)
+			if err != nil {
+				return fmt.Errorf("could not marshal container doc: %w", err)
+			}
+			err = indexing.DoElasticIndex(client, viper.GetString("indexing.fatcat_container_ix"),
+				containerDoc.LegacyIdent, bs)
+			if err != nil {
+				return fmt.Errorf("could not index container '%s': %w", c.ID, err)
+			}
 		} else if containerTitle != "" {
 			release.Extra["container_name"] = containerTitle
 			cs.Containers.Skipped++
@@ -981,14 +1020,28 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 
 	release.ContainerID = containerID
 
-	// licenses
-
 	id, err := fatcat2.CreateRelease(client, *release)
 	if err != nil {
 		return err
 	}
 
 	release.ID = id
+
+	releaseDoc, err := indexing.PrepareFatcatReleaseDoc(client, *release)
+	if err != nil {
+		return fmt.Errorf("failed to transform release '%s' into ES doc: %w", release.ID, err)
+	}
+
+	bs, err := json.Marshal(releaseDoc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal release es doc: %w", err)
+	}
+
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fatcat_release_ix"), releaseDoc.LegacyIdent, bs)
+	if err != nil {
+		return fmt.Errorf("failed to index doc for release '%s': %w", release.ID, err)
+	}
 
 	return nil
 }

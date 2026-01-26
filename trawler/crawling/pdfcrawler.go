@@ -387,6 +387,11 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 		SkipFirstArchive:   true,
 		DelayForJavascript: !simpleGet,
 		JavascriptTimeout:  30,
+		// NB this will usually not come up since we're (ideally) crawling new
+		// stuff every day. however, when debugging these workflows, we send a lot
+		// of repeated things to SPN. thus, a not archived within setting which
+		// will return the most recent capture as a successful job completion.
+		IfNotArchivedWithinSecs: 1209600, // two weeks
 	}
 
 	// poll until we obtain a slot

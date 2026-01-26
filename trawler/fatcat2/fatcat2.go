@@ -19,8 +19,8 @@ import (
 )
 
 type LegacyData struct {
-	Ident    uuid.UUID
-	Revision uuid.UUID
+	Ident    uuid.UUID `json:",omitempty"`
+	Revision uuid.UUID `json:",omitempty"`
 }
 
 type Container struct {
@@ -45,7 +45,7 @@ type Abstract struct {
 }
 
 type ReleaseContrib struct {
-	CreatorID      uuid.UUID      `json:"creator_id"`
+	CreatorID      uuid.UUID      `json:"creator_id,omitempty"`
 	ReleaseID      *uuid.UUID     `json:"release_id"`
 	Position       int            `json:"position"`
 	RawName        string         `json:"raw_name"`
@@ -77,14 +77,22 @@ func (rd *ReleaseDate) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func (rd *ReleaseDate) MarshalJSON() ([]byte, error) {
+	if rd == nil {
+		return json.Marshal(nil)
+	}
+	t := time.Time(*rd)
+	return t.MarshalJSON()
+}
+
 func (rd ReleaseDate) Format(s string) string {
 	t := time.Time(rd)
 	return t.Format(s)
 }
 
 type Release struct {
-	ID              uuid.UUID      `json:"id"`
-	WorkID          uuid.UUID      `json:"work_id"`
+	ID              uuid.UUID      `json:"id,omitempty"`
+	WorkID          uuid.UUID      `json:"work_id,omitempty"`
 	Title           string         `json:"title,omitempty"`
 	OriginalTitle   string         `json:"original_title,omitempty"`
 	Subtitle        string         `json:"subtitle,omitempty"`
@@ -109,7 +117,7 @@ type Release struct {
 
 	Refs        []RawRef         `json:"refs,omitempty"`
 	Abstracts   []Abstract       `json:"abstracts,omitempty"`
-	ContainerID uuid.UUID        `json:"container_id"`
+	ContainerID uuid.UUID        `json:"container_id,omitempty"`
 	ExternalIDs []ExternalID     `json:"extids,omitempty"`
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 
@@ -211,7 +219,7 @@ type RawRef struct {
 }
 
 type FileURL struct {
-	FileID uuid.UUID `json:"file_id"`
+	FileID uuid.UUID `json:"file_id,omitempty"`
 	Rel    string    `json:"rel"`
 	URL    string    `json:"url"`
 	Source string    `json:"source"`
@@ -220,7 +228,7 @@ type FileURL struct {
 type File struct {
 	Releases    []Release `json:"releases"`
 	URLs        []FileURL `json:"urls"`
-	ID          uuid.UUID `json:"id"`
+	ID          uuid.UUID `json:"id,omitempty"`
 	Source      string    `json:"source"`
 	Size        int       `json:"size_bytes"`
 	Sha1        string    `json:"sha1"`
@@ -268,7 +276,7 @@ type Creator struct {
 }
 
 // CreateContainer creates a new container in fc2 and returns its ID
-func CreateContainer(client *http.Client, c Container) (uuid.UUID, error) {
+func CreateContainer(client *http.Client, c *Container) (uuid.UUID, error) {
 	c.Source = "dev" // TODO thread this value through from invocation of workflow
 	c.ID = uuid.New()
 
@@ -309,7 +317,7 @@ func CreateContainer(client *http.Client, c Container) (uuid.UUID, error) {
 }
 
 // CreateFile creates a new file in fc2 and returns its ID
-func CreateFile(client *http.Client, f File) (uuid.UUID, error) {
+func CreateFile(client *http.Client, f *File) (uuid.UUID, error) {
 	f.Source = "dev" // TODO thread this value through from invocation of workflow
 	f.ID = uuid.New()
 	legacy, err := lookupLegacyFile(client, f.Sha1)

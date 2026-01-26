@@ -68,7 +68,7 @@ class ReleaseExtIdFactory(DjangoModelFactory):
 
 
 class ReleaseRefFactory(DjangoModelFactory):
-    position = factory.LazyFunction(lambda: random.randint(0,100))
+    position = factory.LazyFunction(lambda: random.randint(0, 100))
 
     class Meta:
         model = m.ReleaseRef
@@ -78,6 +78,7 @@ class ReleaseAbstractFactory(DjangoModelFactory):
     mimetype = "text/plain"
     sha1 = factory.Faker("sha1")
     content = factory.Faker("paragraph", ext_word_list=["screw", "flanders"])
+
     class Meta:
         model = m.ReleaseAbstract
 
@@ -1125,12 +1126,15 @@ class TestFileRoutes(EntityCRUDTestCase):
         response = client.get(f"{self.get}/{self.entity.id}/releases")
         self.assertEqual(response.status_code, HTTPStatus.OK)
         self.assertEqual(response.data["count"], len(rs))
-        self.assertSetEqual(set([d['id'] for d in response.data["items"]]), set([str(r.id) for r in rs]))
+        self.assertSetEqual(
+                set([d['id'] for d in response.data["items"]]),
+                set([str(r.id) for r in rs]))
 
     def test_create(self):
         f = FileFactory.build()
         fs = v.FileSchema.from_orm(f)
-        fs.urls = [v.FileURLSchema.from_orm(url) for url in FileURLFactory.build_batch(4, file_id=f.id)]
+        fs.urls = [
+                v.FileURLSchema.from_orm(url) for url in FileURLFactory.build_batch(4, file_id=f.id)]
         fs.releases = [v.ReleaseSchema.from_orm(ReleaseFactory.create())]
 
         data = fs.model_dump_json()

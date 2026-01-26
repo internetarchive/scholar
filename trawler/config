@@ -11,20 +11,20 @@ secret_key = ""
 
 [temporal]
 hostport = "" # blank to use temporal sdk default
+namespace = "scholar_trawler"
+retention = "720h"
 
 [scholkit]
-path = "/usr/local/bin/sk-feed"
-# dataDir = "/var/data/trawler"
-dataDir = "./data"
+path = "/Users/vilmibm/src/scholkit/sk-feed"
+# data_dir = "/var/data/trawler"
+data_dir = "./data"
 
 [crossref]
-temporal_namespace = "dev.crossref"
-temporal_namespace_retention = "8760h"
 internal_task_queue = "crossref_crawl_internal"
 external_task_queue = "crossref_crawl_external"
 #every = "24h"
 every = "120s"
-sks3bucket = "sk-crossref"
+scholkit_s3_bucket = "sk-crossref"
 default_limit = 1000 # for dev; typically would be -1 for unlimited
 
 [fatcat1]

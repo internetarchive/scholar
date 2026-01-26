@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/spf13/viper"
 	"go.temporal.io/api/serviceerror"
@@ -25,12 +24,9 @@ func ensureNamespace(ctx context.Context, namespace string) error {
 		return fmt.Errorf("could not create namespace client: %w", err)
 	}
 
-	// TODO is this really necessary? I see code on GitHub just passing a time.Duration instead of this durationpb.
-	duration, err := time.ParseDuration(viper.GetString("crossref.temporal_namespace_retention"))
-	if err != nil {
-		return fmt.Errorf("could not parse crossref.temporal_namespace_retention: %w", err)
-	}
-
+	duration := viper.GetDuration("temporal.retention")
+	// TODO is this really necessary? I see code on GitHub just passing a
+	// time.Duration instead of this durationpb.
 	dpb := &durationpb.Duration{
 		Seconds: int64(duration.Seconds()),
 	}
@@ -49,7 +45,7 @@ func ensureNamespace(ctx context.Context, namespace string) error {
 
 // SetupTemporal creates a Temporal client, ensuring that the crossref namespace exists.
 func SetupTemporal(ctx context.Context) (client.Client, error) {
-	namespace := viper.GetString("crossref.temporal_namespace")
+	namespace := viper.GetString("temporal.namespace")
 	if namespace != "" {
 		err := ensureNamespace(ctx, namespace)
 		if err != nil {

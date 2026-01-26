@@ -323,6 +323,7 @@ def delete_container(request, ident: UUID) -> ContainerSchema:
 
 # Release routes
 
+
 @v2api.get("/release/lookup")
 def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
     """Look up a release using an external ID. If multiple releases match the
@@ -536,10 +537,10 @@ def bulk_create_releases(request, releases_in: list[ReleaseSchema]) -> HttpRespo
     with transaction.atomic():
         for rs in releases_in:
             data = rs.dict()
-            extids = [ext_id|{"release_id":data["id"]} for ext_id in data.pop("extids")]
-            contribs = [contrib|{"release_id":data["id"]} for contrib in data.pop("contribs")]
-            abstracts = [a|{"release_id":data["id"]} for a in data.pop("abstracts")]
-            citations = [c|{"release_id":data["id"]} for c in data.pop("citations")]
+            extids = [ext_id | {"release_id": data["id"]} for ext_id in data.pop("extids")]
+            contribs = [contrib | {"release_id": data["id"]} for contrib in data.pop("contribs")]
+            abstracts = [a | {"release_id": data["id"]} for a in data.pop("abstracts")]
+            citations = [c | {"release_id": data["id"]} for c in data.pop("citations")]
             if data.get("work_id") is None:
                 work = m.Work()
                 work.save()
@@ -739,12 +740,12 @@ def create_file(request, file_in: FileSchema) -> HttpResponse:
                                      status=HTTPStatus.BAD_REQUEST)
     data = file_in.dict()
     urls = data.pop("urls")
-    releases = data.pop("releases") # TODO chotou...
+    releases = data.pop("releases")  # TODO chotou...
     with transaction.atomic():
         f = m.File(**data)
         f.save()
         m.FileURL.objects.bulk_create(
-                [m.FileURL(**url|{"file_id": f.id}) for url in urls])
+                [m.FileURL(**url | {"file_id": f.id}) for url in urls])
         m.ReleaseFile.objects.bulk_create(
                 [m.ReleaseFile(release_id=r["id"], file_id=f.id) for r in releases])
     return v2api.create_response(request, "file created", status=HTTPStatus.CREATED)

@@ -32,10 +32,10 @@ func skCrossref(ctx context.Context, in SKCrossrefInput) (out skCrossrefOutput, 
 
 	limit := in.Limit
 	if limit == 0 {
-		limit = viper.GetInt("crossref.default_limit")
+		limit = viper.GetInt("crossref.daily_record_limit")
 	}
 
-	s3Bucket := viper.GetString("crossref.sks3bucket")
+	s3Bucket := viper.GetString("crossref.scholkit_s3_bucket")
 
 	// TODO this is going to cause a problem with heartbeating; sk-feed might run
 	// for hours.
@@ -60,7 +60,7 @@ func skCrossref(ctx context.Context, in SKCrossrefInput) (out skCrossrefOutput, 
 	skPath := viper.GetString("scholkit.path")
 	skArgs := []string{
 		"-s", "crossref",
-		"-d", viper.GetString("scholkit.dataDir"),
+		"-d", viper.GetString("scholkit.data_dir"),
 		"--crossref-upload-s3",
 		"--crossref-s3-rclone-remote", "seaweed314",
 		"--crossref-s3-bucket", s3Bucket,

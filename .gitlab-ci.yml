@@ -11,6 +11,7 @@ build:trawler-build:
   rules:
     - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+.$/
   script:
+    - cd trawler
     - make test
     - make trawler
   artifacts:
@@ -24,6 +25,7 @@ test:trawler-mr-test:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
+    - cd trawler
     - make test
 
 upload:trawler-upload:
@@ -36,6 +38,7 @@ upload:trawler-upload:
   script:
     - export VERSION=$(./trawler version)
     - echo "Uploading trawler binary to nexus..."
+    - cd trawler
     - |
       curl -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"

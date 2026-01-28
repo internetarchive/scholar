@@ -1,24 +1,17 @@
 stages:
-  - build
   - test
+  - build
   - upload
 variables:
   GO_VERSION: 1.25.6-trixie
 
-test:trawler-release-test:
-  stage: test
-  image: golang:${GO_VERSION}
-  script:
-    - make test
-
 build:trawler-build:
   stage: build
   image: golang:${GO_VERSION}
-  dependencies:
-    - test:trawler-release-test
   rules:
     - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+.$/
   script:
+    - make test
     - make trawler
   artifacts:
     paths:

@@ -3,6 +3,7 @@ package crawling
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -29,6 +30,14 @@ type SPNError struct {
 
 func (e SPNError) Error() string {
 	return fmt.Sprintf("SPN job %s failed for '%s': %s", e.JobID, e.URL, e.Message)
+}
+
+type CdxNoRowsError struct {
+	URL string
+}
+
+func (e CdxNoRowsError) Error() string {
+	return fmt.Sprintf("CDX query for '%s' returned errorless empty result set", e.URL)
 }
 
 type BlockedError struct {
@@ -244,6 +253,10 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				row, err = c.spnBrowserToCdx(u)
 			}
 			if err != nil {
+				if errors.Is(err, CdxNoRowsError{}) {
+					out.FailReason = "cdx-no-rows"
+					return *out, nil
+				}
 				return *out, err
 			}
 			// TODO we could and probably should choose to go ahead with old
@@ -489,8 +502,7 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 		return out, fmt.Errorf("failed to find successful SPN job in CDX: %w", err)
 	}
 	if len(rows) == 0 {
-		return out, fmt.Errorf("no error from CDX but 0 rows in result for %s",
-			spnJobResult.OriginalURL)
+		return out, CdxNoRowsError{URL: spnJobResult.OriginalURL}
 	}
 
 	return &rows[0], nil

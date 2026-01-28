@@ -5,6 +5,11 @@ stages:
 variables:
   GO_VERSION: 1.25.6-trixie
 
+test:trawler-release-test:
+  stage: test
+  image: golang:${GO_VERSION}
+  script:
+    - make test
 
 build:trawler-build:
   stage: build
@@ -25,12 +30,6 @@ test:trawler-mr-test:
   image: golang:${GO_VERSION}
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-  script:
-    - make test
-
-test:trawler-release-test:
-  stage: test
-  image: golang:${GO_VERSION}
   script:
     - make test
 

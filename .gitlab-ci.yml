@@ -9,10 +9,6 @@ variables:
 build:trawler-build:
   stage: build
   image: golang:${GO_VERSION}
-  only:
-    - tags
-  except:
-    - branches
   dependencies:
     - test:trawler-release-test
   rules:
@@ -41,10 +37,6 @@ test:trawler-release-test:
 upload:trawler-upload:
   stage: upload
   image: curlimages/curl:8.18.0
-  only:
-    - tags
-  except:
-    - branches
   rules:
     - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+.$/
   dependencies:

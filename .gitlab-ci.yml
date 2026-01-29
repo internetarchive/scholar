@@ -1,4 +1,48 @@
----
+stages:
+  - test
+  - build
+  - upload
+variables:
+  GO_VERSION: 1.25.6-trixie
+
+build:trawler-build:
+  stage: build
+  image: golang:${GO_VERSION}
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+.$/
+  script:
+    - cd trawler
+    - make test
+    - make trawler
+  artifacts:
+    paths:
+      - "trawler"
+    expire_in: 1 week
+
+test:trawler-mr-test:
+  stage: test
+  image: golang:${GO_VERSION}
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - cd trawler
+    - make test
+
+upload:trawler-upload:
+  stage: upload
+  image: curlimages/curl:8.18.0
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+.$/
+  dependencies:
+    - build:trawler-build
+  script:
+    - export VERSION=$(./trawler version)
+    - echo "Uploading trawler binary to nexus..."
+    - cd trawler
+    - |
+      curl -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
+        --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
+
 build-grobid:
   image: gradle:jre11-slim
   rules:

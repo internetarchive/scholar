@@ -1,4 +1,4 @@
-package crossref
+package temporal
 
 import (
 	"context"
@@ -13,18 +13,15 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-// TODO extract out of crossref package
-
-func ensureNamespace(ctx context.Context, namespace string) error {
+func ensureNamespace(ctx context.Context, opts client.Options, namespace string) error {
 	log.Printf("ensuring '%s' namespace (will create if it does not exist)...", namespace)
-	client, err := client.NewNamespaceClient(client.Options{
-		HostPort: client.DefaultHostPort,
-	})
+	client, err := client.NewNamespaceClient(opts)
 	if err != nil {
 		return fmt.Errorf("could not create namespace client: %w", err)
 	}
 
 	duration := viper.GetDuration("temporal.retention")
+
 	// TODO is this really necessary? I see code on GitHub just passing a
 	// time.Duration instead of this durationpb.
 	dpb := &durationpb.Duration{
@@ -45,24 +42,26 @@ func ensureNamespace(ctx context.Context, namespace string) error {
 
 // SetupTemporal creates a Temporal client, ensuring that the crossref namespace exists.
 func SetupTemporal(ctx context.Context) (client.Client, error) {
-	namespace := viper.GetString("temporal.namespace")
-	if namespace != "" {
-		err := ensureNamespace(ctx, namespace)
-		if err != nil {
-			return nil, fmt.Errorf("could not ensure namesapce: %w", err)
-		}
-	} else {
-		namespace = "default"
-	}
 	hostport := viper.GetString("temporal.hostport")
 	if hostport == "" {
 		hostport = client.DefaultHostPort
 	}
+	opts := client.Options{
+		HostPort: hostport,
+	}
+	namespace := viper.GetString("crossref.temporal_namespace")
+	if namespace != "" {
+		err := ensureNamespace(ctx, opts, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("could not ensure namespace: %w", err)
+		}
+	} else {
+		namespace = "default"
+	}
 
-	c, err := client.Dial(client.Options{
-		HostPort:  hostport,
-		Namespace: namespace,
-	})
+	opts.Namespace = namespace
+
+	c, err := client.Dial(opts)
 	if err != nil {
 		log.Fatalln("Unable to create client", err)
 	}

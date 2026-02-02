@@ -9,9 +9,11 @@ build:trawler-build:
   stage: build
   image: golang:${GO_VERSION}
   rules:
-    - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+.$/
+    - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+$/
   script:
     - cd trawler
+    - go env -w GOPROXY=https://nexus.us.archive.org/repository/golang-org
+    - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
     - make test
     - make trawler
   artifacts:
@@ -26,19 +28,23 @@ test:trawler-mr-test:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
     - cd trawler
+    - go env -w GOPROXY=https://nexus.us.archive.org/repository/golang-org
+    - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
     - make test
 
 upload:trawler-upload:
   stage: upload
   image: curlimages/curl:8.18.0
+  variables:
+    NEXUS_URL: https://nexus.us.archive.org
   rules:
-    - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+.$/
+    - if: $CI_COMMIT_TAG =~ /^trawler-\d+\.\d+\.\d+$/
   dependencies:
     - build:trawler-build
   script:
+    - cd trawler
     - export VERSION=$(./trawler version)
     - echo "Uploading trawler binary to nexus..."
-    - cd trawler
     - |
       curl -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"

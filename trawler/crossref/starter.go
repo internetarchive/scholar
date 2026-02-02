@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/temporal"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
@@ -16,7 +17,7 @@ import (
 func StartOneOff(in CrossrefCrawlInput) error {
 	// TODO start the crawl workflow manually, accept arguments from CLI
 	ctx := context.Background()
-	c, err := SetupTemporal(ctx)
+	c, err := temporal.SetupTemporal(ctx)
 	if err != nil {
 		return err
 	}
@@ -41,7 +42,7 @@ func StartOneOff(in CrossrefCrawlInput) error {
 
 func StartSchedule() error {
 	ctx := context.Background()
-	c, err := SetupTemporal(ctx)
+	c, err := temporal.SetupTemporal(ctx)
 	if err != nil {
 		return err
 	}

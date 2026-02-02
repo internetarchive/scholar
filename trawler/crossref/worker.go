@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
+	"git.archive.org/webgroup/scholar/trawler/temporal"
 	"github.com/spf13/viper"
 	"go.temporal.io/sdk/worker"
 )
@@ -12,7 +13,7 @@ import (
 // StartExternalWorker starts a temporal worker that requires internet access
 func StartExternalWorker() error {
 	ctx := context.Background()
-	c, err := SetupTemporal(ctx)
+	c, err := temporal.SetupTemporal(ctx)
 	if err != nil {
 		return err
 	}
@@ -34,7 +35,7 @@ func StartExternalWorker() error {
 // StartInternalWorker starts a temporal worker suitable for in-cluster activities
 func StartInternalWorker() error {
 	ctx := context.Background()
-	c, err := SetupTemporal(ctx)
+	c, err := temporal.SetupTemporal(ctx)
 	if err != nil {
 		return err
 	}

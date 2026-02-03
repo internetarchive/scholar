@@ -49,7 +49,7 @@ func SetupTemporal(ctx context.Context) (client.Client, error) {
 	opts := client.Options{
 		HostPort: hostport,
 	}
-	namespace := viper.GetString("crossref.temporal_namespace")
+	namespace := viper.GetString("temporal.namespace")
 	if namespace != "" {
 		err := ensureNamespace(ctx, opts, namespace)
 		if err != nil {

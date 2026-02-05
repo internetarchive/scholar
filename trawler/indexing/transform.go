@@ -38,8 +38,8 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 	}
 
 	var container *fc2.Container
-	if release.ContainerID != uuid.Nil {
-		c, err := fc2.GetContainer(client, release.ContainerID)
+	if release.ContainerID != nil {
+		c, err := fc2.GetContainer(client, *release.ContainerID)
 		if err != nil {
 			return out, err
 		}
@@ -55,7 +55,7 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 	out.State = "active"
 	out.IndexTime = time.Now()
 	out.LegacyIdent = fc2.UuidToLegacy(release.ID)
-	out.LegacyWorkIdent = fc2.UuidToLegacy(release.WorkID)
+	out.LegacyWorkIdent = fc2.UuidToLegacy(*release.WorkID)
 	out.Title = release.Title
 	out.Subtitle = release.Subtitle
 	out.OriginalTitle = release.OriginalTitle
@@ -323,7 +323,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 	client := ictx.HttpClient
 
 	out.Type = "work"
-	out.LegacyWorkIdent = fc2.UuidToLegacy(release.WorkID)
+	out.LegacyWorkIdent = fc2.UuidToLegacy(*release.WorkID)
 	out.Key = fmt.Sprintf("work_%s", out.LegacyWorkIdent)
 	out.IndexTime = time.Now()
 	out.CollapseKey = out.LegacyWorkIdent

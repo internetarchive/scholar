@@ -153,7 +153,7 @@ func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (fatcat2.Rel
 		if err != nil {
 			return out, err
 		}
-		out.CreatorID = id
+		out.CreatorID = *id
 	}
 
 	out.RawName = cc.Given
@@ -394,7 +394,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		return out, err
 	}
 
-	if foundId == uuid.Nil {
+	if foundId == nil {
 		err := createRelease(client, &out, &release, xrefdoc)
 		if err != nil {
 			return out, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)
@@ -403,7 +403,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		out.Releases.Added++
 	} else {
 		// TODO here is where we could update release with info from xref should we so desire
-		release, err = fatcat2.GetRelease(client, foundId)
+		release, err = fatcat2.GetRelease(client, *foundId)
 		if err != nil {
 			return out, fmt.Errorf("could not look up existing release: %w", err)
 		}
@@ -510,7 +510,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// TODO we could verify that the existing file is attached to the release ID
 	// we're working with...
 
-	if fileID != uuid.Nil {
+	if fileID != nil {
 		l.Debug(fmt.Sprintf("ignoring known sha256 '%s' (rid: '%s'", file.Sha256, release.ID))
 		return out, nil
 	}
@@ -654,8 +654,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		GrobidXML:  grobidXML,
 	}
 
-	if release.ContainerID != uuid.Nil {
-		container, err := fatcat2.GetContainer(client, release.ContainerID)
+	if release.ContainerID != nil {
+		container, err := fatcat2.GetContainer(client, *release.ContainerID)
 		if err != nil {
 			return out, fmt.Errorf("could not fetch container '%s': %w", release.ContainerID, err)
 		}
@@ -834,7 +834,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 	// (This article is only available as a PDF document.)
 
 	// "extra" stuff (ugh)
-	if release.ContainerID == uuid.Nil && len(xrefdoc.ContainerTitle) > 1 {
+	if release.ContainerID != nil && len(xrefdoc.ContainerTitle) > 1 {
 		release.Extra["container_name"] = xrefdoc.ContainerTitle[0]
 	}
 
@@ -970,7 +970,7 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 		}
 	}
 
-	containerID := uuid.Nil
+	var containerID *uuid.UUID
 	var err error
 
 	if issnl != "" {
@@ -981,7 +981,7 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 		}
 	}
 
-	if containerID == uuid.Nil {
+	if containerID == nil {
 		if containerTitle != "" && issnl != "" {
 			c := fatcat2.Container{
 				Name:      containerTitle,
@@ -1025,7 +1025,7 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 		return err
 	}
 
-	release.ID = id
+	release.ID = *id
 
 	releaseDoc, err := indexing.PrepareFatcatReleaseDoc(client, *release)
 	if err != nil {

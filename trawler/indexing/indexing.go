@@ -42,8 +42,8 @@ func IndexFulltext(rid uuid.UUID) error {
 	}
 
 	var container *fatcat2.Container
-	if release.ContainerID != uuid.Nil {
-		c, err := fatcat2.GetContainer(client, release.ContainerID)
+	if release.ContainerID != nil {
+		c, err := fatcat2.GetContainer(client, *release.ContainerID)
 		if err != nil {
 			return err
 		}

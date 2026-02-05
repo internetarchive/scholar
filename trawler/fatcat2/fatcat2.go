@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,15 +20,15 @@ import (
 )
 
 type LegacyData struct {
-	Ident    uuid.UUID `json:",omitzero"`
-	Revision uuid.UUID `json:",omitzero"`
+	Ident    uuid.UUID
+	Revision uuid.UUID
 }
 
 type Container struct {
 	ID          uuid.UUID      `json:"id,omitzero"`
 	Name        string         `json:"name,omitempty"`
 	Type        string         `json:"container_type,omitempty"`
-	LegacyRevID uuid.UUID      `json:"legacy_rev_id,omitzero"`
+	LegacyRevID *uuid.UUID     `json:"legacy_rev_id"`
 	Publisher   string         `json:"publisher,omitempty"`
 	ISSNL       string         `json:"issnl,omitempty"`
 	ISSNE       string         `json:"issne,omitempty"`
@@ -92,7 +93,7 @@ func (rd ReleaseDate) Format(s string) string {
 
 type Release struct {
 	ID              uuid.UUID      `json:"id,omitzero"`
-	WorkID          uuid.UUID      `json:"work_id,omitzero"`
+	WorkID          *uuid.UUID     `json:"work_id"`
 	Title           string         `json:"title,omitempty"`
 	OriginalTitle   string         `json:"original_title,omitempty"`
 	Subtitle        string         `json:"subtitle,omitempty"`
@@ -106,7 +107,7 @@ type Release struct {
 	Pages           string         `json:"pages,omitempty"`
 	Publisher       string         `json:"publisher,omitempty"`
 	Language        string         `json:"language,omitempty"`
-	LegacyRevID     uuid.UUID      `json:"legacy_rev_id,omitzero"`
+	LegacyRevID     *uuid.UUID     `json:"legacy_rev_id"`
 	LicenseSlug     string         `json:"license_slug,omitempty"`
 	Extra           map[string]any `json:"extra,omitempty"`
 	WithdrawnStatus string         `json:"withdrawn_status,omitempty"`
@@ -117,7 +118,7 @@ type Release struct {
 
 	Refs        []RawRef         `json:"refs,omitempty"`
 	Abstracts   []Abstract       `json:"abstracts,omitempty"`
-	ContainerID uuid.UUID        `json:"container_id,omitzero"`
+	ContainerID *uuid.UUID       `json:"container_id"`
 	ExternalIDs []ExternalID     `json:"extids,omitempty"`
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 
@@ -226,16 +227,16 @@ type FileURL struct {
 }
 
 type File struct {
-	Releases    []Release `json:"releases"`
-	URLs        []FileURL `json:"urls"`
-	ID          uuid.UUID `json:"id,omitzero"`
-	Source      string    `json:"source"`
-	Size        int       `json:"size_bytes"`
-	Sha1        string    `json:"sha1"`
-	Sha256      string    `json:"sha256"`
-	Md5         string    `json:"md5"`
-	Mimetype    string    `json:"mimetype"`
-	LegacyRevID uuid.UUID `json:"legacy_rev_id,omitzero"`
+	Releases    []Release  `json:"releases"`
+	URLs        []FileURL  `json:"urls"`
+	ID          uuid.UUID  `json:"id,omitzero"`
+	Source      string     `json:"source"`
+	Size        int        `json:"size_bytes"`
+	Sha1        string     `json:"sha1"`
+	Sha256      string     `json:"sha256"`
+	Md5         string     `json:"md5"`
+	Mimetype    string     `json:"mimetype"`
+	LegacyRevID *uuid.UUID `json:"legacy_rev_id"`
 }
 
 // SetMetadata takes a byte array and sets the various checksum fields and the
@@ -276,18 +277,18 @@ type Creator struct {
 }
 
 // CreateContainer creates a new container in fc2 and returns its ID
-func CreateContainer(client *http.Client, c *Container) (uuid.UUID, error) {
+func CreateContainer(client *http.Client, c *Container) (*uuid.UUID, error) {
 	c.Source = "dev" // TODO thread this value through from invocation of workflow
 	c.ID = uuid.New()
 
 	legacy, err := lookupLegacyContainer(client, c.ISSNL)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
+		return nil, fmt.Errorf("legacy lookup failed: %w", err)
 	}
 
 	if legacy != nil {
 		c.ID = legacy.Ident
-		c.LegacyRevID = legacy.Revision
+		c.LegacyRevID = &legacy.Revision
 	}
 
 	fc2url := viper.GetString("fatcat2.endpoint")
@@ -305,29 +306,29 @@ func CreateContainer(client *http.Client, c *Container) (uuid.UUID, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
+		return nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
 	}
 
 	if resp.StatusCode != 201 {
 		b, _ := io.ReadAll(resp.Body)
-		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", c, resp.StatusCode, b)
+		return nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", c, resp.StatusCode, b)
 	}
 
-	return c.ID, nil
+	return &c.ID, nil
 }
 
 // CreateFile creates a new file in fc2 and returns its ID
-func CreateFile(client *http.Client, f *File) (uuid.UUID, error) {
+func CreateFile(client *http.Client, f *File) (*uuid.UUID, error) {
 	f.Source = "dev" // TODO thread this value through from invocation of workflow
 	f.ID = uuid.New()
 	legacy, err := lookupLegacyFile(client, f.Sha1)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
+		return nil, fmt.Errorf("legacy lookup failed: %w", err)
 	}
 
 	if legacy != nil {
 		f.ID = legacy.Ident
-		f.LegacyRevID = legacy.Revision
+		f.LegacyRevID = &legacy.Revision
 	}
 
 	fc2url := viper.GetString("fatcat2.endpoint")
@@ -345,19 +346,19 @@ func CreateFile(client *http.Client, f *File) (uuid.UUID, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("file POST failed for '%#v': %w", f, err)
+		return nil, fmt.Errorf("file POST failed for '%#v': %w", f, err)
 	}
 
 	if resp.StatusCode != 201 {
 		b, _ := io.ReadAll(resp.Body)
-		return uuid.Nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", f, resp.StatusCode, b)
+		return nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", f, resp.StatusCode, b)
 	}
 
-	return f.ID, nil
+	return &f.ID, nil
 }
 
 // CreateRelease creates a new release in fc2 and returns its ID
-func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
+func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 	r.Source = "dev" // TODO thread this value through from invocation of workflow
 	r.ID = uuid.New()
 
@@ -374,12 +375,12 @@ func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
 
 	legacy, err := lookupLegacyRelease(client, doi)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("legacy lookup failed: %w", err)
+		return nil, fmt.Errorf("legacy lookup failed: %w", err)
 	}
 
 	if legacy != nil {
 		r.ID = legacy.Ident
-		r.LegacyRevID = legacy.Revision
+		r.LegacyRevID = &legacy.Revision
 	}
 
 	fc2url := viper.GetString("fatcat2.endpoint")
@@ -397,16 +398,16 @@ func CreateRelease(client *http.Client, r Release) (uuid.UUID, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("release POST failed for '%#v': %w", r, err)
+		return nil, fmt.Errorf("release POST failed for '%#v': %w", r, err)
 	}
 
 	if resp.StatusCode != 201 {
 		b, _ := io.ReadAll(resp.Body)
-		return uuid.Nil, fmt.Errorf("unexpected status code for '%s' (%s) POST: %d; body '%s'",
+		return nil, fmt.Errorf("unexpected status code for '%s' (%s) POST: %d; body '%s'",
 			doi, r.LegacyRevID, resp.StatusCode, b)
 	}
 
-	return r.ID, nil
+	return &r.ID, nil
 }
 
 func ReleaseFiles(c *http.Client, rid uuid.UUID) ([]File, error) {
@@ -610,7 +611,7 @@ func lookupLegacyFile(c *http.Client, sha1 string) (*LegacyData, error) {
 	return lookupLegacy(c, "lookup_file", "sha1", sha1)
 }
 
-func lookup(c *http.Client, entityType, idType, idValue string) (uuid.UUID, error) {
+func lookup(c *http.Client, entityType, idType, idValue string) (*uuid.UUID, error) {
 	fc2url := viper.GetString("fatcat2.endpoint")
 	req, err := http.NewRequest("GET", fc2url+"/"+entityType+"/lookup", nil)
 	if err != nil {
@@ -623,21 +624,21 @@ func lookup(c *http.Client, entityType, idType, idValue string) (uuid.UUID, erro
 	req.URL.RawQuery = q.Encode()
 	resp, err := c.Do(req)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("fc2 lookup failed for '%s': %w", idValue, err)
+		return nil, fmt.Errorf("fc2 lookup failed for '%s': %w", idValue, err)
 	}
 
 	if resp.StatusCode == 404 {
-		return uuid.Nil, nil
+		return nil, nil
 	}
 
 	if resp.StatusCode != 200 {
-		return uuid.Nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
+		return nil, fmt.Errorf("did not get 200 nor 404 from fc2 for '%s' lookup: %d",
 			idValue, resp.StatusCode)
 	}
 
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return uuid.Nil, err
+		return nil, err
 	}
 
 	var p struct {
@@ -646,29 +647,29 @@ func lookup(c *http.Client, entityType, idType, idValue string) (uuid.UUID, erro
 
 	err = json.Unmarshal(bs, &p)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("unmarshal failed for '%s': %w", idValue, err)
+		return nil, fmt.Errorf("unmarshal failed for '%s': %w", idValue, err)
 	}
 
-	return p.ID, nil
+	return &p.ID, nil
 }
 
 // LookupDoi returns the ID of a fatcat2 Release with the given DOI, if any.
-func LookupDoi(c *http.Client, doi string) (uuid.UUID, error) {
+func LookupDoi(c *http.Client, doi string) (*uuid.UUID, error) {
 	return lookup(c, "release", "doi", doi)
 }
 
 // LookupOrcid returns the ID of a fatcat2 Creator with the given orcid, if any.
-func LookupOrcid(c *http.Client, orcid string) (uuid.UUID, error) {
+func LookupOrcid(c *http.Client, orcid string) (*uuid.UUID, error) {
 	return lookup(c, "creator", "orcid", orcid)
 }
 
 // LookupIssnl returns the ID of a fatcat2 Container with the given ISSNL, if any.
-func LookupIssnl(c *http.Client, issnl string) (uuid.UUID, error) {
+func LookupIssnl(c *http.Client, issnl string) (*uuid.UUID, error) {
 	return lookup(c, "container", "issnl", issnl)
 }
 
 // LookupSha256 returns the ID of a fatcat2 File with the given Sha256, if any.
-func LookupSha256(c *http.Client, sha256 string) (uuid.UUID, error) {
+func LookupSha256(c *http.Client, sha256 string) (*uuid.UUID, error) {
 	return lookup(c, "file", "sha256", sha256)
 }
 
@@ -679,7 +680,16 @@ func fc2uuid(fatcatIdent string) (uuid.UUID, error) {
 		return uuid.Nil, err
 	}
 
-	return uuid.FromBytes(decoded)
+	u, err := uuid.FromBytes(decoded)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	if u == uuid.Nil {
+		return u, errors.New("got empty uuid")
+	}
+
+	return u, nil
 }
 
 func UuidToLegacy(u uuid.UUID) string {

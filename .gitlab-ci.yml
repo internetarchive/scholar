@@ -46,7 +46,7 @@ upload:trawler-upload:
     - export VERSION=$(./trawler version)
     - echo "Uploading trawler binary to nexus..."
     - |
-      curl -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
+      curl -fv --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
 
 build-grobid:

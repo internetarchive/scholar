@@ -19,15 +19,15 @@ import (
 )
 
 type LegacyData struct {
-	Ident    uuid.UUID `json:",omitempty"`
-	Revision uuid.UUID `json:",omitempty"`
+	Ident    uuid.UUID `json:",omitzero"`
+	Revision uuid.UUID `json:",omitzero"`
 }
 
 type Container struct {
-	ID          uuid.UUID      `json:"id,omitempty"`
+	ID          uuid.UUID      `json:"id,omitzero"`
 	Name        string         `json:"name,omitempty"`
 	Type        string         `json:"container_type,omitempty"`
-	LegacyRevID uuid.UUID      `json:"legacy_rev_id,omitempty"`
+	LegacyRevID uuid.UUID      `json:"legacy_rev_id,omitzero"`
 	Publisher   string         `json:"publisher,omitempty"`
 	ISSNL       string         `json:"issnl,omitempty"`
 	ISSNE       string         `json:"issne,omitempty"`
@@ -45,7 +45,7 @@ type Abstract struct {
 }
 
 type ReleaseContrib struct {
-	CreatorID      uuid.UUID      `json:"creator_id,omitempty"`
+	CreatorID      uuid.UUID      `json:"creator_id,omitzero"`
 	ReleaseID      *uuid.UUID     `json:"release_id"`
 	Position       int            `json:"position"`
 	RawName        string         `json:"raw_name"`
@@ -91,8 +91,8 @@ func (rd ReleaseDate) Format(s string) string {
 }
 
 type Release struct {
-	ID              uuid.UUID      `json:"id,omitempty"`
-	WorkID          uuid.UUID      `json:"work_id,omitempty"`
+	ID              uuid.UUID      `json:"id,omitzero"`
+	WorkID          uuid.UUID      `json:"work_id,omitzero"`
 	Title           string         `json:"title,omitempty"`
 	OriginalTitle   string         `json:"original_title,omitempty"`
 	Subtitle        string         `json:"subtitle,omitempty"`
@@ -106,7 +106,7 @@ type Release struct {
 	Pages           string         `json:"pages,omitempty"`
 	Publisher       string         `json:"publisher,omitempty"`
 	Language        string         `json:"language,omitempty"`
-	LegacyRevID     uuid.UUID      `json:"legacy_rev_id,omitempty"`
+	LegacyRevID     uuid.UUID      `json:"legacy_rev_id,omitzero"`
 	LicenseSlug     string         `json:"license_slug,omitempty"`
 	Extra           map[string]any `json:"extra,omitempty"`
 	WithdrawnStatus string         `json:"withdrawn_status,omitempty"`
@@ -117,7 +117,7 @@ type Release struct {
 
 	Refs        []RawRef         `json:"refs,omitempty"`
 	Abstracts   []Abstract       `json:"abstracts,omitempty"`
-	ContainerID uuid.UUID        `json:"container_id,omitempty"`
+	ContainerID uuid.UUID        `json:"container_id,omitzero"`
 	ExternalIDs []ExternalID     `json:"extids,omitempty"`
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 
@@ -219,7 +219,7 @@ type RawRef struct {
 }
 
 type FileURL struct {
-	FileID uuid.UUID `json:"file_id,omitempty"`
+	FileID uuid.UUID `json:"file_id,omitzero"`
 	Rel    string    `json:"rel"`
 	URL    string    `json:"url"`
 	Source string    `json:"source"`
@@ -228,14 +228,14 @@ type FileURL struct {
 type File struct {
 	Releases    []Release `json:"releases"`
 	URLs        []FileURL `json:"urls"`
-	ID          uuid.UUID `json:"id,omitempty"`
+	ID          uuid.UUID `json:"id,omitzero"`
 	Source      string    `json:"source"`
 	Size        int       `json:"size_bytes"`
 	Sha1        string    `json:"sha1"`
 	Sha256      string    `json:"sha256"`
 	Md5         string    `json:"md5"`
 	Mimetype    string    `json:"mimetype"`
-	LegacyRevID uuid.UUID `json:"legacy_rev_id,omitempty"`
+	LegacyRevID uuid.UUID `json:"legacy_rev_id,omitzero"`
 }
 
 // SetMetadata takes a byte array and sets the various checksum fields and the
@@ -266,7 +266,7 @@ func (f *File) SetMetadata(bs []byte) error {
 }
 
 type Creator struct {
-	ID          uuid.UUID `json:"id,omitempty"`
+	ID          uuid.UUID `json:"id,omitzero"`
 	DisplayName string    `json:"display_name,omitempty"`
 	GivenName   string    `json:"given_name,omitempty"`
 	Surname     string    `json:"surname,omitempty"`

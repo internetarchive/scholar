@@ -395,10 +395,11 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	if foundId == nil {
-		release, err = createRelease(client, &out, release, xrefdoc)
+		r, err := createRelease(client, &out, release, xrefdoc)
 		if err != nil {
 			return out, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)
 		}
+		release = *r
 		l.Debug(fmt.Sprintf("created release %s", release.ID))
 		out.Releases.Added++
 	} else {
@@ -951,7 +952,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 	return release, nil
 }
 
-func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xrefdoc crossrefDoc) (*release, error) {
+func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xrefdoc crossrefDoc) (*fatcat2.Release, error) {
 	var containerTitle string
 
 	if len(xrefdoc.ContainerTitle) > 0 {
@@ -1049,7 +1050,7 @@ func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xre
 		return nil, fmt.Errorf("failed to index doc for release '%s': %w", release.ID, err)
 	}
 
-	return release, nil
+	return &release, nil
 }
 
 // isCrawlWanted returns true if we feel this release is worthy of a crawl

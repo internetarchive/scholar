@@ -13,7 +13,6 @@ import (
 
 	fc2 "git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"github.com/PuerkitoBio/goquery"
-	"github.com/google/uuid"
 	"github.com/miku/grobidclient/tei"
 	"golang.org/x/net/publicsuffix"
 )
@@ -129,8 +128,8 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 	out.Affiliations = []string{}
 	for _, c := range release.Contribs {
 		out.ContribNames = append(out.ContribNames, contribToName(client, c))
-		if c.CreatorID != uuid.Nil {
-			out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fc2.UuidToLegacy(c.CreatorID))
+		if c.CreatorID != nil {
+			out.CreatorLegacyIdents = append(out.CreatorLegacyIdents, fc2.UuidToLegacy(*c.CreatorID))
 		}
 		if c.RawAffiliation != "" {
 			out.Affiliations = append(out.Affiliations, c.RawAffiliation)
@@ -697,8 +696,8 @@ func cleanString(s string) string {
 }
 
 func contribToName(c *http.Client, contrib fc2.ReleaseContrib) string {
-	if contrib.CreatorID != uuid.Nil {
-		creator, err := fc2.GetCreator(c, contrib.CreatorID)
+	if contrib.CreatorID != nil {
+		creator, err := fc2.GetCreator(c, *contrib.CreatorID)
 		if err == nil && creator.DisplayName != "" {
 			return creator.DisplayName
 		}

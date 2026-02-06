@@ -46,7 +46,7 @@ type Abstract struct {
 }
 
 type ReleaseContrib struct {
-	CreatorID      uuid.UUID      `json:"creator_id,omitzero"`
+	CreatorID      *uuid.UUID     `json:"creator_id"`
 	ReleaseID      *uuid.UUID     `json:"release_id"`
 	Position       int            `json:"position"`
 	RawName        string         `json:"raw_name"`

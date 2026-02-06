@@ -1020,12 +1020,18 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 
 	release.ContainerID = containerID
 
+	// TODO CreateRelease needs to return the fully hydrated release with things like work id set, not just the ID
 	id, err := fatcat2.CreateRelease(client, *release)
 	if err != nil {
 		return err
 	}
 
-	release.ID = *id
+	r, err := fatcat2.GetRelease(client, *id)
+	if err != nil {
+		return fmt.Errorf("failed to fetch new release '%s': %w", id, err)
+	}
+
+	release = &r
 
 	releaseDoc, err := indexing.PrepareFatcatReleaseDoc(client, *release)
 	if err != nil {

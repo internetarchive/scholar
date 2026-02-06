@@ -395,7 +395,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	if foundId == nil {
-		err := createRelease(client, &out, &release, xrefdoc)
+		release, err = createRelease(client, &out, release, xrefdoc)
 		if err != nil {
 			return out, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)
 		}
@@ -951,7 +951,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 	return release, nil
 }
 
-func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xrefdoc crossrefDoc) error {
+func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xrefdoc crossrefDoc) (*release, error) {
 	var containerTitle string
 
 	if len(xrefdoc.ContainerTitle) > 0 {
@@ -977,7 +977,7 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 		// TODO could build a map of issnl->cid somewhere to save on requests
 		containerID, err = fatcat2.LookupIssnl(client, issnl)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -994,7 +994,7 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 			// of re-fetching it with GetContainer for indexing
 			containerID, err = fatcat2.CreateContainer(client, &c)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			cs.Containers.Added++
 
@@ -1003,12 +1003,12 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 			containerDoc := indexing.PrepareFatcatContainerDoc(c)
 			bs, err := json.Marshal(containerDoc)
 			if err != nil {
-				return fmt.Errorf("could not marshal container doc: %w", err)
+				return nil, fmt.Errorf("could not marshal container doc: %w", err)
 			}
 			err = indexing.DoElasticIndex(client, viper.GetString("indexing.fatcat_container_ix"),
 				containerDoc.LegacyIdent, bs)
 			if err != nil {
-				return fmt.Errorf("could not index container '%s': %w", c.ID, err)
+				return nil, fmt.Errorf("could not index container '%s': %w", c.ID, err)
 			}
 		} else if containerTitle != "" {
 			release.Extra["container_name"] = containerTitle
@@ -1021,35 +1021,35 @@ func createRelease(client *http.Client, cs *counts, release *fatcat2.Release, xr
 	release.ContainerID = containerID
 
 	// TODO CreateRelease needs to return the fully hydrated release with things like work id set, not just the ID
-	id, err := fatcat2.CreateRelease(client, *release)
+	id, err := fatcat2.CreateRelease(client, release)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	r, err := fatcat2.GetRelease(client, *id)
 	if err != nil {
-		return fmt.Errorf("failed to fetch new release '%s': %w", id, err)
+		return nil, fmt.Errorf("failed to fetch new release '%s': %w", id, err)
 	}
 
-	release = &r
+	release = r
 
-	releaseDoc, err := indexing.PrepareFatcatReleaseDoc(client, *release)
+	releaseDoc, err := indexing.PrepareFatcatReleaseDoc(client, release)
 	if err != nil {
-		return fmt.Errorf("failed to transform release '%s' into ES doc: %w", release.ID, err)
+		return nil, fmt.Errorf("failed to transform release '%s' into ES doc: %w", release.ID, err)
 	}
 
 	bs, err := json.Marshal(releaseDoc)
 	if err != nil {
-		return fmt.Errorf("failed to marshal release es doc: %w", err)
+		return nil, fmt.Errorf("failed to marshal release es doc: %w", err)
 	}
 
 	err = indexing.DoElasticIndex(client,
 		viper.GetString("indexing.fatcat_release_ix"), releaseDoc.LegacyIdent, bs)
 	if err != nil {
-		return fmt.Errorf("failed to index doc for release '%s': %w", release.ID, err)
+		return nil, fmt.Errorf("failed to index doc for release '%s': %w", release.ID, err)
 	}
 
-	return nil
+	return release, nil
 }
 
 // isCrawlWanted returns true if we feel this release is worthy of a crawl

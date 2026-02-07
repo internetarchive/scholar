@@ -1,0 +1,157 @@
+<?xml version="1.0"?>
+<!-- now, processors are assembled into ordered FetchChain bean -->
+<bean id="fetchProcessors" class="org.archive.modules.FetchChain">
+  <property name="processors">
+    <list>
+      <!-- Only crawl urls assigned to this crawler-->
+      <!-- <ref bean="hashCrawlMapper" /> -->
+      <!-- re-check scope, if so enabled... -->
+      <ref bean="preselector"/>
+      <!-- ...then verify or trigger prerequisite URIs fetched, allow crawling... -->
+      <ref bean="preconditions"/>
+      <!-- insert persist-load processor before any fetching -->
+      <!--<ref bean="persistLoadProcessor"/> Do we need to do this?-->
+      <!-- ...fetch if DNS URI... -->
+      <ref bean="fetchDns"/>
+      <ref bean="fetchWhois"/>
+      <!-- ...fetch if HTTP URI... -->
+      <ref bean="fetchHttp"/>
+      <!-- ...fetch if FTP URI... -->
+      <ref bean="fetchFtp"/>
+      <!-- maintain in-CrawlURI history markup -->
+      <ref bean="fetchHistoryProcessor"/>
+      <!-- ...extract outlinks from HTTP headers... -->
+      <bean class="org.archive.modules.ScriptedProcessor">
+        <property name="engineName" value="beanshell"/>
+        <property name="scriptSource">
+          <bean class="org.archive.spring.ConfigString">
+            <property name="value">
+              <value>
+// Beanshell script to send off "application/pdf" bodies to a configured
+// server for custom post-processing.
+//
+// Note that beanshell may not support recent Java features,
+// even things like try-with-resources.
+//
+// You may need to increase Java Heap size and http.maxConnections:
+//
+// -Xms2G -Xmx2G
+// -Dhttp.maxConnections=50
+//
+// $ JAVA_OPTS='-Xms2G -Xmx2G -Dhttp.maxConnections=50' $HERITRIX_HOME/bin/heritrix -a admin:admin
+
+import org.archive.modules.CrawlURI;
+import org.archive.util.Recorder;
+import java.io.*;
+import java.net.*;
+import java.nio.file.*;
+import java.util.logging.Logger;
+
+Logger log = Logger.getLogger("org.archive.scholar.blob.ScriptedProcessor");
+
+// svcURL is where we are sending POST requests to; TODO: make this configurable
+String svcURL = "http://example.org:9444/spool";
+// userAgent to identify this snippet
+String userAgent = "heritrix-send-off/0.1";
+
+
+void process(CrawlURI curi) {
+    if (!curi.getContentType().equals("application/pdf")) {
+        return;
+    }
+    Recorder recorder = curi.getRecorder();
+    if (recorder == null) {
+        log.warning("missing recorder");
+        return;
+    }
+    // We copy the body to a temporary file, as I am not sure,
+    // whether it we would exhaust a reader.
+    File tempFile;
+    try {
+        tempFile = File.createTempFile("heritrix-sendoff-", "");
+        recorder.copyContentBodyTo(tempFile);
+    } catch (IOException ioe) {
+        log.warning("could not copy response body to temporary file");
+        return;
+    }
+    long contentLength = tempFile.length();
+
+    URL url;
+    HttpURLConnection connection = null;
+    InputStream is = null;
+    OutputStream os = null;
+
+    try {
+        url = new URL(svcURL);
+
+        // Open a connection to the URL
+        connection = (HttpURLConnection) url.openConnection();
+
+        connection.setRequestMethod("POST");
+
+        connection.setRequestProperty("Content-Type", "application/pdf");
+        connection.setRequestProperty("Content-Length", Long.toString(contentLength));
+        connection.setRequestProperty("X-Heritrix-CURI", curi.toString());
+        connection.setRequestProperty("User-Agent", userAgent);
+
+        // Enable input and output streams
+        connection.setDoOutput(true);
+
+        // Stream the file content directly to the HTTP connection
+        is = new FileInputStream(tempFile);
+        os = connection.getOutputStream();
+
+        byte[] buffer = new byte[8192]; // 8KB buffer
+        int bytesRead;
+        while ((bytesRead = is.read(buffer)) != -1) {
+            os.write(buffer, 0, bytesRead);
+        }
+        os.flush();
+
+        int responseCode = connection.getResponseCode();
+        log.info("in-flight blob svc status: " + responseCode);
+    } catch (IOException e) {
+        log.warning("error streaming file content (" + Long.toString(contentLength) + "): " + e.getMessage());
+    } finally {
+        if (is != null) {
+            try {
+                is.close();
+            } catch (IOException e) {
+                log.warning("error closing InputStream: " + e.getMessage());
+            }
+        }
+        if (os != null) {
+            try {
+                os.close();
+            } catch (IOException e) {
+                log.warning("error closing OutputStream: " + e.getMessage());
+            }
+        }
+        if (connection != null) {
+            connection.disconnect();
+        }
+        if (tempFile != null) {
+            tempFile.delete();
+        }
+    }
+}
+                </value>
+            </property>
+          </bean>
+        </property>
+      </bean>
+      <ref bean="extractorHttp"/>
+      <!-- ...extract outlinks from HTML content... -->
+      <ref bean="extractorHtml"/>
+      <!-- ...extract outlinks from CSS content... -->
+      <ref bean="extractorCss"/>
+      <!-- ...extract outlinks from Javascript content... -->
+      <ref bean="extractorJs"/>
+      <!-- ...extract outlinks from Flash content... -->
+      <!--<ref bean="extractorSwf"/>-->
+      <!-- Journal: fulltext links -->
+      <ref bean="extractorPdfLink"/>
+      <ref bean="extractorAlternateLink"/>
+    </list>
+  </property>
+</bean>

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  grobid:
+    image: lfoppiano/grobid:0.8.2
+    container_name: grobid
+    ports:
+      - "8070:8070"
+      - "8071:8071"
+    environment:
+      - GROBID_HEAP_SIZE=8192m
+    volumes:
+      - grobid-data:/opt/grobid
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8071"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"  # API port
+      - "9001:9001"  # Console port
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  grobid-data:
+    driver: local
+  minio-data:
+    driver: local
+
+networks:
+  default:
+    name: grobid-minio-network

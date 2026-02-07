@@ -1,0 +1,21 @@
+# Example BLOBPROC Configuration
+
+debug: true
+spool_dir: "/tmp/blobproc-spool"
+timeout: "10m"
+
+s3:
+  endpoint: "localhost:9000"
+  access_key: "test-access-key"
+  secret_key: "test-secret-key"
+  default_bucket: "test-bucket"
+  use_ssl: false
+
+grobid:
+  host: "http://localhost:8070"
+  max_file_size: 536870912  # 512MB
+  timeout: "60s"
+
+processing:
+  workers: 8
+  keep_spool: true

@@ -73,3 +73,104 @@ build-grobid:
     - rm -fr grobid
     - curl --user $NEXUS_BASICAUTH --upload-file $BUILD_DIR/grobid-home-$GROBID-VERSION.zip $NEXUS_URL/repository/raw-internal/grobid/grobid-home-$GROBID-VERSION.zip
     - curl --user $NEXUS_BASICAUTH --upload-file $BUILD_DIR/grobid-service-$GROBID-VERSION.zip $NEXUS_URL/repository/raw-internal/grobid/grobid-service-$GROBID-VERSION.zip
+
+build-pdfcpu:
+  # blobproc currently uses https://github.com/pdfcpu/pdfcpu.git for PDF
+  # metadata extraction; TODO: revisit and remove this dep if possible
+  image: golang:${GO_VERSION}
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: always
+    - when: never
+  variables:
+    # 02/2026: using a commit here, because nexus does not allow updates and latest
+    # release v0.11.1 was not built w/ CGO_ENABLED=0 and failed on the
+    # deployment machine
+    PDFCPU_VERSION: "v0.11.0" # a git tag
+    PDFCPU_REPO: https://github.com/pdfcpu/pdfcpu.git
+    NEXUS_URL: http://nexus.us.archive.org
+  script:
+    - git clone --branch $PDFCPU_VERSION --single-branch $PDFCPU_REPO
+    - cd pdfcpu
+    - CGO_ENABLED=0 go build ./cmd/pdfcpu/... # builds pdfcpu binary; CGO_ENABLED=0, since deployment machine had GLIBC 2.31
+    - ls -la
+    - echo "uploading to $NEXUS_URL..."
+    - |
+      curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
+        --upload-file "pdfcpu" \
+        "${NEXUS_URL}/repository/raw-internal/pdfcpu/${PDFCPU_VERSION}/pdfcpu"
+
+test:blobproc:
+  stage: test
+  image: golang:${GO_VERSION}
+  variables:
+    DEBIAN_FRONTEND: noninteractive
+    http_proxy: "http://http-proxy.us.archive.org:8080"
+    https_proxy: "http://http-proxy.us.archive.org:8080"
+    no_proxy: "nexus.us.archive.org,*.archive.org,archive.org"
+  rules:
+    # run tests when any file in blobproc/ changes (except VERSION file alone)
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - blobproc/**/*
+      when: on_success
+    # skip if this is a tag build (build job will run instead)
+    - if: '$CI_COMMIT_TAG =~ /^blobproc-\d+\.\d+\.\d+$/'
+      when: never
+  script:
+    - apt-get update && apt-get install -y poppler-utils sqlite3 fonts-roboto # pdfinfo, pdftotext, pdftoppm, pdfcpu
+    - go env -w GOPROXY=https://nexus.us.archive.org/repository/golang-org
+    - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
+    - go install github.com/pdfcpu/pdfcpu/cmd/pdfcpu@v0.11.1 # pdfcpu
+    - cd blobproc
+    - make test
+
+build:blobproc-deb:
+  stage: build
+  image: golang:${GO_VERSION}
+  variables:
+    DEBIAN_FRONTEND: noninteractive
+    NFPM_VERSION: "2.44.1"
+    http_proxy: "http://http-proxy.us.archive.org:8080"
+    https_proxy: "http://http-proxy.us.archive.org:8080"
+    no_proxy: "nexus.us.archive.org,*.archive.org,archive.org"
+  rules:
+    # Trigger only on version tags like blobproc-3.2.1
+    - if: '$CI_COMMIT_TAG =~ /^blobproc-\d+\.\d+\.\d+$/'
+      when: on_success
+  script:
+    - apt-get update && apt-get install -y pandoc
+    - go env -w GOPROXY=https://nexus.us.archive.org/repository/golang-org
+    - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
+    - go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v${NFPM_VERSION}
+    - export PATH=$PATH:$(go env GOPATH)/bin
+    - nfpm --version
+    # Extract version from tag (blobproc-1.2.3 -> 1.2.3)
+    - export VERSION=${CI_COMMIT_TAG#blobproc-}
+    - echo "building blobproc version $VERSION..."
+    - cd blobproc
+    - make deb
+  artifacts:
+    paths:
+      - blobproc/*.deb
+    expire_in: 1 day
+
+upload:blobproc:
+  stage: upload
+  image: curlimages/curl:8.18.0
+  variables:
+    NEXUS_URL: http://nexus.us.archive.org
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^blobproc-\d+\.\d+\.\d+$/'
+      when: on_success
+  script:
+    - cd blobproc
+    - export VERSION=${CI_COMMIT_TAG#blobproc-}
+    - export DEB_FILE=$(ls *.deb)
+    - echo "uploading $DEB_FILE to $NEXUS_URL..."
+    - |
+      curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
+        --upload-file "${DEB_FILE}" \
+        "${NEXUS_URL}/repository/raw-internal/blobproc/${VERSION}/${DEB_FILE}"
+  needs:
+    - build:blobproc-deb

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
+	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
@@ -240,10 +241,6 @@ func (c crossrefDoc) IsSkippable() bool {
 		return true
 	}
 
-	if len(c.Abstract) > 100 {
-		return true
-	}
-
 	if len(c.Reference) > 5000 {
 		return true
 	}
@@ -408,6 +405,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		if err != nil {
 			return out, fmt.Errorf("could not look up existing release: %w", err)
 		}
+		out.Releases.Ignored++
 
 		l.Debug(fmt.Sprintf("found release %s", release.ID))
 	}
@@ -818,13 +816,14 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 
 	// abstracts
 
-	// TODO find out if any release has more than one abstract
+	// TODO find out if any release has more than one abstract in database
 	release.Abstracts = []fatcat2.Abstract{}
-	if len(xrefdoc.Abstract) > minAbstractLength {
-		h := sha1.Sum([]byte(xrefdoc.Abstract))
+	abs := cleaning.CleanString(cleaning.DeTag(xrefdoc.Abstract))
+	if len(abs) > minAbstractLength {
+		h := sha1.Sum([]byte(abs))
 		release.Abstracts = append(release.Abstracts, fatcat2.Abstract{
 			MIMEType: "application/xml+jats",
-			Content:  xrefdoc.Abstract,
+			Content:  abs,
 			Language: xrefdoc.Language,
 			SHA1:     fmt.Sprintf("%x", h),
 		})

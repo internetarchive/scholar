@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	fc2 "git.archive.org/webgroup/scholar/trawler/fatcat2"
-	"github.com/PuerkitoBio/goquery"
 	"github.com/miku/grobidclient/tei"
 	"golang.org/x/net/publicsuffix"
 )
@@ -568,7 +568,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 		if slices.Contains(seenLangs, a.Language) {
 			continue
 		}
-		body := cleanString(deTag(a.Content))
+		body := cleaning.CleanString(cleaning.DeTag(a.Content))
 		for _, up := range unwantedAbstractPrefixes {
 			body = strings.TrimPrefix(body, up)
 		}
@@ -585,7 +585,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 	if len(out.Abstracts) == 0 && len(gdoc.Abstract) > 0 {
 		out.Abstracts = append(out.Abstracts, ScholarAbstractV1{
 			Language: gdoc.LanguageCode,
-			Body:     cleanString(deTag(gdoc.Abstract)),
+			Body:     cleaning.CleanString(cleaning.DeTag(gdoc.Abstract)),
 		})
 	}
 
@@ -668,31 +668,6 @@ func generateTags(biblio ScholarBiblioV1, container *fc2.Container) []string {
 	}
 
 	return slices.Collect(maps.Keys(tags))
-}
-
-// deTag takes a string, parses it as HTML, then returns just its rendered text
-func deTag(s string) string {
-	doc, err := goquery.NewDocumentFromReader(bytes.NewBufferString(s))
-	if err != nil {
-		// TODO fallback to a naive regex
-	}
-	return doc.Text()
-}
-
-var singleQuotes = []string{"`", "‘", "’", "‛", "⸂", "⸃", "⸌", "⸍", "⸜", "⸝"}
-
-func cleanString(s string) string {
-	// i wouldn't be this inefficient in python but shrug
-	s = strings.ReplaceAll(s, "…", "...")
-	for _, sq := range singleQuotes {
-		s = strings.ReplaceAll(s, sq, "'")
-	}
-	s = strings.ReplaceAll(s, "„", "\"")
-	s = strings.ReplaceAll(s, "“", "\"")
-	s = strings.ReplaceAll(s, "''", "\"")
-	s = strings.ReplaceAll(s, ",,", "\"")
-
-	return s
 }
 
 func contribToName(c *http.Client, contrib fc2.ReleaseContrib) string {

@@ -220,36 +220,37 @@ type crossrefDoc struct {
 	// Subject     string
 }
 
-func (c crossrefDoc) IsSkippable() bool {
+// SkipReason returns a reason to skip a DOI or empty string if it's not skippable
+func (c crossrefDoc) SkipReason() string {
 	if len(c.Title) == 0 {
-		return true
+		return "no-titles"
 	}
 
 	if len(c.Title[0]) < 2 {
-		return true
+		return "short-title"
 	}
 
 	if strings.ToLower(c.Title[0]) == "oup accepted manuscript" {
-		return true
+		return "filtered-title"
 	}
 
 	if slices.Contains(ignoredTypes, c.Type) {
-		return true
+		return "filtered-type"
 	}
 
 	if c.DOI == "" {
-		return true
+		return "empty-doi"
 	}
 
 	if len(c.Reference) > 5000 {
-		return true
+		return "too-many-refs"
 	}
 
 	if len(c.Author)+len(c.Editor)+len(c.Translator) > 2000 {
-		return true
+		return "too-many-authors"
 	}
 
-	return false
+	return ""
 }
 
 // TODO counts should be in a common package
@@ -372,8 +373,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", xrefdoc.Type, xrefdoc.DOI))
 
-	if xrefdoc.IsSkippable() {
-		l.Debug(fmt.Sprintf("skipping doi '%s'", xrefdoc.DOI))
+	if reason := xrefdoc.SkipReason(); reason != "" {
+		l.Debug(fmt.Sprintf("skipping doi '%s': %s", xrefdoc.DOI, reason))
 		out.Releases.Skipped++
 		return out, nil
 	}

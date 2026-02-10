@@ -306,6 +306,8 @@ type lineBatchInput struct {
 	S3Key string
 	// Offsets is a list of pairs of [ReadOffset, Length]
 	Offsets [][]int64
+	// Source identifies what crawl led to the creation of records for provenance purposes
+	Source string
 }
 
 func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts, error) {
@@ -316,7 +318,8 @@ func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts, error) 
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 	lin := lineInput{
-		S3Key: in.S3Key,
+		S3Key:  in.S3Key,
+		Source: in.Source,
 	}
 	for _, offset := range in.Offsets {
 		lin.LineStart = offset[0]
@@ -343,6 +346,7 @@ type lineInput struct {
 	S3Key     string
 	LineStart int64
 	Length    int64
+	Source    string
 }
 
 func processLine(ctx context.Context, in lineInput) (out counts, err error) {
@@ -382,7 +386,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// Check the DOI
 	client := &http.Client{}
 
-	release, err := xrefToFc(client, xrefdoc)
+	release, err := xrefToFc(client, xrefdoc, in.Source)
 	if err != nil {
 		return out, fmt.Errorf("could not transform xref->fc2: %w", err)
 	}
@@ -480,6 +484,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	file := fatcat2.File{
 		Releases: []fatcat2.Release{release},
 		Mimetype: mimetype,
+		Source:   release.Source,
 		URLs: []fatcat2.FileURL{
 			{
 				Rel: "wayback",
@@ -681,7 +686,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	return out, nil
 }
 
-func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error) {
+func xrefToFc(client *http.Client, xrefdoc crossrefDoc, source string) (fatcat2.Release, error) {
 	release := fatcat2.Release{
 		Contribs:    []fatcat2.ReleaseContrib{},
 		ExternalIDs: []fatcat2.ExternalID{},
@@ -691,8 +696,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 		Issue:       xrefdoc.Issue,
 		Pages:       xrefdoc.Page,
 		Language:    xrefdoc.Language,
-		// TODO fix source setting
-		Source: "dev",
+		Source:      source,
 	}
 
 	var releaseType string
@@ -989,6 +993,7 @@ func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xre
 				ISSNL:     issnl,
 				Publisher: xrefdoc.Publisher,
 				Type:      containerTypeMap[release.Type],
+				Source:    release.Source,
 			}
 			// TODO clean this up. Create* should modify a referenced struct, not
 			// return a UUID; we should create a container in scope for later instaed
@@ -1117,12 +1122,27 @@ func isCrawlWanted(release fatcat2.Release) bool {
 // anything related to scholkit exposed at the workflow level
 
 type CrossrefCrawlInput struct {
-	SKInput SKCrossrefInput
+	SKInput        SKCrossrefInput
+	SourceOverride string
 }
 
 func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts, error) {
 	l := workflow.GetLogger(ctx)
 	out := counts{}
+
+	source := in.SourceOverride
+
+	if source == "" {
+		day := in.SKInput.Day
+		if day == "" {
+			day = workflow.Now(ctx).AddDate(0, 0, -1).Format("2006-01-02")
+		}
+		rid := workflow.GetInfo(ctx).WorkflowExecution.RunID
+		if len(rid) > 8 {
+			rid = rid[:8]
+		}
+		source = fmt.Sprintf("crossref-%s-%s", day, rid)
+	}
 
 	// fetch crossref metadata from the upstream API and store in s3
 
@@ -1147,7 +1167,8 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	batchInput := lineBatchInput{
-		S3Key: skOut.S3Key,
+		S3Key:  skOut.S3Key,
+		Source: source,
 	}
 	findInput := harvesting.FindLineBatchInput{
 		S3Key: skOut.S3Key,

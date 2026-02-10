@@ -12,10 +12,12 @@ var Cmd = &cobra.Command{
 
 var skLimit int
 var skDay string
+var sourceOverride string
 
 func init() {
 	StartOneOffCmd.Flags().IntVar(&skLimit, "limit", 0, "cap number of metadata entries to pull from crossref. Default: unlimited")
 	StartOneOffCmd.Flags().StringVar(&skDay, "day", "", "Download metadata starting from midnight on specified day (format: 2006-01-02). Default: yesterday")
+	StartOneOffCmd.Flags().StringVar(&sourceOverride, "source", "", "Set a source string for any created Fatcat records. By default, a label is generated.")
 
 	Cmd.AddCommand(StartScheduleCmd)
 	Cmd.AddCommand(StartOneOffCmd)
@@ -40,6 +42,7 @@ var StartOneOffCmd = &cobra.Command{
 				Day:   skDay,
 				Limit: skLimit,
 			},
+			SourceOverride: sourceOverride,
 		}
 		return crossref.StartOneOff(crawlInput)
 	},

@@ -320,7 +320,6 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 	}
 
 	l := activity.GetLogger(ctx)
-	l.Info(fmt.Sprintf("processLine using source '%s'", in.Source))
 
 	var xrefdoc crossrefDoc
 
@@ -436,14 +435,18 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 
 	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
 
+	fid := uuid.New()
+
 	file := fatcat2.File{
+		ID:       fid,
 		Releases: []fatcat2.Release{release},
 		Mimetype: mimetype,
 		Source:   release.Source,
 		URLs: []fatcat2.FileURL{
 			{
-				Rel: "wayback",
-				URL: res.SnapshotUrl,
+				Rel:    "wayback",
+				URL:    res.SnapshotUrl,
+				FileID: fid,
 			},
 		},
 	}
@@ -475,7 +478,7 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 		return out, nil
 	}
 
-	fid, err := fatcat2.CreateFile(client, &file)
+	_, err = fatcat2.CreateFile(client, &file)
 	if err != nil {
 		return out, fmt.Errorf("fc2 api failed to make file for '%s': %w", file.URLs[0].URL, err)
 	}

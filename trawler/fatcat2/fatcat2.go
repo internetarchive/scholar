@@ -318,7 +318,9 @@ func CreateContainer(client *http.Client, c *Container) (*uuid.UUID, error) {
 
 // CreateFile creates a new file in fc2 and returns its ID
 func CreateFile(client *http.Client, f *File) (*uuid.UUID, error) {
-	f.ID = uuid.New()
+	if f.ID == uuid.Nil {
+		f.ID = uuid.New()
+	}
 	legacy, err := lookupLegacyFile(client, f.Sha1)
 	if err != nil {
 		return nil, fmt.Errorf("legacy lookup failed: %w", err)

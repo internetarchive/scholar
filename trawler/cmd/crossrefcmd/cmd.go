@@ -1,6 +1,8 @@
 package crossrefcmd
 
 import (
+	"log"
+
 	"git.archive.org/webgroup/scholar/trawler/crossref"
 	"github.com/spf13/cobra"
 )
@@ -52,6 +54,7 @@ var StartInternalWorkerCmd = &cobra.Command{
 	Use:   "start-internal-worker",
 	Short: "Start a Temporal worker that is intended to run in-cluster only",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		log.Println("starting crossref internal worker")
 		return crossref.StartInternalWorker()
 	},
 }
@@ -60,6 +63,7 @@ var StartExternalWorkerCmd = &cobra.Command{
 	Use:   "start-external-worker",
 	Short: "Start a Temporal worker that requires Internet access",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		log.Println("starting crossref external worker")
 		return crossref.StartExternalWorker()
 	},
 }

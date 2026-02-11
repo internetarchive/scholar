@@ -23,7 +23,6 @@ func StartExternalWorker() error {
 
 	w.RegisterActivity(skCrossref)
 
-	log.Printf("starting worker")
 	err = w.Run(worker.InterruptCh())
 	if err != nil {
 		log.Fatalln("Unable to start worker", err)
@@ -47,9 +46,7 @@ func StartInternalWorker() error {
 	w.RegisterWorkflow(lineBatchWorkflow)
 	w.RegisterActivity(processLine)
 	w.RegisterActivity(harvesting.FindLineBatch)
-	//w.RegisterActivity(crawlForEntity)
 
-	log.Printf("starting worker")
 	err = w.Run(worker.InterruptCh())
 	if err != nil {
 		log.Fatalln("Unable to start worker", err)

@@ -17,8 +17,8 @@ import (
 
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
-	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/counts"
+	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
@@ -339,10 +339,11 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 	// Check the DOI
 	client := &http.Client{}
 
-	release, err := xrefToFc(client, xrefdoc, in.Source)
+	release, err := xrefToFc(client, xrefdoc)
 	if err != nil {
 		return out, fmt.Errorf("could not transform xref->fc2: %w", err)
 	}
+	release.Source = in.Source
 
 	foundId, err := fatcat2.LookupDoi(client, strings.ToLower(xrefdoc.DOI))
 	if err != nil {
@@ -639,7 +640,7 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 	return out, nil
 }
 
-func xrefToFc(client *http.Client, xrefdoc crossrefDoc, source string) (fatcat2.Release, error) {
+func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error) {
 	release := fatcat2.Release{
 		Contribs:    []fatcat2.ReleaseContrib{},
 		ExternalIDs: []fatcat2.ExternalID{},
@@ -649,7 +650,6 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc, source string) (fatcat2.
 		Issue:       xrefdoc.Issue,
 		Pages:       xrefdoc.Page,
 		Language:    xrefdoc.Language,
-		Source:      source,
 	}
 
 	var releaseType string

@@ -320,6 +320,7 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 	}
 
 	l := activity.GetLogger(ctx)
+	l.Info(fmt.Sprintf("processLine using source '%s'", in.Source))
 
 	var xrefdoc crossrefDoc
 
@@ -343,7 +344,6 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 	if err != nil {
 		return out, fmt.Errorf("could not transform xref->fc2: %w", err)
 	}
-	release.Source = in.Source
 
 	foundId, err := fatcat2.LookupDoi(client, strings.ToLower(xrefdoc.DOI))
 	if err != nil {
@@ -351,6 +351,7 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 	}
 
 	if foundId == nil {
+		release.Source = in.Source
 		r, err := createRelease(client, &out, release, xrefdoc)
 		if err != nil {
 			return out, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)
@@ -1096,6 +1097,8 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts.
 		}
 		source = fmt.Sprintf("crossref-%s-%s", day, rid)
 	}
+
+	l.Info(fmt.Sprintf("using source '%s'", source))
 
 	// fetch crossref metadata from the upstream API and store in s3
 

@@ -43,7 +43,7 @@ upload:trawler-upload:
     - build:trawler-build
   script:
     - cd trawler
-    - export VERSION=$(./trawler version)
+    - export VERSION=$(./trawler -v | sed 's/trawler version //')
     - echo "Uploading trawler binary to nexus..."
     - |
       curl -fv --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \

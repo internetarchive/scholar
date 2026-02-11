@@ -18,6 +18,7 @@ import (
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
+	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
@@ -253,54 +254,6 @@ func (c crossrefDoc) SkipReason() string {
 	return ""
 }
 
-// TODO counts should be in a common package
-
-type releaseCounts struct {
-	// Skipped is the count of lines in the upstream we knew we would never want
-	Skipped int
-	// Ignored is the count of lines in the upstream metadata we were already aware of
-	Ignored int
-	// Added is the count of lines from the upstream metadata we added to Fatcat
-	Added int
-	// CrawlWanted is the count of how many releases we tried to get from the web
-	CrawlWanted int
-	// Acquired is the count of PDFs we acquired from the upstream metadata
-	Acquired int
-	// Ingested is the count of PDFs we successfully ingested into scholar's search index
-	Ingested int
-}
-
-type containerCounts struct {
-	// Ignored is the count of containers fatcat already knew about
-	Ignored int
-	// Added is the count of containers we created in fatcat
-	Added int
-	// Skipped is the count of containers we did not create because of data issues
-	Skipped int
-}
-
-type counts struct {
-	Releases   releaseCounts
-	Containers containerCounts
-}
-
-func (c counts) Add(other counts) counts {
-	return counts{
-		Releases: releaseCounts{
-			Skipped:     c.Releases.Skipped + other.Releases.Skipped,
-			Ignored:     c.Releases.Ignored + other.Releases.Ignored,
-			Added:       c.Releases.Added + other.Releases.Added,
-			CrawlWanted: c.Releases.CrawlWanted + other.Releases.CrawlWanted,
-			Acquired:    c.Releases.Acquired + other.Releases.Acquired,
-			Ingested:    c.Releases.Ingested + other.Releases.Ingested,
-		},
-		Containers: containerCounts{
-			Ignored: c.Containers.Ignored + other.Containers.Ignored,
-			Added:   c.Containers.Added + other.Containers.Added,
-		},
-	}
-}
-
 type lineBatchInput struct {
 	// S3Key is a key to a .ndjson file in s3 storage
 	S3Key string
@@ -310,8 +263,8 @@ type lineBatchInput struct {
 	Source string
 }
 
-func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts, error) {
-	out := counts{}
+func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, error) {
+	out := counts.Counts{}
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 8 * 60 * 60 * time.Second,                       // TODO tune, config maybe
 		TaskQueue:           viper.GetString("crossref.internal_task_queue"), // TODO needed?
@@ -325,7 +278,7 @@ func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts, error) 
 		lin.LineStart = offset[0]
 		lin.Length = offset[1]
 
-		var c counts
+		var c counts.Counts
 
 		// TODO can we afford two or three activities per line? if we can, i'd rather see:
 		// - harvestUpstream
@@ -349,8 +302,8 @@ type lineInput struct {
 	Source    string
 }
 
-func processLine(ctx context.Context, in lineInput) (out counts, err error) {
-	out = counts{}
+func processLine(ctx context.Context, in lineInput) (out counts.Counts, err error) {
+	out = counts.Counts{}
 	f, err := s3.GetObject(ctx, in.S3Key)
 	if err != nil {
 		return
@@ -956,7 +909,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc, source string) (fatcat2.
 	return release, nil
 }
 
-func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xrefdoc crossrefDoc) (*fatcat2.Release, error) {
+func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Release, xrefdoc crossrefDoc) (*fatcat2.Release, error) {
 	var containerTitle string
 
 	if len(xrefdoc.ContainerTitle) > 0 {
@@ -1126,9 +1079,9 @@ type CrossrefCrawlInput struct {
 	SourceOverride string
 }
 
-func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts, error) {
+func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts.Counts, error) {
 	l := workflow.GetLogger(ctx)
-	out := counts{}
+	out := counts.Counts{}
 
 	source := in.SourceOverride
 
@@ -1178,7 +1131,7 @@ func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts,
 	var childCount int
 
 	var childErr error
-	var childCounts counts
+	var childCounts counts.Counts
 	for {
 		err := workflow.ExecuteActivity(ctx, harvesting.FindLineBatch, findInput).Get(ctx, &findOutput)
 		if err != nil {

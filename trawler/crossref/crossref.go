@@ -332,7 +332,7 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", xrefdoc.Type, xrefdoc.DOI))
 
 	if reason := xrefdoc.SkipReason(); reason != "" {
-		l.Debug(fmt.Sprintf("skipping doi '%s': %s", xrefdoc.DOI, reason))
+		l.Info(fmt.Sprintf("skipping doi '%s': %s", xrefdoc.DOI, reason))
 		out.Releases.Skipped++
 		return out, nil
 	}

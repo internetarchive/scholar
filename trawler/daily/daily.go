@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/counts"
+	"git.archive.org/webgroup/scholar/trawler/crossref"
+	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"github.com/spf13/viper"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
 )
@@ -27,8 +30,8 @@ type DailyCrawlWorkflowInput struct {
 }
 
 func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (counts.Counts, error) {
+	l := workflow.GetLogger(ctx)
 	out := counts.Counts{}
-	//l := workflow.GetLogger(ctx)
 	source := in.SourceOverride
 	if source == "" {
 		day := in.Day
@@ -39,20 +42,144 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		if len(rid) > 8 {
 			rid = rid[:8]
 		}
-		source = fmt.Sprintf("crossref-%s-%s", day, rid)
+		source = fmt.Sprintf("%s-%s-%s", in.Upstream, day, rid)
 	}
-	// fetch crossref metadata from the upstream API and store in s3
+
+	// fetch metadata from the upstream API and store in s3
 
 	ao := workflow.ActivityOptions{
-		// TODO viperize
 		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
-		TaskQueue:           viper.GetString("crossref.external_task_queue"),
+		TaskQueue:           viper.GetString(fmt.Sprintf("%s.external_task_queue", in.Upstream)),
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
-	// TODO study skCrossref and determine how specific to crossref it is
+	scrapeIn := scholkitScrapeInput{
+		Day:      in.Day,
+		Limit:    in.Limit,
+		Upstream: in.Upstream,
+	}
+	var scrapeOut scholkitScrapeOutput
+	err := workflow.ExecuteActivity(ctx, ScholkitScrapeActivity, scrapeIn).Get(ctx, &scrapeOut)
+	if err != nil {
+		l.Error(fmt.Sprintf("scholkit %s activity failed: %s", in.Upstream, err))
+		return out, err
+	}
+	l.Info(fmt.Sprintf("scholkit %s s3key: %s", in.Upstream, scrapeOut.S3Key))
 
-	// TODO
+	// process the harvested data
+
+	ao = workflow.ActivityOptions{
+		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
+		TaskQueue:           viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	batchInput := lineBatchInput{
+		S3Key:    scrapeOut.S3Key,
+		Source:   source,
+		Upstream: in.Upstream,
+	}
+	findInput := harvesting.FindLineBatchInput{
+		S3Key: scrapeOut.S3Key,
+	}
+	findOutput := harvesting.FindLineBatchOutput{}
+	childSelector := workflow.NewSelector(ctx)
+	var childCount int
+
+	var childErr error
+	var childCounts counts.Counts
+	for {
+		err := workflow.ExecuteActivity(ctx, harvesting.FindLineBatch, findInput).Get(ctx, &findOutput)
+		if err != nil {
+			return out, err
+		}
+		if len(findOutput.Offsets) > 0 {
+			findInput.Offset = findOutput.BytesRead
+			batchInput.Offsets = findOutput.Offsets
+			childWorkflowOptions := workflow.ChildWorkflowOptions{
+				ParentClosePolicy: enums.PARENT_CLOSE_POLICY_ABANDON,
+			}
+			ctx = workflow.WithChildOptions(ctx, childWorkflowOptions)
+			fut := workflow.ExecuteChildWorkflow(ctx, LineBatchWorkflow, batchInput)
+			var cwe workflow.Execution
+			err := fut.GetChildWorkflowExecution().Get(ctx, &cwe)
+			if err != nil {
+				return out, err
+			}
+			childSelector.AddFuture(fut, func(f workflow.Future) {
+				childErr = f.Get(ctx, &childCounts)
+			})
+			childCount++
+		}
+		if findOutput.EOF {
+			break
+		}
+	}
+
+	for range childCount {
+		childSelector.Select(ctx)
+		if childErr != nil {
+			return out, childErr
+		}
+		out = out.Add(childCounts)
+		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Releases.Ignored))
+	}
+
+	l.Info(fmt.Sprintf("%#v", out))
+
+	return out, nil
+}
+
+type lineBatchInput struct {
+	// S3Key is a key to a .ndjson file in s3 storage
+	S3Key string
+	// Offsets is a list of pairs of [ReadOffset, Length]
+	Offsets [][]int64
+	// Source identifies what crawl led to the creation of records for provenance purposes
+	Source string
+	// Upstream is which API we're scraping
+	Upstream string
+}
+
+func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, error) {
+	out := counts.Counts{}
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 8 * 60 * 60 * time.Second, // TODO tune, config maybe
+		TaskQueue: viper.GetString(
+			fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	lin := harvesting.ProcessLineInput{
+		S3Key:  in.S3Key,
+		Source: in.Source,
+	}
+	for _, offset := range in.Offsets {
+		lin.LineStart = offset[0]
+		lin.Length = offset[1]
+
+		var c counts.Counts
+
+		// TODO can we afford two or three activities per line? if we can, i'd rather see:
+		// - harvestUpstream
+		// - crawl
+		// - handlePDF
+		// but for now i'll keep it one per line
+
+		var processLine func(context.Context, harvesting.ProcessLineInput) (counts.Counts, error)
+		switch in.Upstream {
+		case "crossref":
+			processLine = crossref.ProcessLine
+		default:
+			panic("unknown upstream: " + in.Upstream)
+
+		}
+
+		err := workflow.ExecuteActivity(ctx, processLine, lin).Get(ctx, &c)
+		if err != nil {
+			return out, err
+		}
+		out = out.Add(c)
+	}
 	return out, nil
 }
 
@@ -70,7 +197,7 @@ type scholkitScrapeOutput struct {
 	S3Key string
 }
 
-func scholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholkitScrapeOutput, error) {
+func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholkitScrapeOutput, error) {
 	out := scholkitScrapeOutput{}
 	l := activity.GetLogger(ctx)
 

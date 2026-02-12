@@ -112,3 +112,10 @@ func chunk(cc chunkCfg, r io.ReaderAt) (out FindLineBatchOutput, err error) {
 
 	return
 }
+
+type ProcessLineInput struct {
+	S3Key     string
+	LineStart int64
+	Length    int64
+	Source    string
+}

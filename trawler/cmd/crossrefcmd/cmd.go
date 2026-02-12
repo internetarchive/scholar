@@ -3,7 +3,7 @@ package crossrefcmd
 import (
 	"log"
 
-	"git.archive.org/webgroup/scholar/trawler/crossref"
+	"git.archive.org/webgroup/scholar/trawler/daily"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,12 @@ var StartScheduleCmd = &cobra.Command{
 	Use:   "start-scheduler",
 	Short: "start the schedule for daily crossref crawling",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return crossref.StartSchedule()
+		crawlInput := daily.DailyCrawlWorkflowInput{
+			Limit:          skLimit,
+			SourceOverride: sourceOverride,
+			Upstream:       "crossref",
+		}
+		return daily.StartSchedule(crawlInput)
 	},
 }
 
@@ -39,14 +44,13 @@ var StartOneOffCmd = &cobra.Command{
 	Use:   "one-off",
 	Short: "Kick off a single crawl for one day's worth of crossref metadata",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		crawlInput := crossref.CrossrefCrawlInput{
-			SKInput: crossref.SKCrossrefInput{
-				Day:   skDay,
-				Limit: skLimit,
-			},
+		crawlInput := daily.DailyCrawlWorkflowInput{
+			Day:            skDay,
+			Limit:          skLimit,
 			SourceOverride: sourceOverride,
+			Upstream:       "crossref",
 		}
-		return crossref.StartOneOff(crawlInput)
+		return daily.StartOneOff(crawlInput)
 	},
 }
 
@@ -55,7 +59,10 @@ var StartInternalWorkerCmd = &cobra.Command{
 	Short: "Start a Temporal worker that is intended to run in-cluster only",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log.Println("starting crossref internal worker")
-		return crossref.StartInternalWorker()
+		return daily.StartWorker(daily.WorkerDetails{
+			Access:   "internal",
+			Upstream: "crossref",
+		})
 	},
 }
 
@@ -64,6 +71,9 @@ var StartExternalWorkerCmd = &cobra.Command{
 	Short: "Start a Temporal worker that requires Internet access",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		log.Println("starting crossref external worker")
-		return crossref.StartExternalWorker()
+		return daily.StartWorker(daily.WorkerDetails{
+			Access:   "external",
+			Upstream: "crossref",
+		})
 	},
 }

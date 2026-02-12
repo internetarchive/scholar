@@ -27,9 +27,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
-	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/workflow"
 )
 
 // scrape crossref for a day's worth of metadata: huge ndjson file in s3, each line a paper-like entity
@@ -254,55 +252,7 @@ func (c crossrefDoc) SkipReason() string {
 	return ""
 }
 
-type lineBatchInput struct {
-	// S3Key is a key to a .ndjson file in s3 storage
-	S3Key string
-	// Offsets is a list of pairs of [ReadOffset, Length]
-	Offsets [][]int64
-	// Source identifies what crawl led to the creation of records for provenance purposes
-	Source string
-}
-
-func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, error) {
-	out := counts.Counts{}
-	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,                       // TODO tune, config maybe
-		TaskQueue:           viper.GetString("crossref.internal_task_queue"), // TODO needed?
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-	lin := lineInput{
-		S3Key:  in.S3Key,
-		Source: in.Source,
-	}
-	for _, offset := range in.Offsets {
-		lin.LineStart = offset[0]
-		lin.Length = offset[1]
-
-		var c counts.Counts
-
-		// TODO can we afford two or three activities per line? if we can, i'd rather see:
-		// - harvestUpstream
-		// - crawl
-		// - handlePDF
-		// but for now i'll keep it one per line
-
-		err := workflow.ExecuteActivity(ctx, processLine, lin).Get(ctx, &c)
-		if err != nil {
-			return out, err
-		}
-		out = out.Add(c)
-	}
-	return out, nil
-}
-
-type lineInput struct {
-	S3Key     string
-	LineStart int64
-	Length    int64
-	Source    string
-}
-
-func processLine(ctx context.Context, in lineInput) (out counts.Counts, err error) {
+func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
 	out = counts.Counts{}
 	f, err := s3.GetObject(ctx, in.S3Key)
 	if err != nil {
@@ -1077,112 +1027,4 @@ func isCrawlWanted(release fatcat2.Release) bool {
 	*/
 
 	return true
-}
-
-// TODO this should probably be refactored such that day and limit options are
-// just part of the workflow args; I don't know that it's useful to have
-// anything related to scholkit exposed at the workflow level
-
-type CrossrefCrawlInput struct {
-	SKInput        SKCrossrefInput
-	SourceOverride string
-}
-
-func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts.Counts, error) {
-	l := workflow.GetLogger(ctx)
-	out := counts.Counts{}
-
-	source := in.SourceOverride
-
-	if source == "" {
-		day := in.SKInput.Day
-		if day == "" {
-			day = workflow.Now(ctx).AddDate(0, 0, -1).Format("2006-01-02")
-		}
-		rid := workflow.GetInfo(ctx).WorkflowExecution.RunID
-		if len(rid) > 8 {
-			rid = rid[:8]
-		}
-		source = fmt.Sprintf("crossref-%s-%s", day, rid)
-	}
-
-	l.Info(fmt.Sprintf("using source '%s'", source))
-
-	// fetch crossref metadata from the upstream API and store in s3
-
-	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
-		TaskQueue:           viper.GetString("crossref.external_task_queue"),
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	var skOut skCrossrefOutput
-	err := workflow.ExecuteActivity(ctx, skCrossref, in.SKInput).Get(ctx, &skOut)
-	if err != nil {
-		workflow.GetLogger(ctx).Error("scholkit crossref activity failed:", err)
-		return out, err
-	}
-	workflow.GetLogger(ctx).Info("scholkit crossref s3key: " + skOut.S3Key)
-
-	ao = workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
-		TaskQueue:           viper.GetString("crossref.internal_task_queue"),
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	batchInput := lineBatchInput{
-		S3Key:  skOut.S3Key,
-		Source: source,
-	}
-	findInput := harvesting.FindLineBatchInput{
-		S3Key: skOut.S3Key,
-	}
-	findOutput := harvesting.FindLineBatchOutput{}
-	childSelector := workflow.NewSelector(ctx)
-	var childCount int
-
-	var childErr error
-	var childCounts counts.Counts
-	for {
-		err := workflow.ExecuteActivity(ctx, harvesting.FindLineBatch, findInput).Get(ctx, &findOutput)
-		if err != nil {
-			return out, err
-		}
-		if len(findOutput.Offsets) > 0 {
-			findInput.Offset = findOutput.BytesRead
-			batchInput.Offsets = findOutput.Offsets
-			childWorkflowOptions := workflow.ChildWorkflowOptions{
-				ParentClosePolicy: enums.PARENT_CLOSE_POLICY_ABANDON,
-			}
-			ctx = workflow.WithChildOptions(ctx, childWorkflowOptions)
-			fut := workflow.ExecuteChildWorkflow(ctx, lineBatchWorkflow, batchInput)
-			var cwe workflow.Execution
-			err := fut.GetChildWorkflowExecution().Get(ctx, &cwe)
-			if err != nil {
-				return out, err
-			}
-			childSelector.AddFuture(fut, func(f workflow.Future) {
-				childErr = f.Get(ctx, &childCounts)
-			})
-			childCount++
-		}
-		if findOutput.EOF {
-			break
-		}
-	}
-
-	for range childCount {
-		childSelector.Select(ctx)
-		if childErr != nil {
-			return out, err
-		}
-		out = out.Add(childCounts)
-		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Releases.Ignored))
-	}
-
-	l.Info(fmt.Sprintf("%#v", out))
-
-	return out, nil
-
-	// TODO handle the outcome of a crawl
 }

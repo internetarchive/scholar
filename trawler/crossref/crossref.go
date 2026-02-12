@@ -457,7 +457,7 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out count
 	//	Location header for spool id."
 
 	blobprocEndpoint := viper.GetString("blobproc.endpoint")
-	req, err := http.NewRequest("POST", blobprocEndpoint, bytes.NewBuffer(pdfBs))
+	req, err := http.NewRequest("POST", blobprocEndpoint+"/spool", bytes.NewBuffer(pdfBs))
 	if err != nil {
 		return out, fmt.Errorf("could not form blobproc request: %w", err)
 	}

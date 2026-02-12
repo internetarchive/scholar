@@ -319,8 +319,8 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out count
 		l.Debug(fmt.Sprintf("found release %s", release.ID))
 	}
 
-	if !isCrawlWanted(release) {
-		l.Debug(fmt.Sprintf("decided crawl was unwanted for release %s", release.ID))
+	if reason := crawlSkipReason(release); reason != "" {
+		l.Info(fmt.Sprintf("crawl unwanted for release %s: %s", release.ID, reason))
 		return out, err
 	}
 
@@ -970,28 +970,28 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 	return &release, nil
 }
 
-// isCrawlWanted returns true if we feel this release is worthy of a crawl
-// attempt; specific to things gleaned from crossref (the DOI check)
-func isCrawlWanted(release fatcat2.Release) bool {
+// crawlSkipReason returns a reason to skip crawling or empty string if crawling is wanted;
+// specific to things gleaned from crossref (the DOI check)
+func crawlSkipReason(release fatcat2.Release) string {
 	doi := release.DOI()
 
 	if doi == "" {
-		return false
+		return "no-doi"
 	}
 
 	if !release.IsPaperlike() {
-		return false
+		return "not-paperlike"
 	}
 
 	doiPrefixBlocklist := viper.GetStringSlice("crawling.doi_prefix_blocklist")
 	for _, prefix := range doiPrefixBlocklist {
 		if strings.HasPrefix(doi, prefix) {
-			return false
+			return "blocked-doi-prefix"
 		}
 	}
 
 	if len(release.FulltextURLs()) == 0 {
-		return false
+		return "no-fulltext-urls"
 	}
 
 	// TODO this check would only ever apply to releases that we already have
@@ -1026,5 +1026,5 @@ func isCrawlWanted(release fatcat2.Release) bool {
 	                 return False
 	*/
 
-	return true
+	return ""
 }

@@ -876,7 +876,7 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 		// that on the server side on container creation.
 		// TODO fatcat importer was arbitrarily using the first container title in
 		// the list so I've continued that practice but it feels weird
-		containerTitle = xrefdoc.ContainerTitle[0]
+		containerTitle = cleaning.CleanString(cleaning.DeTag(xrefdoc.ContainerTitle[0]))
 	}
 
 	var issnl string

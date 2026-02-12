@@ -473,6 +473,11 @@ func processLine(ctx context.Context, in lineInput) (out counts.Counts, err erro
 	// TODO we could verify that the existing file is attached to the release ID
 	// we're working with...
 
+	// TODO at this moment it's unknowable whether we have already extracted
+	// content from this PDF and indexed it. I'd like to fix that at some point
+	// either by carving up this into smaller activities or some check to see if
+	// we have the file in elasticsearch yet.
+
 	if fileID != nil {
 		l.Debug(fmt.Sprintf("ignoring known sha256 '%s' (rid: '%s'", file.Sha256, release.ID))
 		return out, nil

@@ -6,11 +6,14 @@ import (
 	"log"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/crossref"
+	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/temporal"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
 )
 
 func StartOneOff(in DailyCrawlWorkflowInput) error {
@@ -87,6 +90,38 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 
 	if err != nil {
 		return fmt.Errorf("could not trigger schedule:%w", err)
+	}
+
+	return nil
+}
+
+type WorkerDetails struct {
+	Access   string
+	Upstream string
+}
+
+func StartWorker(d WorkerDetails) error {
+	ctx := context.Background()
+	c, err := temporal.SetupTemporal(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	w := worker.New(c, viper.GetString(fmt.Sprintf("%s.%s_task_queue", d.Upstream, d.Access)), worker.Options{})
+
+	if d.Access == "external" {
+		w.RegisterActivity(ScholkitScrapeActivity)
+	} else if d.Access == "internal" {
+		w.RegisterWorkflow(DailyCrawlWorkflow)
+		w.RegisterWorkflow(LineBatchWorkflow)
+		w.RegisterActivity(crossref.ProcessLine)
+		w.RegisterActivity(harvesting.FindLineBatch)
+	}
+
+	err = w.Run(worker.InterruptCh())
+	if err != nil {
+		log.Fatalln("Unable to start worker", err)
 	}
 
 	return nil

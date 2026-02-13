@@ -1,0 +1,8 @@
+*.gz
+all_pdf_urls.tsv.zst
+all_pdf_urls_domain_counts.txt
+all_pdf_urls_uniq.tsv.zst
+core_pdf_urls.tsv
+core_pdf_urls_cdx_lookup_0.json
+core_pdf_urls_linkcheck_0.json
+core_pdf_urls_sitemap.tsv

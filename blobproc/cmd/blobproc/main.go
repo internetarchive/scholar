@@ -44,7 +44,6 @@ Examples:
   blobproc single file.pdf        # Process single file for testing
   blobproc config                 # Show current configuration
   blobproc serve                  # Start server to accept and store pdfs`,
-	Version: blobproc.Version,
 }
 
 // Run command - process files from spool
@@ -97,6 +96,14 @@ The server provides the following endpoints:
 	},
 }
 
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "print version and exit",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(blobproc.Version)
+	},
+}
+
 func main() {
 	Execute()
 }
@@ -119,6 +126,7 @@ func init() {
 	rootCmd.AddCommand(singleCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(versionCmd)
 
 	// Global flags (using hardcoded defaults - use 'blobproc config' to see effective values)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", fmt.Sprintf("config file (searches: ./blobproc.yaml, %s/.config/blobproc/blobproc.yaml, /etc/blobproc/blobproc.yaml)", os.Getenv("HOME")))

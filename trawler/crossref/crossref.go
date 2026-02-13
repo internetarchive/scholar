@@ -254,19 +254,10 @@ func (c crossrefDoc) SkipReason() string {
 
 func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
 	out = counts.Counts{}
-	f, err := s3.GetObject(ctx, in.S3Key)
-	if err != nil {
-		return
-	}
-	defer f.Close()
 
-	lineb := make([]byte, in.Length)
-	n, err := f.ReadAt(lineb, in.LineStart)
+	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
 	if err != nil {
-		return
-	}
-	if n == 0 {
-		return out, fmt.Errorf("read 0 bytes, expected %d", len(lineb))
+		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
 	}
 
 	l := activity.GetLogger(ctx)

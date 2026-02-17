@@ -155,6 +155,7 @@ build:blobproc-deb:
       - blobproc/*.deb
     expire_in: 1 day
 
+# TODO: remove obsolete https://nexus.us.archive.org/#browse/browse:raw-internal:blobproc
 upload:blobproc:
   stage: upload
   image: curlimages/curl:8.18.0
@@ -171,7 +172,7 @@ upload:blobproc:
     - |
       curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file "${DEB_FILE}" \
-        "${NEXUS_URL}/repository/raw-internal/blobproc/${VERSION}/${DEB_FILE}"
+        "${NEXUS_URL}/repository/raw-internal/scholar/${DEB_FILE}"
   needs:
     - build:blobproc-deb
 
@@ -228,6 +229,7 @@ build:scholkit-deb:
       - scholkit/*.deb
     expire_in: 1 day
 
+# TODO: remove obsolete https://nexus.us.archive.org/#browse/browse:raw-internal:scholkit
 upload:scholkit:
   stage: upload
   image: curlimages/curl:8.18.0
@@ -244,6 +246,6 @@ upload:scholkit:
     - |
       curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file "${DEB_FILE}" \
-        "${NEXUS_URL}/repository/raw-internal/scholkit/${VERSION}/${DEB_FILE}"
+        "${NEXUS_URL}/repository/raw-internal/scholar/${DEB_FILE}"
   needs:
     - build:scholkit-deb

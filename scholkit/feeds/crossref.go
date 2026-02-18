@@ -61,17 +61,22 @@ func (wr *WorksResponse) IsLast() bool {
 	return wr.Message.NextCursor == ""
 }
 
+// DaySliceKey returns the filename used for a given day's slice, along with
+// the start and end times for that day. Useful for callers that need to
+// locate the file after WriteDaySlice has run.
+func (c *CrossrefHarvester) DaySliceKey(t time.Time, prefix string) (key string, start, end time.Time) {
+	start = now.With(t).BeginningOfDay()
+	end = now.With(t).EndOfDay()
+	key = fmt.Sprintf("%s%s-%s-%s.json.zst",
+		prefix, c.ApiFilter, start.Format("2006-01-02"), end.Format("2006-01-02"))
+	return
+}
+
 // WriteDaySlice is a helper function to atomically write crossref data for a
 // single day to file on disk under dir. Idempotent, once the data has been
 // captured. TODO: add compression.
 func (c *CrossrefHarvester) WriteDaySlice(t time.Time, dir string, prefix string) error {
-	start := now.With(t).BeginningOfDay()
-	end := now.With(t).EndOfDay()
-	fn := fmt.Sprintf("%s%s-%s-%s.json.zst",
-		prefix,
-		c.ApiFilter,
-		start.Format("2006-01-02"),
-		end.Format("2006-01-02"))
+	fn, start, end := c.DaySliceKey(t, prefix)
 	cachePath := path.Join(dir, fn)
 	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
 		f, err := atomicfile.New(cachePath)

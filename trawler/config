@@ -222,7 +222,7 @@ retries = 4
 backoff = "10s"
 
 [blobproc]
-endpoint = "http://wbgrp-svc263.us.archive.org:9444/spool"
+endpoint = "http://wbgrp-svc263.us.archive.org:9444"
 poll_interval = "2s"
 s3bucket = "sandcrawler"
 

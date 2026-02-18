@@ -43,7 +43,7 @@ upload:trawler-upload:
     - build:trawler-build
   script:
     - cd trawler
-    - export VERSION=$(./trawler version)
+    - export VERSION=$(./trawler -v | sed 's/trawler version //')
     - echo "Uploading trawler binary to nexus..."
     - |
       curl -fv --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
@@ -100,6 +100,8 @@ build-pdfcpu:
         --upload-file "pdfcpu" \
         "${NEXUS_URL}/repository/raw-internal/pdfcpu/${PDFCPU_VERSION}/pdfcpu"
 
+# ======== blobproc ========
+
 test:blobproc:
   stage: test
   image: golang:${GO_VERSION}
@@ -145,9 +147,7 @@ build:blobproc-deb:
     - go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v${NFPM_VERSION}
     - export PATH=$PATH:$(go env GOPATH)/bin
     - nfpm --version
-    # Extract version from tag (blobproc-1.2.3 -> 1.2.3)
-    - export VERSION=${CI_COMMIT_TAG#blobproc-}
-    - echo "building blobproc version $VERSION..."
+    - echo "building blobproc"
     - cd blobproc
     - make deb
   artifacts:
@@ -155,6 +155,7 @@ build:blobproc-deb:
       - blobproc/*.deb
     expire_in: 1 day
 
+# TODO: remove obsolete https://nexus.us.archive.org/#browse/browse:raw-internal:blobproc
 upload:blobproc:
   stage: upload
   image: curlimages/curl:8.18.0
@@ -165,12 +166,86 @@ upload:blobproc:
       when: on_success
   script:
     - cd blobproc
-    - export VERSION=${CI_COMMIT_TAG#blobproc-}
+    - export VERSION=$(./blobproc version)
     - export DEB_FILE=$(ls *.deb)
     - echo "uploading $DEB_FILE to $NEXUS_URL..."
     - |
       curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file "${DEB_FILE}" \
-        "${NEXUS_URL}/repository/raw-internal/blobproc/${VERSION}/${DEB_FILE}"
+        "${NEXUS_URL}/repository/raw-internal/scholar/${DEB_FILE}"
   needs:
     - build:blobproc-deb
+
+# ======== scholkit ========
+
+test:scholkit:
+  stage: test
+  image: golang:${GO_VERSION}
+  variables:
+    DEBIAN_FRONTEND: noninteractive
+    http_proxy: "http://http-proxy.us.archive.org:8080"
+    https_proxy: "http://http-proxy.us.archive.org:8080"
+    no_proxy: "nexus.us.archive.org,*.archive.org,archive.org"
+  rules:
+    # run tests when any file in scholkit/ changes (except VERSION file alone)
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - scholkit/**/*
+      when: on_success
+    # skip if this is a tag build (build job will run instead)
+    - if: '$CI_COMMIT_TAG =~ /^scholkit-\d+\.\d+\.\d+$/'
+      when: never
+  script:
+    - go env -w GOPROXY=https://nexus.us.archive.org/repository/golang-org
+    - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
+    - cd scholkit
+    - make test
+
+build:scholkit-deb:
+  stage: build
+  image: golang:${GO_VERSION}
+  variables:
+    DEBIAN_FRONTEND: noninteractive
+    NFPM_VERSION: "2.44.1"
+    http_proxy: "http://http-proxy.us.archive.org:8080"
+    https_proxy: "http://http-proxy.us.archive.org:8080"
+    no_proxy: "nexus.us.archive.org,*.archive.org,archive.org"
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^scholkit-\d+\.\d+\.\d+$/'
+      when: on_success
+  script:
+    - go env -w GOPROXY=https://nexus.us.archive.org/repository/golang-org
+    - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
+    - go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v${NFPM_VERSION}
+    - export PATH=$PATH:$(go env GOPATH)/bin
+    - nfpm --version
+    # Extract version from tag (scholkit-1.2.3 -> 1.2.3)
+    - export VERSION=$(./sk-feed -version)
+    - echo "building scholkit version $VERSION..."
+    - cd scholkit
+    - make deb
+  artifacts:
+    paths:
+      - scholkit/*.deb
+    expire_in: 1 day
+
+# TODO: remove obsolete https://nexus.us.archive.org/#browse/browse:raw-internal:scholkit
+upload:scholkit:
+  stage: upload
+  image: curlimages/curl:8.18.0
+  variables:
+    NEXUS_URL: http://nexus.us.archive.org
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^scholkit-\d+\.\d+\.\d+$/'
+      when: on_success
+  script:
+    - cd scholkit
+    - export VERSION=$(./sk-feed -version)
+    - export DEB_FILE=$(ls *.deb)
+    - echo "uploading $DEB_FILE to $NEXUS_URL..."
+    - |
+      curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
+        --upload-file "${DEB_FILE}" \
+        "${NEXUS_URL}/repository/raw-internal/scholar/${DEB_FILE}"
+  needs:
+    - build:scholkit-deb

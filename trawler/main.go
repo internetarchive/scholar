@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"git.archive.org/webgroup/scholar/trawler/cmd/crossrefcmd"
@@ -30,16 +31,10 @@ var rootCmd = &cobra.Command{
 				}
 			}
 		}
+		log.Printf("trawler version %s", version)
 		return nil
 	},
-}
-
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "print version and exit",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(version)
-	},
+	Version: version,
 }
 
 func init() {
@@ -49,7 +44,6 @@ func init() {
 
 	rootCmd.AddCommand(crossrefcmd.Cmd)
 	rootCmd.AddCommand(indexcmd.IndexCmd)
-	rootCmd.AddCommand(versionCmd)
 }
 
 func initConfig() {

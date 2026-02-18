@@ -16,6 +16,8 @@ import (
 	"time"
 
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
+	"git.archive.org/webgroup/scholar/trawler/cleaning"
+	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
@@ -25,9 +27,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
-	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/workflow"
 )
 
 // scrape crossref for a day's worth of metadata: huge ndjson file in s3, each line a paper-like entity
@@ -219,149 +219,45 @@ type crossrefDoc struct {
 	// Subject     string
 }
 
-func (c crossrefDoc) IsSkippable() bool {
+// SkipReason returns a reason to skip a DOI or empty string if it's not skippable
+func (c crossrefDoc) SkipReason() string {
 	if len(c.Title) == 0 {
-		return true
+		return "no-titles"
 	}
 
 	if len(c.Title[0]) < 2 {
-		return true
+		return "short-title"
 	}
 
 	if strings.ToLower(c.Title[0]) == "oup accepted manuscript" {
-		return true
+		return "filtered-title"
 	}
 
 	if slices.Contains(ignoredTypes, c.Type) {
-		return true
+		return "filtered-type"
 	}
 
 	if c.DOI == "" {
-		return true
-	}
-
-	if len(c.Abstract) > 100 {
-		return true
+		return "empty-doi"
 	}
 
 	if len(c.Reference) > 5000 {
-		return true
+		return "too-many-refs"
 	}
 
 	if len(c.Author)+len(c.Editor)+len(c.Translator) > 2000 {
-		return true
+		return "too-many-authors"
 	}
 
-	return false
+	return ""
 }
 
-// TODO counts should be in a common package
+func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
+	out = counts.Counts{}
 
-type releaseCounts struct {
-	// Skipped is the count of lines in the upstream we knew we would never want
-	Skipped int
-	// Ignored is the count of lines in the upstream metadata we were already aware of
-	Ignored int
-	// Added is the count of lines from the upstream metadata we added to Fatcat
-	Added int
-	// CrawlWanted is the count of how many releases we tried to get from the web
-	CrawlWanted int
-	// Acquired is the count of PDFs we acquired from the upstream metadata
-	Acquired int
-	// Ingested is the count of PDFs we successfully ingested into scholar's search index
-	Ingested int
-}
-
-type containerCounts struct {
-	// Ignored is the count of containers fatcat already knew about
-	Ignored int
-	// Added is the count of containers we created in fatcat
-	Added int
-	// Skipped is the count of containers we did not create because of data issues
-	Skipped int
-}
-
-type counts struct {
-	Releases   releaseCounts
-	Containers containerCounts
-}
-
-func (c counts) Add(other counts) counts {
-	return counts{
-		Releases: releaseCounts{
-			Skipped:     c.Releases.Skipped + other.Releases.Skipped,
-			Ignored:     c.Releases.Ignored + other.Releases.Ignored,
-			Added:       c.Releases.Added + other.Releases.Added,
-			CrawlWanted: c.Releases.CrawlWanted + other.Releases.CrawlWanted,
-			Acquired:    c.Releases.Acquired + other.Releases.Acquired,
-			Ingested:    c.Releases.Ingested + other.Releases.Ingested,
-		},
-		Containers: containerCounts{
-			Ignored: c.Containers.Ignored + other.Containers.Ignored,
-			Added:   c.Containers.Added + other.Containers.Added,
-		},
-	}
-}
-
-type lineBatchInput struct {
-	// S3Key is a key to a .ndjson file in s3 storage
-	S3Key string
-	// Offsets is a list of pairs of [ReadOffset, Length]
-	Offsets [][]int64
-}
-
-func lineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts, error) {
-	out := counts{}
-	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,                       // TODO tune, config maybe
-		TaskQueue:           viper.GetString("crossref.internal_task_queue"), // TODO needed?
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-	lin := lineInput{
-		S3Key: in.S3Key,
-	}
-	for _, offset := range in.Offsets {
-		lin.LineStart = offset[0]
-		lin.Length = offset[1]
-
-		var c counts
-
-		// TODO can we afford two or three activities per line? if we can, i'd rather see:
-		// - harvestUpstream
-		// - crawl
-		// - handlePDF
-		// but for now i'll keep it one per line
-
-		err := workflow.ExecuteActivity(ctx, processLine, lin).Get(ctx, &c)
-		if err != nil {
-			return out, err
-		}
-		out = out.Add(c)
-	}
-	return out, nil
-}
-
-type lineInput struct {
-	S3Key     string
-	LineStart int64
-	Length    int64
-}
-
-func processLine(ctx context.Context, in lineInput) (out counts, err error) {
-	out = counts{}
-	f, err := s3.GetObject(ctx, in.S3Key)
+	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
 	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	lineb := make([]byte, in.Length)
-	n, err := f.ReadAt(lineb, in.LineStart)
-	if err != nil {
-		return
-	}
-	if n == 0 {
-		return out, fmt.Errorf("read 0 bytes, expected %d", len(lineb))
+		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
 	}
 
 	l := activity.GetLogger(ctx)
@@ -375,8 +271,8 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", xrefdoc.Type, xrefdoc.DOI))
 
-	if xrefdoc.IsSkippable() {
-		l.Debug(fmt.Sprintf("skipping doi '%s'", xrefdoc.DOI))
+	if reason := xrefdoc.SkipReason(); reason != "" {
+		l.Info(fmt.Sprintf("skipping doi '%s': %s", xrefdoc.DOI, reason))
 		out.Releases.Skipped++
 		return out, nil
 	}
@@ -395,6 +291,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	}
 
 	if foundId == nil {
+		release.Source = in.Source
 		r, err := createRelease(client, &out, release, xrefdoc)
 		if err != nil {
 			return out, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)
@@ -408,12 +305,13 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 		if err != nil {
 			return out, fmt.Errorf("could not look up existing release: %w", err)
 		}
+		out.Releases.Ignored++
 
 		l.Debug(fmt.Sprintf("found release %s", release.ID))
 	}
 
-	if !isCrawlWanted(release) {
-		l.Debug(fmt.Sprintf("decided crawl was unwanted for release %s", release.ID))
+	if reason := crawlSkipReason(release); reason != "" {
+		l.Info(fmt.Sprintf("crawl unwanted for release %s: %s", release.ID, reason))
 		return out, err
 	}
 
@@ -478,13 +376,18 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 
 	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
 
+	fid := uuid.New()
+
 	file := fatcat2.File{
+		ID:       fid,
 		Releases: []fatcat2.Release{release},
 		Mimetype: mimetype,
+		Source:   release.Source,
 		URLs: []fatcat2.FileURL{
 			{
-				Rel: "wayback",
-				URL: res.SnapshotUrl,
+				Rel:    "wayback",
+				URL:    res.SnapshotUrl,
+				FileID: fid,
 			},
 		},
 	}
@@ -511,12 +414,17 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	// TODO we could verify that the existing file is attached to the release ID
 	// we're working with...
 
+	// TODO at this moment it's unknowable whether we have already extracted
+	// content from this PDF and indexed it. I'd like to fix that at some point
+	// either by carving up this into smaller activities or some check to see if
+	// we have the file in elasticsearch yet.
+
 	if fileID != nil {
 		l.Debug(fmt.Sprintf("ignoring known sha256 '%s' (rid: '%s'", file.Sha256, release.ID))
 		return out, nil
 	}
 
-	fid, err := fatcat2.CreateFile(client, &file)
+	_, err = fatcat2.CreateFile(client, &file)
 	if err != nil {
 		return out, fmt.Errorf("fc2 api failed to make file for '%s': %w", file.URLs[0].URL, err)
 	}
@@ -540,7 +448,7 @@ func processLine(ctx context.Context, in lineInput) (out counts, err error) {
 	//	Location header for spool id."
 
 	blobprocEndpoint := viper.GetString("blobproc.endpoint")
-	req, err := http.NewRequest("POST", blobprocEndpoint, bytes.NewBuffer(pdfBs))
+	req, err := http.NewRequest("POST", blobprocEndpoint+"/spool", bytes.NewBuffer(pdfBs))
 	if err != nil {
 		return out, fmt.Errorf("could not form blobproc request: %w", err)
 	}
@@ -692,8 +600,6 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 		Issue:       xrefdoc.Issue,
 		Pages:       xrefdoc.Page,
 		Language:    xrefdoc.Language,
-		// TODO fix source setting
-		Source: "dev",
 	}
 
 	var releaseType string
@@ -818,13 +724,14 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 
 	// abstracts
 
-	// TODO find out if any release has more than one abstract
+	// TODO find out if any release has more than one abstract in database
 	release.Abstracts = []fatcat2.Abstract{}
-	if len(xrefdoc.Abstract) > minAbstractLength {
-		h := sha1.Sum([]byte(xrefdoc.Abstract))
+	abs := cleaning.CleanString(cleaning.DeTag(xrefdoc.Abstract))
+	if len(abs) > minAbstractLength {
+		h := sha1.Sum([]byte(abs))
 		release.Abstracts = append(release.Abstracts, fatcat2.Abstract{
 			MIMEType: "application/xml+jats",
-			Content:  xrefdoc.Abstract,
+			Content:  abs,
 			Language: xrefdoc.Language,
 			SHA1:     fmt.Sprintf("%x", h),
 		})
@@ -952,7 +859,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error)
 	return release, nil
 }
 
-func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xrefdoc crossrefDoc) (*fatcat2.Release, error) {
+func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Release, xrefdoc crossrefDoc) (*fatcat2.Release, error) {
 	var containerTitle string
 
 	if len(xrefdoc.ContainerTitle) > 0 {
@@ -960,7 +867,7 @@ func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xre
 		// that on the server side on container creation.
 		// TODO fatcat importer was arbitrarily using the first container title in
 		// the list so I've continued that practice but it feels weird
-		containerTitle = xrefdoc.ContainerTitle[0]
+		containerTitle = cleaning.CleanString(cleaning.DeTag(xrefdoc.ContainerTitle[0]))
 	}
 
 	var issnl string
@@ -989,6 +896,7 @@ func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xre
 				ISSNL:     issnl,
 				Publisher: xrefdoc.Publisher,
 				Type:      containerTypeMap[release.Type],
+				Source:    release.Source,
 			}
 			// TODO clean this up. Create* should modify a referenced struct, not
 			// return a UUID; we should create a container in scope for later instaed
@@ -1053,28 +961,28 @@ func createRelease(client *http.Client, cs *counts, release fatcat2.Release, xre
 	return &release, nil
 }
 
-// isCrawlWanted returns true if we feel this release is worthy of a crawl
-// attempt; specific to things gleaned from crossref (the DOI check)
-func isCrawlWanted(release fatcat2.Release) bool {
+// crawlSkipReason returns a reason to skip crawling or empty string if crawling is wanted;
+// specific to things gleaned from crossref (the DOI check)
+func crawlSkipReason(release fatcat2.Release) string {
 	doi := release.DOI()
 
 	if doi == "" {
-		return false
+		return "no-doi"
 	}
 
 	if !release.IsPaperlike() {
-		return false
+		return "not-paperlike"
 	}
 
 	doiPrefixBlocklist := viper.GetStringSlice("crawling.doi_prefix_blocklist")
 	for _, prefix := range doiPrefixBlocklist {
 		if strings.HasPrefix(doi, prefix) {
-			return false
+			return "blocked-doi-prefix"
 		}
 	}
 
 	if len(release.FulltextURLs()) == 0 {
-		return false
+		return "no-fulltext-urls"
 	}
 
 	// TODO this check would only ever apply to releases that we already have
@@ -1109,95 +1017,5 @@ func isCrawlWanted(release fatcat2.Release) bool {
 	                 return False
 	*/
 
-	return true
-}
-
-// TODO this should probably be refactored such that day and limit options are
-// just part of the workflow args; I don't know that it's useful to have
-// anything related to scholkit exposed at the workflow level
-
-type CrossrefCrawlInput struct {
-	SKInput SKCrossrefInput
-}
-
-func crossrefCrawlWorkflow(ctx workflow.Context, in CrossrefCrawlInput) (counts, error) {
-	l := workflow.GetLogger(ctx)
-	out := counts{}
-
-	// fetch crossref metadata from the upstream API and store in s3
-
-	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
-		TaskQueue:           viper.GetString("crossref.external_task_queue"),
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	var skOut skCrossrefOutput
-	err := workflow.ExecuteActivity(ctx, skCrossref, in.SKInput).Get(ctx, &skOut)
-	if err != nil {
-		workflow.GetLogger(ctx).Error("scholkit crossref activity failed:", err)
-		return out, err
-	}
-	workflow.GetLogger(ctx).Info("scholkit crossref s3key: " + skOut.S3Key)
-
-	ao = workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
-		TaskQueue:           viper.GetString("crossref.internal_task_queue"),
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	batchInput := lineBatchInput{
-		S3Key: skOut.S3Key,
-	}
-	findInput := harvesting.FindLineBatchInput{
-		S3Key: skOut.S3Key,
-	}
-	findOutput := harvesting.FindLineBatchOutput{}
-	childSelector := workflow.NewSelector(ctx)
-	var childCount int
-
-	var childErr error
-	var childCounts counts
-	for {
-		err := workflow.ExecuteActivity(ctx, harvesting.FindLineBatch, findInput).Get(ctx, &findOutput)
-		if err != nil {
-			return out, err
-		}
-		if len(findOutput.Offsets) > 0 {
-			findInput.Offset = findOutput.BytesRead
-			batchInput.Offsets = findOutput.Offsets
-			childWorkflowOptions := workflow.ChildWorkflowOptions{
-				ParentClosePolicy: enums.PARENT_CLOSE_POLICY_ABANDON,
-			}
-			ctx = workflow.WithChildOptions(ctx, childWorkflowOptions)
-			fut := workflow.ExecuteChildWorkflow(ctx, lineBatchWorkflow, batchInput)
-			var cwe workflow.Execution
-			err := fut.GetChildWorkflowExecution().Get(ctx, &cwe)
-			if err != nil {
-				return out, err
-			}
-			childSelector.AddFuture(fut, func(f workflow.Future) {
-				childErr = f.Get(ctx, &childCounts)
-			})
-			childCount++
-		}
-		if findOutput.EOF {
-			break
-		}
-	}
-
-	for range childCount {
-		childSelector.Select(ctx)
-		if childErr != nil {
-			return out, err
-		}
-		out = out.Add(childCounts)
-		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Releases.Ignored))
-	}
-
-	l.Info(fmt.Sprintf("%#v", out))
-
-	return out, nil
-
-	// TODO handle the outcome of a crawl
+	return ""
 }

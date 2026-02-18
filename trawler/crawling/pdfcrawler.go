@@ -109,7 +109,7 @@ func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) 
 	}
 	req.Header.Set("User-Agent", c.UserAgent)
 
-	fmt.Printf("DBG %#v\n", wbUrl)
+	c.slogInfo("doing wayback fetch", "url", wbUrl)
 
 	attempts := 0
 	retries := viper.GetInt("wayback.retries")
@@ -282,12 +282,11 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			if err != nil {
 				return *out, fmt.Errorf("could not get replay from wb: %w", err)
 			}
-			fmt.Printf("DBG %#v\n", resp.Header)
 			loc := resp.Header.Get("Location")
 			if loc == "" {
-				// TODO i don't think this is an error case, just a crawl ender? unless
-				// we think it represents a transiet wbm issue...
-				return *out, fmt.Errorf("empty location header in redirect for '%s'", u)
+				c.slogInfo("empty redirect in wayback", "url", u)
+				out.FailReason = "empy-wayback-redirect"
+				return *out, nil
 			}
 			c.slogInfo("found redirect", "from", row.URL, "to", loc)
 			if strings.HasPrefix(loc, "https://web.archive.org/web/") {
@@ -321,9 +320,9 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				// TODO unfortunate copypasta
 				loc := resp.Header.Get("Location")
 				if loc == "" {
-					// TODO i don't think this is an error case, just a crawl ender? unless
-					// we think it represents a transiet wbm issue...
-					return *out, fmt.Errorf("empty location header in redirect for '%s'", u)
+					c.slogInfo("empty redirect in wayback", "url", u)
+					out.FailReason = "empy-wayback-redirect"
+					return *out, nil
 				}
 				c.slogInfo("found redirect", "from", row.URL, "to", loc)
 				if strings.HasPrefix(loc, "https://web.archive.org/web/") {
@@ -353,8 +352,6 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 
 		content := resp.Body
 		mimetype := resp.Header.Get("Content-Type")
-
-		fmt.Printf("DBG %#v\n", mimetype)
 
 		if strings.Contains(mimetype, "application/pdf") {
 			out.Success = true

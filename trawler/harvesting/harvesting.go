@@ -112,3 +112,28 @@ func chunk(cc chunkCfg, r io.ReaderAt) (out FindLineBatchOutput, err error) {
 
 	return
 }
+
+type ProcessLineInput struct {
+	S3Key     string
+	LineStart int64
+	Length    int64
+	Source    string
+}
+
+func GetLine(ctx context.Context, s3key string, start, length int64) ([]byte, error) {
+	f, err := s3.GetObject(ctx, s3key)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	lineb := make([]byte, length)
+	n, err := f.ReadAt(lineb, start)
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, fmt.Errorf("read 0 bytes, expected %d", len(lineb))
+	}
+	return lineb, nil
+}

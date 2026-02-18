@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -14,10 +15,13 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/klauspost/compress/zstd"
 	"github.com/miku/scholkit"
 	"github.com/miku/scholkit/dateutil"
 	"github.com/miku/scholkit/feeds"
 	"github.com/miku/scholkit/xflag"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sethgrid/pester"
 )
 
@@ -98,6 +102,13 @@ type Config struct {
 	RcloneTransfers    int
 	RcloneCheckers     int
 	DataciteSyncStart  string
+	// S3 settings for SeaweedFS upload
+	S3Upload    bool
+	S3Endpoint  string
+	S3AccessKey string
+	S3SecretKey string
+	S3Bucket    string
+	S3UseSSL    bool
 }
 
 var (
@@ -113,6 +124,13 @@ var (
 	// rclone is used for openalex
 	rcloneTransfers = flag.Int("rclone-transfers", 8, "number of parallel transfers for rclone")
 	rcloneCheckers  = flag.Int("rclone-checkers", 16, "number of parallel checkers for rclone")
+	// s3 upload options (used with crossref)
+	s3Upload    = flag.Bool("s3-upload", false, "upload harvested data to SeaweedFS after writing to disk")
+	s3Endpoint  = flag.String("s3-endpoint", "localhost:8333", "SeaweedFS S3 endpoint")
+	s3AccessKey = flag.String("s3-access-key", "", "S3 access key")
+	s3SecretKey = flag.String("s3-secret-key", "", "S3 secret key")
+	s3Bucket    = flag.String("s3-bucket", "sandcrawler", "S3 bucket to upload crossref data into")
+	s3UseSSL    = flag.Bool("s3-use-ssl", false, "use SSL for S3 connection")
 	// crossref specific options
 	crossrefApiEmail              = flag.String("crossref-api-email", "", "crossref api email, add for more gracious limits")
 	crossrefApiFilter             = flag.String("crossref-api-filter", "index", "api filter to use with crossref")
@@ -158,6 +176,12 @@ func main() {
 		RcloneTransfers:    *rcloneTransfers,
 		RcloneCheckers:     *rcloneCheckers,
 		DataciteSyncStart:  dataciteSyncStart.Format("2006-01-02"),
+		S3Upload:           *s3Upload,
+		S3Endpoint:         *s3Endpoint,
+		S3AccessKey:        *s3AccessKey,
+		S3SecretKey:        *s3SecretKey,
+		S3Bucket:           *s3Bucket,
+		S3UseSSL:           *s3UseSSL,
 	}
 	// Ensure feeds directory exists
 	if err := os.MkdirAll(config.FeedDir, 0755); err != nil {
@@ -218,12 +242,51 @@ func main() {
 				log.Fatal(err)
 			}
 			log.Println(ch)
+			var mc *minio.Client
+			if config.S3Upload {
+				mc, err = minio.New(config.S3Endpoint, &minio.Options{
+					Creds:  credentials.NewStaticV4(config.S3AccessKey, config.S3SecretKey, ""),
+					Secure: config.S3UseSSL,
+				})
+				if err != nil {
+					log.Fatalf("s3 client: %v", err)
+				}
+			}
+			ctx := context.Background()
 			ivs := dateutil.Daily(crossrefSyncStart.Time, crossrefSyncEnd.Time)
 			for _, iv := range ivs {
 				// TODO: we only need the start date, because we limit
 				// ourselves to day slices
 				if err := ch.WriteDaySlice(iv.Start, dstDir, config.CrossrefFeedPrefix); err != nil {
 					log.Fatalf("crossref day slice: %v", err)
+				}
+				if config.S3Upload {
+					key, _, _ := ch.DaySliceKey(iv.Start, config.CrossrefFeedPrefix)
+					localPath := path.Join(dstDir, key)
+					s3Key := strings.TrimSuffix(key, ".zst")
+					if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
+						log.Printf("already in S3: %v", s3Key)
+						continue
+					}
+					f, err := os.Open(localPath)
+					if err != nil {
+						log.Fatalf("open %s: %v", localPath, err)
+					}
+					dec, err := zstd.NewReader(f)
+					if err != nil {
+						f.Close()
+						log.Fatalf("zstd reader: %v", err)
+					}
+					log.Printf("uploading to S3: %v", s3Key)
+					_, err = mc.PutObject(ctx, config.S3Bucket, s3Key, dec, -1, minio.PutObjectOptions{
+						ContentType: "application/x-ndjson",
+					})
+					dec.Close()
+					f.Close()
+					if err != nil {
+						log.Fatalf("s3 upload %s: %v", s3Key, err)
+					}
+					fmt.Println(s3Key)
 				}
 			}
 		case "datacite":

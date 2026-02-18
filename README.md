@@ -38,6 +38,7 @@ we'll notice issues or pull requests.
 
 - [Nate Smith](https://github.com/vilmibm)
 - [Martin Czygan](https://github.com/miku)
+- [Michael Della Bitta](https://github.com/mdellabitta)
 - Much of this is based directly on work by [Bryan Newbold](https://github.com/bnewbold)
 
 ## License

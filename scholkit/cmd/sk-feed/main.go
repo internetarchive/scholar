@@ -133,30 +133,27 @@ var (
 	s3SecretKey = flag.String("s3-secret-key", "", "S3 secret key")
 	s3Bucket    = flag.String("s3-bucket", "sandcrawler", "S3 bucket to upload crossref data into")
 	s3UseSSL    = flag.Bool("s3-use-ssl", false, "use SSL for S3 connection")
+	// sync date range (applies to crossref and pubmed)
+	syncStart xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
+	syncEnd   xflag.Date = xflag.Date{Time: yesterday}
 	// crossref specific options
-	crossrefApiEmail              = flag.String("crossref-api-email", "", "crossref api email, add for more gracious limits")
-	crossrefApiFilter             = flag.String("crossref-api-filter", "index", "api filter to use with crossref")
-	crossrefUserAgent             = flag.String("crossref-user-agent", "scholkit/dev", "crossref user agent")
-	crossrefFeedPrefix            = flag.String("crossref-feed-prefix", "crossref-feed-0-", "prefix for filename to distinguish different runs")
-	crossrefSyncStart  xflag.Date = xflag.Date{Time: dateutil.MustParse("2021-01-01")}
-	crossrefSyncEnd    xflag.Date = xflag.Date{Time: yesterday}
+	crossrefApiEmail   = flag.String("crossref-api-email", "", "crossref api email, add for more gracious limits")
+	crossrefApiFilter  = flag.String("crossref-api-filter", "index", "api filter to use with crossref")
+	crossrefUserAgent  = flag.String("crossref-user-agent", "scholkit/dev", "crossref user agent")
+	crossrefFeedPrefix = flag.String("crossref-feed-prefix", "crossref-feed-0-", "prefix for filename to distinguish different runs")
 	// datacite specific options
 	dataciteSyncStart xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
 	// pubmed specific options
-	pubmedApiKey    = flag.String("pubmed-api-key", "", "NCBI API key (increases rate limit from 3 to 10 req/s)")
+	pubmedApiKey     = flag.String("pubmed-api-key", "", "NCBI API key (increases rate limit from 3 to 10 req/s)")
 	pubmedFeedPrefix = flag.String("pubmed-feed-prefix", "pubmed-feed-0-", "prefix for pubmed feed filenames")
-	pubmedSyncStart  xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
-	pubmedSyncEnd    xflag.Date = xflag.Date{Time: yesterday}
 	// oai specific options
 	endpointURL = flag.String("oai-endpoint", "", "endpoint URL for OAI")
 )
 
 func main() {
-	flag.Var(&crossrefSyncStart, "crossref-sync-start", "start date for crossref harvest")
-	flag.Var(&crossrefSyncEnd, "crossref-sync-end", "end date for crossref harvest")
+	flag.Var(&syncStart, "sync-start", "start date for harvest (crossref, pubmed)")
+	flag.Var(&syncEnd, "sync-end", "end date for harvest (crossref, pubmed)")
 	flag.Var(&dataciteSyncStart, "datacite-sync-start", "start date for datacite harvest")
-	flag.Var(&pubmedSyncStart, "pubmed-sync-start", "start date for pubmed harvest")
-	flag.Var(&pubmedSyncEnd, "pubmed-sync-end", "end date for pubmed harvest")
 	flag.Usage = func() {
 		io.WriteString(os.Stderr, docs)
 		flag.PrintDefaults()
@@ -264,7 +261,7 @@ func main() {
 				}
 			}
 			ctx := context.Background()
-			ivs := dateutil.Daily(crossrefSyncStart.Time, crossrefSyncEnd.Time)
+			ivs := dateutil.Daily(syncStart.Time, syncEnd.Time)
 			for _, iv := range ivs {
 				// TODO: we only need the start date, because we limit
 				// ourselves to day slices
@@ -337,7 +334,7 @@ func main() {
 			// explicitly provided; otherwise fall back to FTP bulk download.
 			var useAPIHarvester bool
 			flag.Visit(func(f *flag.Flag) {
-				if f.Name == "pubmed-sync-start" {
+				if f.Name == "sync-start" {
 					useAPIHarvester = true
 				}
 			})
@@ -357,7 +354,7 @@ func main() {
 					}
 				}
 				ctx := context.Background()
-				ivs := dateutil.Daily(pubmedSyncStart.Time, pubmedSyncEnd.Time)
+				ivs := dateutil.Daily(syncStart.Time, syncEnd.Time)
 				for _, iv := range ivs {
 					if err := h.WriteDaySlice(iv.Start, dstDir, config.PubMedFeedPrefix); err != nil {
 						log.Fatalf("pubmed day slice: %v", err)

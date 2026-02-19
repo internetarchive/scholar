@@ -102,6 +102,8 @@ type Config struct {
 	RcloneTransfers    int
 	RcloneCheckers     int
 	DataciteSyncStart  string
+	PubMedApiKey       string
+	PubMedFeedPrefix   string
 	// S3 settings for SeaweedFS upload
 	S3Upload    bool
 	S3Endpoint  string
@@ -140,6 +142,11 @@ var (
 	crossrefSyncEnd    xflag.Date = xflag.Date{Time: yesterday}
 	// datacite specific options
 	dataciteSyncStart xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
+	// pubmed specific options
+	pubmedApiKey    = flag.String("pubmed-api-key", "", "NCBI API key (increases rate limit from 3 to 10 req/s)")
+	pubmedFeedPrefix = flag.String("pubmed-feed-prefix", "pubmed-feed-0-", "prefix for pubmed feed filenames")
+	pubmedSyncStart  xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
+	pubmedSyncEnd    xflag.Date = xflag.Date{Time: yesterday}
 	// oai specific options
 	endpointURL = flag.String("oai-endpoint", "", "endpoint URL for OAI")
 )
@@ -148,6 +155,8 @@ func main() {
 	flag.Var(&crossrefSyncStart, "crossref-sync-start", "start date for crossref harvest")
 	flag.Var(&crossrefSyncEnd, "crossref-sync-end", "end date for crossref harvest")
 	flag.Var(&dataciteSyncStart, "datacite-sync-start", "start date for datacite harvest")
+	flag.Var(&pubmedSyncStart, "pubmed-sync-start", "start date for pubmed harvest")
+	flag.Var(&pubmedSyncEnd, "pubmed-sync-end", "end date for pubmed harvest")
 	flag.Usage = func() {
 		io.WriteString(os.Stderr, docs)
 		flag.PrintDefaults()
@@ -176,6 +185,8 @@ func main() {
 		RcloneTransfers:    *rcloneTransfers,
 		RcloneCheckers:     *rcloneCheckers,
 		DataciteSyncStart:  dataciteSyncStart.Format("2006-01-02"),
+		PubMedApiKey:       *pubmedApiKey,
+		PubMedFeedPrefix:   *pubmedFeedPrefix,
 		S3Upload:           *s3Upload,
 		S3Endpoint:         *s3Endpoint,
 		S3AccessKey:        *s3AccessKey,
@@ -318,65 +329,125 @@ func main() {
 				log.Fatal(err)
 			}
 		case "pubmed":
-			// Download baseline files.
-			log.Println("syncing pubmed baseline...")
-			fetcher, err := feeds.NewPubMedFetcher("https://ftp.ncbi.nlm.nih.gov/pubmed/baseline/")
-			if err != nil {
-				log.Fatal(err)
-			}
-			pmfs, err := fetcher.FetchFiles()
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("found %d pubmed baseline files", len(pmfs))
 			dstDir := path.Join(config.FeedDir, "pubmed")
 			if err := os.MkdirAll(dstDir, 0755); err != nil {
 				log.Fatal(err)
 			}
-			for _, pmf := range pmfs {
-				dstFile := path.Join(dstDir, pmf.Filename)
-				wip := dstFile + ".wip"
-				if _, err := os.Stat(dstFile); os.IsNotExist(err) {
-					cmd := exec.Command("curl", "-sL", "--retry", "10", "--max-time", "1800", "-o", wip, pmf.URL)
-					cmd.Stdout = os.Stdout
-					cmd.Stderr = os.Stderr
-					log.Println(cmd)
-					if err = cmd.Run(); err != nil {
-						log.Fatal(err)
-					}
-					if err := os.Rename(wip, dstFile); err != nil {
-						log.Fatal(err)
-					}
-				} else {
-					log.Printf("already synced: %v", dstFile)
+			// Use the API-based day-slice harvester when -pubmed-sync-start is
+			// explicitly provided; otherwise fall back to FTP bulk download.
+			var useAPIHarvester bool
+			flag.Visit(func(f *flag.Flag) {
+				if f.Name == "pubmed-sync-start" {
+					useAPIHarvester = true
 				}
-			}
-			log.Println("syncing pubmed updates...")
-			fetcher, err = feeds.NewPubMedFetcher("https://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/")
-			if err != nil {
-				log.Fatal(err)
-			}
-			pmfs, err = fetcher.FetchFiles()
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("found %d pubmed update files", len(pmfs))
-			for _, pmf := range pmfs {
-				dstFile := path.Join(dstDir, pmf.Filename)
-				wip := dstFile + ".wip"
-				if _, err := os.Stat(dstFile); os.IsNotExist(err) {
-					cmd := exec.Command("curl", "-sL", "--retry", "10", "--max-time", "600", "-o", wip, pmf.URL)
-					cmd.Stdout = os.Stdout
-					cmd.Stderr = os.Stderr
-					log.Println(cmd)
-					if err = cmd.Run(); err != nil {
-						log.Fatal(err)
+			})
+			if useAPIHarvester {
+				h := feeds.PubMedHarvester{
+					Client: client,
+					ApiKey: config.PubMedApiKey,
+				}
+				var mc *minio.Client
+				if config.S3Upload {
+					mc, err = minio.New(config.S3Endpoint, &minio.Options{
+						Creds:  credentials.NewStaticV4(config.S3AccessKey, config.S3SecretKey, ""),
+						Secure: config.S3UseSSL,
+					})
+					if err != nil {
+						log.Fatalf("s3 client: %v", err)
 					}
-					if err := os.Rename(wip, dstFile); err != nil {
-						log.Fatal(err)
+				}
+				ctx := context.Background()
+				ivs := dateutil.Daily(pubmedSyncStart.Time, pubmedSyncEnd.Time)
+				for _, iv := range ivs {
+					if err := h.WriteDaySlice(iv.Start, dstDir, config.PubMedFeedPrefix); err != nil {
+						log.Fatalf("pubmed day slice: %v", err)
 					}
-				} else {
-					log.Printf("already synced: %v", dstFile)
+					if config.S3Upload {
+						key, _, _ := h.DaySliceKey(iv.Start, config.PubMedFeedPrefix)
+						localPath := path.Join(dstDir, key)
+						s3Key := strings.TrimSuffix(key, ".zst")
+						if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
+							log.Printf("already in S3: %v", s3Key)
+							continue
+						}
+						f, err := os.Open(localPath)
+						if err != nil {
+							log.Fatalf("open %s: %v", localPath, err)
+						}
+						dec, err := zstd.NewReader(f)
+						if err != nil {
+							f.Close()
+							log.Fatalf("zstd reader: %v", err)
+						}
+						log.Printf("uploading to S3: %v", s3Key)
+						_, err = mc.PutObject(ctx, config.S3Bucket, s3Key, dec, -1, minio.PutObjectOptions{
+							ContentType: "application/x-ndjson",
+						})
+						dec.Close()
+						f.Close()
+						if err != nil {
+							log.Fatalf("s3 upload %s: %v", s3Key, err)
+						}
+						fmt.Println(s3Key)
+					}
+				}
+			} else {
+				// Download baseline files.
+				log.Println("syncing pubmed baseline...")
+				fetcher, err := feeds.NewPubMedFetcher("https://ftp.ncbi.nlm.nih.gov/pubmed/baseline/")
+				if err != nil {
+					log.Fatal(err)
+				}
+				pmfs, err := fetcher.FetchFiles()
+				if err != nil {
+					log.Fatal(err)
+				}
+				log.Printf("found %d pubmed baseline files", len(pmfs))
+				for _, pmf := range pmfs {
+					dstFile := path.Join(dstDir, pmf.Filename)
+					wip := dstFile + ".wip"
+					if _, err := os.Stat(dstFile); os.IsNotExist(err) {
+						cmd := exec.Command("curl", "-sL", "--retry", "10", "--max-time", "1800", "-o", wip, pmf.URL)
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+						log.Println(cmd)
+						if err = cmd.Run(); err != nil {
+							log.Fatal(err)
+						}
+						if err := os.Rename(wip, dstFile); err != nil {
+							log.Fatal(err)
+						}
+					} else {
+						log.Printf("already synced: %v", dstFile)
+					}
+				}
+				log.Println("syncing pubmed updates...")
+				fetcher, err = feeds.NewPubMedFetcher("https://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/")
+				if err != nil {
+					log.Fatal(err)
+				}
+				pmfs, err = fetcher.FetchFiles()
+				if err != nil {
+					log.Fatal(err)
+				}
+				log.Printf("found %d pubmed update files", len(pmfs))
+				for _, pmf := range pmfs {
+					dstFile := path.Join(dstDir, pmf.Filename)
+					wip := dstFile + ".wip"
+					if _, err := os.Stat(dstFile); os.IsNotExist(err) {
+						cmd := exec.Command("curl", "-sL", "--retry", "10", "--max-time", "600", "-o", wip, pmf.URL)
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+						log.Println(cmd)
+						if err = cmd.Run(); err != nil {
+							log.Fatal(err)
+						}
+						if err := os.Rename(wip, dstFile); err != nil {
+							log.Fatal(err)
+						}
+					} else {
+						log.Printf("already synced: %v", dstFile)
+					}
 				}
 			}
 		case "oai":

@@ -110,6 +110,7 @@ type Config struct {
 	S3AccessKey string
 	S3SecretKey string
 	S3Bucket    string
+	S3Prefix    string
 	S3UseSSL    bool
 }
 
@@ -132,6 +133,7 @@ var (
 	s3AccessKey = flag.String("s3-access-key", "", "S3 access key")
 	s3SecretKey = flag.String("s3-secret-key", "", "S3 secret key")
 	s3Bucket    = flag.String("s3-bucket", "sandcrawler", "S3 bucket to upload crossref data into")
+	s3Prefix    = flag.String("s3-prefix", "", "optional folder prefix within the S3 bucket (e.g. \"pubmed/daily\")")
 	s3UseSSL    = flag.Bool("s3-use-ssl", false, "use SSL for S3 connection")
 	// sync date range (applies to crossref and pubmed)
 	syncStart xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
@@ -189,6 +191,7 @@ func main() {
 		S3AccessKey:        *s3AccessKey,
 		S3SecretKey:        *s3SecretKey,
 		S3Bucket:           *s3Bucket,
+		S3Prefix:           *s3Prefix,
 		S3UseSSL:           *s3UseSSL,
 	}
 	// Ensure feeds directory exists
@@ -271,7 +274,10 @@ func main() {
 				if config.S3Upload {
 					key, _, _ := ch.DaySliceKey(iv.Start, config.CrossrefFeedPrefix)
 					localPath := path.Join(dstDir, key)
-					s3Key := strings.TrimSuffix(key, ".zst")
+					s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
+					if config.S3Prefix != "" {
+						s3Key = config.S3Prefix + "/" + s3Key
+					}
 					if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
 						log.Printf("already in S3: %v", s3Key)
 						continue
@@ -362,7 +368,10 @@ func main() {
 					if config.S3Upload {
 						key, _, _ := h.DaySliceKey(iv.Start, config.PubMedFeedPrefix)
 						localPath := path.Join(dstDir, key)
-						s3Key := strings.TrimSuffix(key, ".zst")
+						s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
+						if config.S3Prefix != "" {
+							s3Key = config.S3Prefix + "/" + s3Key
+						}
 						if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
 							log.Printf("already in S3: %v", s3Key)
 							continue

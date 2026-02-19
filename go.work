@@ -1,0 +1,6 @@
+go 1.26.0
+
+use ./trawler
+use ./scholkit
+use ./blobproc
+use ./pubmed2json

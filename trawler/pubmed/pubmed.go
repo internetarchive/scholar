@@ -179,7 +179,7 @@ func normalizeOrcid(raw string) string {
 func parsePubDate(pd pubmed2json.PubDate) (year int, isoDate string) {
 	if pd.Year != "" {
 		y, err := strconv.Atoi(pd.Year)
-		if err != nil || y < 1300 || y > 2040 {
+		if err != nil || y < 1300 || y > time.Now().Year()+5 {
 			slog.Warn("pubmed: invalid year in PubDate", "year", pd.Year)
 			return 0, ""
 		}
@@ -211,7 +211,7 @@ func parsePubDate(pd pubmed2json.PubDate) (year int, isoDate string) {
 			return err == nil
 		}() {
 			y, _ := strconv.Atoi(s[:4])
-			if y < 1300 || y > 2040 {
+			if y < 1300 || y > time.Now().Year()+5 {
 				slog.Warn("pubmed: out-of-range year in MedlineDate", "medlineDate", s)
 				return 0, ""
 			}

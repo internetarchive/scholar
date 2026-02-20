@@ -23,7 +23,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/orcid"
-	"git.archive.org/webgroup/scholar/trawler/s3"
+	"git.archive.org/webgroup/scholar/trawler/pdf"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/internetarchive/scholar/pubmed2json"
@@ -836,73 +836,9 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out count
 			return out, fmt.Errorf("failed to index file: %w", err)
 		}
 
-		blobprocEndpoint := viper.GetString("blobproc.endpoint")
-		req, err := http.NewRequest("POST", blobprocEndpoint+"/spool",
-			strings.NewReader(string(pdfBs)))
+		pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
 		if err != nil {
-			return out, fmt.Errorf("could not form blobproc request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/pdf")
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return out, fmt.Errorf("blobproc request error: %w", err)
-		}
-		if resp.StatusCode != 202 {
-			return out, fmt.Errorf("unexpected status from blobproc '%d'", resp.StatusCode)
-		}
-
-		loc := resp.Header.Get("Location")
-		if loc == "" {
-			return out, fmt.Errorf("got blank spool url from blobproc")
-		}
-
-		pollUrl := blobprocEndpoint + loc
-		if !strings.Contains(pollUrl, file.Sha1) {
-			return out, fmt.Errorf("expected sha1 '%s' in spool url '%s'", file.Sha1, pollUrl)
-		}
-
-		pollReq, err := http.NewRequest("GET", pollUrl, nil)
-		if err != nil {
-			return out, fmt.Errorf("could not form blobproc poll request: %w", err)
-		}
-
-		for {
-			time.Sleep(viper.GetDuration("blobproc.poll_interval"))
-			resp, err = client.Do(pollReq)
-			if err != nil {
-				return out, fmt.Errorf("error polling blobproc: %w", err)
-			}
-			if resp.StatusCode == 404 {
-				break
-			}
-			l.Debug("pubmed: waiting on blobproc", "pmid", pmid)
-		}
-
-		s3bucket := viper.GetString("blobproc.s3bucket")
-
-		grobidS3Key := fmt.Sprintf("%s/%s/%s/%s/%s.tei.xml",
-			s3bucket, "grobid", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
-
-		obj, err := s3.GetObject(ctx, grobidS3Key)
-		if err != nil {
-			return out, fmt.Errorf("blobproc grobid s3 read failed: %w", err)
-		}
-		grobidXML, err := io.ReadAll(obj)
-		if err != nil {
-			return out, fmt.Errorf("could not read grobid output: %w", err)
-		}
-
-		pdftotextS3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
-			s3bucket, "text", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
-
-		obj, err = s3.GetObject(ctx, pdftotextS3Key)
-		if err != nil {
-			return out, fmt.Errorf("blobproc pdftotext s3 read failed: %w", err)
-		}
-		pdfText, err := io.ReadAll(obj)
-		if err != nil {
-			return out, fmt.Errorf("could not read pdftotext output: %w", err)
+			return out, fmt.Errorf("blobproc processing failed: %w", err)
 		}
 
 		var container *fatcat2.Container
@@ -918,8 +854,8 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out count
 			HttpClient: client,
 			Release:    release,
 			File:       &file,
-			PdfText:    pdfText,
-			GrobidXML:  grobidXML,
+			PdfText:    pdfContent.PdfText,
+			GrobidXML:  pdfContent.GrobidXML,
 			Container:  container,
 		})
 

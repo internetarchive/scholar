@@ -323,9 +323,7 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 	title := cleaning.CleanString(string(art.ArticleTitle))
 	title = strings.TrimRight(title, ".")
 	title = strings.TrimSpace(title)
-	if strings.HasPrefix(title, "[") && strings.HasSuffix(title, "]") {
-		title = title[1 : len(title)-1]
-	}
+	title = strings.TrimPrefix(strings.TrimSuffix(title, "]"), "[")
 
 	originalTitle := cleaning.CleanString(string(art.VernacularTitle))
 	originalTitle = strings.TrimRight(originalTitle, ".")

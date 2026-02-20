@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"io"
+
+	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
@@ -21,13 +24,11 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/orcid"
 	"git.archive.org/webgroup/scholar/trawler/s3"
-	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/internetarchive/scholar/pubmed2json"
 	"github.com/spf13/viper"
 	"go.temporal.io/sdk/activity"
-	"io"
 )
 
 const minAbstractLength = 75
@@ -118,8 +119,8 @@ var containerTypeMap = map[string]string{
 
 // stubTitles are titles that indicate a placeholder record, not a real article.
 var stubTitles = []string{
-	"[in process citation]",
-	"[not available]",
+	"in process citation",
+	"not available",
 	"oup accepted manuscript",
 }
 
@@ -133,19 +134,18 @@ func skipReason(article pubmed2json.PubmedArticle) string {
 	}
 
 	title := cleaning.CleanString(string(mc.Article.ArticleTitle))
+	if title == "" {
+		title = cleaning.CleanString(string(mc.Article.VernacularTitle))
+		if title == "" {
+			return "empty-title"
+		}
+	}
+	// curious logic from original system
 	title = strings.TrimRight(title, ".")
 	title = strings.TrimPrefix(strings.TrimSuffix(title, "]"), "[")
 	title = strings.TrimSpace(title)
 
-	if title == "" {
-		// check vernacular title as fallback before skipping
-		vt := cleaning.CleanString(string(mc.Article.VernacularTitle))
-		if vt == "" {
-			return "empty-title"
-		}
-	}
-
-	if slices.Contains(stubTitles, strings.ToLower(strings.TrimSpace(title))) {
+	if slices.Contains(stubTitles, strings.ToLower(title)) {
 		return "stub-title"
 	}
 
@@ -159,7 +159,6 @@ func skipReason(article pubmed2json.PubmedArticle) string {
 
 	return ""
 }
-
 
 // parsePubDate converts a pubmed2json.PubDate into a year int and optional
 // ISO date string. Returns (0, "") if the date cannot be parsed.
@@ -461,8 +460,8 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 		position := 0
 		for _, author := range art.AuthorList.Authors {
 			contrib := fatcat2.ReleaseContrib{
-				Role:    "author",
-				Extra:   map[string]any{},
+				Role:  "author",
+				Extra: map[string]any{},
 			}
 
 			contrib.Surname = author.LastName

@@ -19,6 +19,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
+	"git.archive.org/webgroup/scholar/trawler/orcid"
 	"git.archive.org/webgroup/scholar/trawler/s3"
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
@@ -159,20 +160,6 @@ func skipReason(article pubmed2json.PubmedArticle) string {
 	return ""
 }
 
-// normalizeOrcid converts various ORCID formats to the canonical dashed form.
-func normalizeOrcid(raw string) string {
-	raw = strings.TrimPrefix(raw, "https://orcid.org/")
-	raw = strings.TrimPrefix(raw, "http://orcid.org/")
-	raw = strings.TrimSpace(raw)
-	if strings.Contains(raw, "-") {
-		return raw
-	}
-	// 16-digit undashed form
-	if len(raw) == 16 {
-		return fmt.Sprintf("%s-%s-%s-%s", raw[0:4], raw[4:8], raw[8:12], raw[12:16])
-	}
-	return raw
-}
 
 // parsePubDate converts a pubmed2json.PubDate into a year int and optional
 // ISO date string. Returns (0, "") if the date cannot be parsed.
@@ -493,11 +480,11 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 			// ORCID
 			for _, id := range author.Identifiers {
 				if id.Source == "ORCID" {
-					orcid := normalizeOrcid(id.Value)
-					contrib.Extra["orcid"] = orcid
-					creatorID, err := fatcat2.LookupOrcid(client, orcid)
+					orcidVal := orcid.Normalize(id.Value)
+					contrib.Extra["orcid"] = orcidVal
+					creatorID, err := fatcat2.LookupOrcid(client, orcidVal)
 					if err != nil {
-						slog.Warn("pubmed: orcid lookup failed", "orcid", orcid, "pmid", pmid, "err", err)
+						slog.Warn("pubmed: orcid lookup failed", "orcid", orcidVal, "pmid", pmid, "err", err)
 					} else {
 						contrib.CreatorID = creatorID
 					}

@@ -23,6 +23,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
+	"git.archive.org/webgroup/scholar/trawler/orcid"
 	"git.archive.org/webgroup/scholar/trawler/s3"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
@@ -147,9 +148,8 @@ func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (fatcat2.Rel
 		Surname:   cc.Family,
 	}
 	if cc.ORCID != "" {
-		sp := strings.Split(cc.ORCID, "/")
-		orcid := sp[len(sp)-1]
-		id, err := fatcat2.LookupOrcid(client, orcid)
+		orcidVal := orcid.Normalize(cc.ORCID)
+		id, err := fatcat2.LookupOrcid(client, orcidVal)
 		if err != nil {
 			return out, err
 		}

@@ -8,6 +8,7 @@ import (
 
 	"git.archive.org/webgroup/scholar/trawler/crossref"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
+	"git.archive.org/webgroup/scholar/trawler/pubmed"
 	"git.archive.org/webgroup/scholar/trawler/temporal"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -116,6 +117,7 @@ func StartWorker(d WorkerDetails) error {
 		w.RegisterWorkflow(DailyCrawlWorkflow)
 		w.RegisterWorkflow(LineBatchWorkflow)
 		w.RegisterActivity(crossref.ProcessLine)
+		w.RegisterActivity(pubmed.ProcessLine)
 		w.RegisterActivity(harvesting.FindLineBatch)
 	}
 

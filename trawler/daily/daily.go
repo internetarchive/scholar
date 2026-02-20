@@ -11,6 +11,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crossref"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
+	"git.archive.org/webgroup/scholar/trawler/pubmed"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
@@ -169,6 +170,8 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 		switch in.Upstream {
 		case "crossref":
 			processLine = crossref.ProcessLine
+		case "pubmed":
+			processLine = pubmed.ProcessLine
 		default:
 			panic("unknown upstream: " + in.Upstream)
 

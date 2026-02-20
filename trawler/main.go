@@ -7,6 +7,7 @@ import (
 
 	"git.archive.org/webgroup/scholar/trawler/cmd/crossrefcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
+	"git.archive.org/webgroup/scholar/trawler/cmd/pubmedcmd"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -44,6 +45,7 @@ func init() {
 
 	rootCmd.AddCommand(crossrefcmd.Cmd)
 	rootCmd.AddCommand(indexcmd.IndexCmd)
+	rootCmd.AddCommand(pubmedcmd.Cmd)
 }
 
 func initConfig() {

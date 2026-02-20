@@ -134,6 +134,15 @@ func (r Release) DOI() string {
 	return ""
 }
 
+func (r Release) PMCID() string {
+	for _, eid := range r.ExternalIDs {
+		if eid.Type == "pmcid" {
+			return eid.Value
+		}
+	}
+	return ""
+}
+
 func (r Release) IsPaperlike() bool {
 	paperLikeTypes := []string{
 		"article-journal",
@@ -191,12 +200,17 @@ func (r Release) FulltextURLs() []string {
 	*/
 
 	out := []string{}
+
+	if r.PMCID() != "" {
+		out = append(out, fmt.Sprintf(
+			"http://europepmc.org/backend/ptpmcrender.fcgi?accid=%s&blobtype=pdf", r.PMCID()))
+	}
+
 	if r.DOI() != "" {
 		out = append(out, fmt.Sprintf("https://doi.org/%s", r.DOI()))
 	}
 
-	// TODO arxiv (NB cross reference with the hack i added to sandcrawler)
-	// TODO pmcid (NB it used ncbi but switched to europepmc which mostly fails, now
+	// TODO arxiv
 	// TODO doaj
 	// TODO hdl
 	return out
@@ -655,6 +669,11 @@ func lookup(c *http.Client, entityType, idType, idValue string) (*uuid.UUID, err
 // LookupDoi returns the ID of a fatcat2 Release with the given DOI, if any.
 func LookupDoi(c *http.Client, doi string) (*uuid.UUID, error) {
 	return lookup(c, "release", "doi", doi)
+}
+
+// LookupPmid returns the ID of a fatcat2 Release with the given PMID, if any.
+func LookupPmid(c *http.Client, pmid string) (*uuid.UUID, error) {
+	return lookup(c, "release", "pmid", pmid)
 }
 
 // LookupOrcid returns the ID of a fatcat2 Creator with the given orcid, if any.

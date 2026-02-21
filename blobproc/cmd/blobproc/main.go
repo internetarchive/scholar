@@ -293,7 +293,7 @@ func setupServices() (*grobidclient.Grobid, *blobproc.BlobStore) {
 		slog.Warn("cannot initialize S3 client, S3 operations will be skipped", "err", err, "endpoint", cfg.S3.Endpoint)
 		blobStore = nil
 	} else {
-		slog.Info("blobstroe (s3)", "endpoint", cfg.S3.Endpoint)
+		slog.Info("blobstore (s3)", "endpoint", cfg.S3.Endpoint)
 	}
 	return grobid, blobStore
 }

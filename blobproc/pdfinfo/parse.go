@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -173,11 +174,13 @@ func ParseFile(ctx context.Context, filename string) (*Metadata, error) {
 	var metadata = new(Metadata)
 	info, err := runPdfInfo(ctx, filename)
 	if err != nil {
+		slog.Warn("pdfinfo failed", "filename", filename, "err", err)
 		return nil, err
 	}
 	metadata.PDFInfo = info
 	pdfcpu, err := runPdfCpu(ctx, filename)
 	if err != nil {
+		slog.Warn("pdfcpu failed", "filename", filename, "err", err)
 		return nil, err
 	}
 	metadata.PDFCPU = pdfcpu

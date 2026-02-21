@@ -392,7 +392,7 @@ func processSingleFile(ctx context.Context, path string, size int64, grobid *gro
 	})
 	switch {
 	case result.Status != "success":
-		slog.Warn("pdfextract failed", "status", result.Status, "err", result.Err)
+		slog.Warn("pdfextract failed", "path", path, "status", result.Status, "err", result.Err)
 	case len(result.SHA1Hex) != blobproc.ExpectedSHA1Length:
 		slog.Warn("invalid sha1 in response", "sha1", result.SHA1Hex)
 	case result.Status == "success":

@@ -90,7 +90,7 @@ func (w *WalkFast) worker(wctx context.Context, workerName string, queue chan Pa
 				})
 				switch {
 				case result.Status != "success":
-					logger.Warn("pdfextract failed", "status", result.Status, "err", result.Err)
+					logger.Warn("pdfextract failed", "path", payload.Path, "status", result.Status, "err", result.Err)
 					errors = append(errors, result.Err)
 				case len(result.SHA1Hex) != 40:
 					logger.Warn("invalid sha1 in response", "sha1", result.SHA1Hex)

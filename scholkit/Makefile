@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 MAKEFLAGS := --jobs=$(shell nproc)
 PKGNAME := scholkit
-VERSION := $(shell git describe --tags --match='scholkit/v*' | cut -d 'v' -f2)
+VERSION := $(shell git describe --tags --match='scholkit/v*' | cut -d 'v' -f2 | cut -d '-' -f1)
 
 # the "sk" toolkit binaries to build
 TARGETS := sk-cat \

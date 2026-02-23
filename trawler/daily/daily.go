@@ -169,9 +169,9 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 		var processLine func(context.Context, harvesting.ProcessLineInput) (counts.Counts, error)
 		switch in.Upstream {
 		case "crossref":
-			processLine = crossref.ProcessLine
+			processLine = crossref.ProcessCrossrefLine
 		case "pubmed":
-			processLine = pubmed.ProcessLine
+			processLine = pubmed.ProcessPubmedLine
 		default:
 			panic("unknown upstream: " + in.Upstream)
 

@@ -116,8 +116,8 @@ func StartWorker(d WorkerDetails) error {
 	} else if d.Access == "internal" {
 		w.RegisterWorkflow(DailyCrawlWorkflow)
 		w.RegisterWorkflow(LineBatchWorkflow)
-		w.RegisterActivity(crossref.ProcessLine)
-		w.RegisterActivity(pubmed.ProcessLine)
+		w.RegisterActivity(crossref.ProcessCrossrefLine)
+		w.RegisterActivity(pubmed.ProcessPubmedLine)
 		w.RegisterActivity(harvesting.FindLineBatch)
 	}
 

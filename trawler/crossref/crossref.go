@@ -250,7 +250,7 @@ func (c crossrefDoc) SkipReason() string {
 	return ""
 }
 
-func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
+func ProcessCrossrefLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
 	out = counts.Counts{}
 
 	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)

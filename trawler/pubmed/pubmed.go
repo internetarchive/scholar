@@ -655,7 +655,7 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 	return &r, nil
 }
 
-func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
+func ProcessPubmedLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
 	out = counts.Counts{}
 	l := activity.GetLogger(ctx)
 

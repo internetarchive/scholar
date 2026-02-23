@@ -6,7 +6,7 @@
 SHELL := /bin/bash
 TARGETS := trawler # maybe, eventually: cdx spn
 MAKEFLAGS := --jobs=$(shell nproc)
-VERSION := $(shell git describe --tags --match='trawler-*' | cut -d '-' -f2)
+VERSION := $(shell git describe --tags --match='trawler/v*' | cut -d 'v' -f2)
 
 .PHONY: all
 all: $(TARGETS)

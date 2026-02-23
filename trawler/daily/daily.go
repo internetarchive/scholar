@@ -210,6 +210,7 @@ func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholk
 	}
 
 	s3bucket := viper.GetString(fmt.Sprintf("%s.scholkit_s3_bucket", in.Upstream))
+
 	var syncStart time.Time
 	var syncEnd time.Time
 	var err error
@@ -224,7 +225,7 @@ func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholk
 		syncStart = syncEnd.AddDate(0, 0, -1)
 	}
 
-	s3Prefix := syncEnd.Format("2006") + "/"
+	s3Prefix := in.Upstream + "/" + syncEnd.Format("2006") + "/"
 
 	skPath := viper.GetString("scholkit.path")
 	// TODO verify binary path?
@@ -232,12 +233,14 @@ func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholk
 	scholkitArgs := []string{
 		"-s", in.Upstream,
 		"-d", viper.GetString("scholkit.data_dir"),
-		fmt.Sprintf("--%s-upload-s3", in.Upstream),
-		fmt.Sprintf("--%s-s3-rclone-remote", in.Upstream), "seaweed314",
-		fmt.Sprintf("--%s-s3-bucket", in.Upstream), s3bucket,
-		fmt.Sprintf("--%s-s3-prefix", in.Upstream), s3Prefix,
-		fmt.Sprintf("--%s-sync-start", in.Upstream), syncStart.Format("2006-01-02"),
-		fmt.Sprintf("--%s-sync-end", in.Upstream), syncEnd.Format("2006-01-02"),
+		"-s3-upload",
+		"-s3-endpoint", viper.GetString("s3.endpoint"),
+		"-s3-access-key", viper.GetString("s3.access_id"),
+		"-s3-secret-key", viper.GetString("s3.secret_key"),
+		"-s3-bucket", s3bucket,
+		"-s3-prefix", s3Prefix,
+		"-sync-start", syncStart.Format("2006-01-02"),
+		"-sync-end", syncEnd.Format("2006-01-02"),
 	}
 
 	if limit > 0 {

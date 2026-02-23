@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -14,10 +15,13 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/klauspost/compress/zstd"
 	"github.com/miku/scholkit"
 	"github.com/miku/scholkit/dateutil"
 	"github.com/miku/scholkit/feeds"
 	"github.com/miku/scholkit/xflag"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sethgrid/pester"
 )
 
@@ -98,6 +102,16 @@ type Config struct {
 	RcloneTransfers    int
 	RcloneCheckers     int
 	DataciteSyncStart  string
+	PubMedApiKey       string
+	PubMedFeedPrefix   string
+	// S3 settings for SeaweedFS upload
+	S3Upload    bool
+	S3Endpoint  string
+	S3AccessKey string
+	S3SecretKey string
+	S3Bucket    string
+	S3Prefix    string
+	S3UseSSL    bool
 }
 
 var (
@@ -113,22 +127,34 @@ var (
 	// rclone is used for openalex
 	rcloneTransfers = flag.Int("rclone-transfers", 8, "number of parallel transfers for rclone")
 	rcloneCheckers  = flag.Int("rclone-checkers", 16, "number of parallel checkers for rclone")
+	// s3 upload options (used with crossref)
+	s3Upload    = flag.Bool("s3-upload", false, "upload harvested data to SeaweedFS after writing to disk")
+	s3Endpoint  = flag.String("s3-endpoint", "localhost:8333", "SeaweedFS S3 endpoint")
+	s3AccessKey = flag.String("s3-access-key", "", "S3 access key")
+	s3SecretKey = flag.String("s3-secret-key", "", "S3 secret key")
+	s3Bucket    = flag.String("s3-bucket", "sandcrawler", "S3 bucket to upload crossref data into")
+	s3Prefix    = flag.String("s3-prefix", "", "optional folder prefix within the S3 bucket (e.g. \"pubmed/daily\")")
+	s3UseSSL    = flag.Bool("s3-use-ssl", false, "use SSL for S3 connection")
+	// sync date range (applies to crossref and pubmed)
+	syncStart xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
+	syncEnd   xflag.Date = xflag.Date{Time: yesterday}
 	// crossref specific options
-	crossrefApiEmail              = flag.String("crossref-api-email", "", "crossref api email, add for more gracious limits")
-	crossrefApiFilter             = flag.String("crossref-api-filter", "index", "api filter to use with crossref")
-	crossrefUserAgent             = flag.String("crossref-user-agent", "scholkit/dev", "crossref user agent")
-	crossrefFeedPrefix            = flag.String("crossref-feed-prefix", "crossref-feed-0-", "prefix for filename to distinguish different runs")
-	crossrefSyncStart  xflag.Date = xflag.Date{Time: dateutil.MustParse("2021-01-01")}
-	crossrefSyncEnd    xflag.Date = xflag.Date{Time: yesterday}
+	crossrefApiEmail   = flag.String("crossref-api-email", "", "crossref api email, add for more gracious limits")
+	crossrefApiFilter  = flag.String("crossref-api-filter", "index", "api filter to use with crossref")
+	crossrefUserAgent  = flag.String("crossref-user-agent", "scholkit/dev", "crossref user agent")
+	crossrefFeedPrefix = flag.String("crossref-feed-prefix", "crossref-feed-0-", "prefix for filename to distinguish different runs")
 	// datacite specific options
 	dataciteSyncStart xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
+	// pubmed specific options
+	pubmedApiKey     = flag.String("pubmed-api-key", "", "NCBI API key (increases rate limit from 3 to 10 req/s)")
+	pubmedFeedPrefix = flag.String("pubmed-feed-prefix", "pubmed-feed-0-", "prefix for pubmed feed filenames")
 	// oai specific options
 	endpointURL = flag.String("oai-endpoint", "", "endpoint URL for OAI")
 )
 
 func main() {
-	flag.Var(&crossrefSyncStart, "crossref-sync-start", "start date for crossref harvest")
-	flag.Var(&crossrefSyncEnd, "crossref-sync-end", "end date for crossref harvest")
+	flag.Var(&syncStart, "sync-start", "start date for harvest (crossref, pubmed)")
+	flag.Var(&syncEnd, "sync-end", "end date for harvest (crossref, pubmed)")
 	flag.Var(&dataciteSyncStart, "datacite-sync-start", "start date for datacite harvest")
 	flag.Usage = func() {
 		io.WriteString(os.Stderr, docs)
@@ -158,6 +184,15 @@ func main() {
 		RcloneTransfers:    *rcloneTransfers,
 		RcloneCheckers:     *rcloneCheckers,
 		DataciteSyncStart:  dataciteSyncStart.Format("2006-01-02"),
+		PubMedApiKey:       *pubmedApiKey,
+		PubMedFeedPrefix:   *pubmedFeedPrefix,
+		S3Upload:           *s3Upload,
+		S3Endpoint:         *s3Endpoint,
+		S3AccessKey:        *s3AccessKey,
+		S3SecretKey:        *s3SecretKey,
+		S3Bucket:           *s3Bucket,
+		S3Prefix:           *s3Prefix,
+		S3UseSSL:           *s3UseSSL,
 	}
 	// Ensure feeds directory exists
 	if err := os.MkdirAll(config.FeedDir, 0755); err != nil {
@@ -218,12 +253,54 @@ func main() {
 				log.Fatal(err)
 			}
 			log.Println(ch)
-			ivs := dateutil.Daily(crossrefSyncStart.Time, crossrefSyncEnd.Time)
+			var mc *minio.Client
+			if config.S3Upload {
+				mc, err = minio.New(config.S3Endpoint, &minio.Options{
+					Creds:  credentials.NewStaticV4(config.S3AccessKey, config.S3SecretKey, ""),
+					Secure: config.S3UseSSL,
+				})
+				if err != nil {
+					log.Fatalf("s3 client: %v", err)
+				}
+			}
+			ctx := context.Background()
+			ivs := dateutil.Daily(syncStart.Time, syncEnd.Time)
 			for _, iv := range ivs {
 				// TODO: we only need the start date, because we limit
 				// ourselves to day slices
 				if err := ch.WriteDaySlice(iv.Start, dstDir, config.CrossrefFeedPrefix); err != nil {
 					log.Fatalf("crossref day slice: %v", err)
+				}
+				if config.S3Upload {
+					key, _, _ := ch.DaySliceKey(iv.Start, config.CrossrefFeedPrefix)
+					localPath := path.Join(dstDir, key)
+					s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
+					if config.S3Prefix != "" {
+						s3Key = config.S3Prefix + "/" + s3Key
+					}
+					if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
+						log.Printf("already in S3: %v", s3Key)
+						continue
+					}
+					f, err := os.Open(localPath)
+					if err != nil {
+						log.Fatalf("open %s: %v", localPath, err)
+					}
+					dec, err := zstd.NewReader(f)
+					if err != nil {
+						f.Close()
+						log.Fatalf("zstd reader: %v", err)
+					}
+					log.Printf("uploading to S3: %v", s3Key)
+					_, err = mc.PutObject(ctx, config.S3Bucket, s3Key, dec, -1, minio.PutObjectOptions{
+						ContentType: "application/x-ndjson",
+					})
+					dec.Close()
+					f.Close()
+					if err != nil {
+						log.Fatalf("s3 upload %s: %v", s3Key, err)
+					}
+					fmt.Println(s3Key)
 				}
 			}
 		case "datacite":
@@ -255,65 +332,128 @@ func main() {
 				log.Fatal(err)
 			}
 		case "pubmed":
-			// Download baseline files.
-			log.Println("syncing pubmed baseline...")
-			fetcher, err := feeds.NewPubMedFetcher("https://ftp.ncbi.nlm.nih.gov/pubmed/baseline/")
-			if err != nil {
-				log.Fatal(err)
-			}
-			pmfs, err := fetcher.FetchFiles()
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("found %d pubmed baseline files", len(pmfs))
 			dstDir := path.Join(config.FeedDir, "pubmed")
 			if err := os.MkdirAll(dstDir, 0755); err != nil {
 				log.Fatal(err)
 			}
-			for _, pmf := range pmfs {
-				dstFile := path.Join(dstDir, pmf.Filename)
-				wip := dstFile + ".wip"
-				if _, err := os.Stat(dstFile); os.IsNotExist(err) {
-					cmd := exec.Command("curl", "-sL", "--retry", "10", "--max-time", "1800", "-o", wip, pmf.URL)
-					cmd.Stdout = os.Stdout
-					cmd.Stderr = os.Stderr
-					log.Println(cmd)
-					if err = cmd.Run(); err != nil {
-						log.Fatal(err)
-					}
-					if err := os.Rename(wip, dstFile); err != nil {
-						log.Fatal(err)
-					}
-				} else {
-					log.Printf("already synced: %v", dstFile)
+			// Use the API-based day-slice harvester when -pubmed-sync-start is
+			// explicitly provided; otherwise fall back to FTP bulk download.
+			var useAPIHarvester bool
+			flag.Visit(func(f *flag.Flag) {
+				if f.Name == "sync-start" {
+					useAPIHarvester = true
 				}
-			}
-			log.Println("syncing pubmed updates...")
-			fetcher, err = feeds.NewPubMedFetcher("https://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/")
-			if err != nil {
-				log.Fatal(err)
-			}
-			pmfs, err = fetcher.FetchFiles()
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("found %d pubmed update files", len(pmfs))
-			for _, pmf := range pmfs {
-				dstFile := path.Join(dstDir, pmf.Filename)
-				wip := dstFile + ".wip"
-				if _, err := os.Stat(dstFile); os.IsNotExist(err) {
-					cmd := exec.Command("curl", "-sL", "--retry", "10", "--max-time", "600", "-o", wip, pmf.URL)
-					cmd.Stdout = os.Stdout
-					cmd.Stderr = os.Stderr
-					log.Println(cmd)
-					if err = cmd.Run(); err != nil {
-						log.Fatal(err)
+			})
+			if useAPIHarvester {
+				h := feeds.PubMedHarvester{
+					Client: client,
+					ApiKey: config.PubMedApiKey,
+				}
+				var mc *minio.Client
+				if config.S3Upload {
+					mc, err = minio.New(config.S3Endpoint, &minio.Options{
+						Creds:  credentials.NewStaticV4(config.S3AccessKey, config.S3SecretKey, ""),
+						Secure: config.S3UseSSL,
+					})
+					if err != nil {
+						log.Fatalf("s3 client: %v", err)
 					}
-					if err := os.Rename(wip, dstFile); err != nil {
-						log.Fatal(err)
+				}
+				ctx := context.Background()
+				ivs := dateutil.Daily(syncStart.Time, syncEnd.Time)
+				for _, iv := range ivs {
+					if err := h.WriteDaySlice(iv.Start, dstDir, config.PubMedFeedPrefix); err != nil {
+						log.Fatalf("pubmed day slice: %v", err)
 					}
-				} else {
-					log.Printf("already synced: %v", dstFile)
+					if config.S3Upload {
+						key, _, _ := h.DaySliceKey(iv.Start, config.PubMedFeedPrefix)
+						localPath := path.Join(dstDir, key)
+						s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
+						if config.S3Prefix != "" {
+							s3Key = config.S3Prefix + "/" + s3Key
+						}
+						if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
+							log.Printf("already in S3: %v", s3Key)
+							continue
+						}
+						f, err := os.Open(localPath)
+						if err != nil {
+							log.Fatalf("open %s: %v", localPath, err)
+						}
+						dec, err := zstd.NewReader(f)
+						if err != nil {
+							f.Close()
+							log.Fatalf("zstd reader: %v", err)
+						}
+						log.Printf("uploading to S3: %v", s3Key)
+						_, err = mc.PutObject(ctx, config.S3Bucket, s3Key, dec, -1, minio.PutObjectOptions{
+							ContentType: "application/x-ndjson",
+						})
+						dec.Close()
+						f.Close()
+						if err != nil {
+							log.Fatalf("s3 upload %s: %v", s3Key, err)
+						}
+						fmt.Println(s3Key)
+					}
+				}
+			} else {
+				// Download baseline files.
+				log.Println("syncing pubmed baseline...")
+				fetcher, err := feeds.NewPubMedFetcher("https://ftp.ncbi.nlm.nih.gov/pubmed/baseline/")
+				if err != nil {
+					log.Fatal(err)
+				}
+				pmfs, err := fetcher.FetchFiles()
+				if err != nil {
+					log.Fatal(err)
+				}
+				log.Printf("found %d pubmed baseline files", len(pmfs))
+				for _, pmf := range pmfs {
+					dstFile := path.Join(dstDir, pmf.Filename)
+					wip := dstFile + ".wip"
+					if _, err := os.Stat(dstFile); os.IsNotExist(err) {
+						cmd := exec.Command("curl", "-sL", "--retry", "10", "--max-time", "1800", "-o", wip, pmf.URL)
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+						log.Println(cmd)
+						if err = cmd.Run(); err != nil {
+							log.Fatal(err)
+						}
+						if err := os.Rename(wip, dstFile); err != nil {
+							log.Fatal(err)
+						}
+					} else {
+						log.Printf("already synced: %v", dstFile)
+					}
+				}
+				log.Println("syncing pubmed updates...")
+				fetcher, err = feeds.NewPubMedFetcher("https://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/")
+				if err != nil {
+					log.Fatal(err)
+				}
+				pmfs, err = fetcher.FetchFiles()
+				if err != nil {
+					log.Fatal(err)
+				}
+				log.Printf("found %d pubmed update files", len(pmfs))
+				for _, pmf := range pmfs {
+					dstFile := path.Join(dstDir, pmf.Filename)
+					wip := dstFile + ".wip"
+					if _, err := os.Stat(dstFile); os.IsNotExist(err) {
+						cmd := exec.Command("curl", "-sL", "--retry", "10", "--max-time", "600", "-o", wip, pmf.URL)
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+						log.Println(cmd)
+						if err = cmd.Run(); err != nil {
+							log.Fatal(err)
+						}
+						if err := os.Rename(wip, dstFile); err != nil {
+							log.Fatal(err)
+						}
+					} else {
+						log.Printf("already synced: %v", dstFile)
+					}
 				}
 			}
 		case "oai":

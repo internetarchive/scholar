@@ -1,6 +1,6 @@
 module git.archive.org/webgroup/scholar/trawler
 
-go 1.24.4
+go 1.26.0
 
 require github.com/spf13/cobra v1.9.1 // direct
 
@@ -33,6 +33,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/internetarchive/scholar/pubmed2json v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/miku/grobidclient v0.2.7 // indirect

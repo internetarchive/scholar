@@ -1,7 +1,6 @@
 package crossref
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/json"
@@ -9,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,7 +21,8 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
-	"git.archive.org/webgroup/scholar/trawler/s3"
+	"git.archive.org/webgroup/scholar/trawler/orcid"
+	"git.archive.org/webgroup/scholar/trawler/pdf"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -147,9 +146,8 @@ func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (fatcat2.Rel
 		Surname:   cc.Family,
 	}
 	if cc.ORCID != "" {
-		sp := strings.Split(cc.ORCID, "/")
-		orcid := sp[len(sp)-1]
-		id, err := fatcat2.LookupOrcid(client, orcid)
+		orcidVal := orcid.Normalize(cc.ORCID)
+		id, err := fatcat2.LookupOrcid(client, orcidVal)
 		if err != nil {
 			return out, err
 		}
@@ -443,124 +441,17 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (out count
 		return out, fmt.Errorf("failed to index doc for file '%s': %w", file.ID, err)
 	}
 
-	//	"Send your PDF payload to %s/spool - a 200 OK status only confirms
-	//	receipt, not successful postprocessing, which may take more time. Check
-	//	Location header for spool id."
-
-	blobprocEndpoint := viper.GetString("blobproc.endpoint")
-	req, err := http.NewRequest("POST", blobprocEndpoint+"/spool", bytes.NewBuffer(pdfBs))
+	pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
 	if err != nil {
-		return out, fmt.Errorf("could not form blobproc request: %w", err)
+		return out, fmt.Errorf("blobproc processing failed: %w", err)
 	}
-
-	req.Header.Set("Content-Type", "application/pdf")
-
-	// TODO do s3 read first to see if it's already done, *then* hit blobproc
-
-	l.Debug(fmt.Sprintf("%s: submitting to blobproc", release.ID))
-	resp, err := client.Do(req)
-	if err != nil {
-		return out, fmt.Errorf("blobproc request error: %w", err)
-	}
-	if resp.StatusCode != 202 {
-		return out, fmt.Errorf("unexpected status from blobproc '%d'", resp.StatusCode)
-	}
-
-	loc := resp.Header.Get("Location")
-	if loc == "" {
-		return out, fmt.Errorf("got blank spool url")
-	}
-
-	pu, err := url.Parse(loc)
-	if err != nil {
-		panic(err)
-	}
-
-	pollUrl := blobprocEndpoint + pu.Path
-
-	// blobproc uses sha1. it should be in the spoolUrl and it should match what we derived earlier
-	if !strings.Contains(pollUrl, file.Sha1) {
-		return out, fmt.Errorf("expected to see file sha1 '%s' in spool url '%s'", file.Sha1, loc)
-	}
-
-	req, err = http.NewRequest("GET", pollUrl, nil)
-	if err != nil {
-		panic(err)
-	}
-
-	l.Debug(fmt.Sprintf("%s: polling blobproc at %s", release.ID, pollUrl))
-
-	for {
-		time.Sleep(viper.GetDuration("blobproc.poll_interval"))
-		resp, err = client.Do(req)
-		if err != nil {
-			return out, fmt.Errorf("error polling blobproc: %w", err)
-		}
-
-		if resp.StatusCode == 404 {
-			break
-		}
-		l.Debug(fmt.Sprintf("%s: waiting on blobproc", release.ID))
-	}
-
-	// get blobproc stuff for ingestion
-
-	/*
-		thoughts...I just had a situation where blobproc couldn't start because of
-		misconfigured s3 endpoint. the resulting behavior was that this code got
-		all the way to s3 object getting. so i guess we got back a location header
-		that immediately 404ed? but my file is still sitting in spool. so how did i
-		get a 404? this warrants investigation...
-	*/
-
-	s3bucket := viper.GetString("blobproc.s3bucket")
-
-	grobidS3Key := fmt.Sprintf("%s/%s/%s/%s/%s.tei.xml",
-		s3bucket, "grobid", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
-
-	obj, err := s3.GetObject(ctx, grobidS3Key)
-	if err != nil {
-		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
-	}
-
-	grobidXML, err := io.ReadAll(obj)
-	if err != nil {
-		return out, fmt.Errorf("could not read '%s': %w", grobidS3Key, err)
-	}
-
-	pdftotextS3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
-		s3bucket, "text", file.Sha1[0:2], file.Sha1[2:4], file.Sha1)
-
-	obj, err = s3.GetObject(ctx, pdftotextS3Key)
-	if err != nil {
-		return out, fmt.Errorf("blobproc s3 read failed: %w", err)
-	}
-
-	pdfText, err := io.ReadAll(obj)
-	if err != nil {
-		return out, fmt.Errorf("could not read '%s': %w", pdftotextS3Key, err)
-	}
-
-	fmt.Printf("DBG %#v\n", string(pdfText[:100])+"...")
-
-	// regarding ingestion
-
-	/*
-		The correct way to do ingestion is batching. for now, given time
-		constraints and the fact that this is 80% proof of concept, i'm going to do
-		one at a time. Looking back at 30 days of sandcrawler ingest rate graphs,
-		we had peaks of 300 docs/sec; I assume at that point we ought to have batch
-		processing. To get to the end of the year though I'm doing one off just to
-		make sure it's all working; once it is, I'd like to have this workflow
-		return a list of s3 keys to ingest so they can be done as a single batch.
-	*/
 
 	ictx := indexing.FulltextTransformCtx{
 		HttpClient: client,
 		Release:    release,
 		File:       &file,
-		PdfText:    pdfText,
-		GrobidXML:  grobidXML,
+		PdfText:    pdfContent.PdfText,
+		GrobidXML:  pdfContent.GrobidXML,
 	}
 
 	if release.ContainerID != nil {

@@ -94,8 +94,8 @@ func main() {
 		}
 	}
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, help)
-		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprint(os.Stderr, help)
+		fmt.Fprint(os.Stderr, "\n")
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
 	}

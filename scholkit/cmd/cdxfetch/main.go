@@ -89,7 +89,7 @@ func AdvancedSearch(opts *SearchOpts) ([]SearchResponse, error) {
 		vs.Set("rows", strconv.Itoa(opts.Rows))
 		vs.Set("page", strconv.Itoa(page))
 		u := fmt.Sprintf("%s?%s", opts.URL, vs.Encode())
-		log.Printf(u)
+		log.Println(u)
 		req, err := http.NewRequest("GET", u, nil)
 		if err != nil {
 			return nil, err

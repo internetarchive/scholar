@@ -75,7 +75,7 @@ Usage:
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, help)
+		fmt.Fprint(os.Stderr, help)
 		flag.PrintDefaults()
 	}
 	flag.Parse()

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/miku/scholkit/schema/fatcat"
-	"github.com/miku/scholkit/schema/openalex"
+	"github.com/internetarchive/scholar/scholkit/schema/fatcat"
+	"github.com/internetarchive/scholar/scholkit/schema/openalex"
 )
 
 var ErrMissingOpenAlexIdentifier = errors.New("missing openalex identifier")

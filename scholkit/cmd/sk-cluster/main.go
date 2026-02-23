@@ -16,10 +16,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/miku/scholkit"
-	"github.com/miku/scholkit/normal"
-	"github.com/miku/scholkit/parallel"
-	"github.com/miku/scholkit/schema/fatcat"
+	"github.com/internetarchive/scholar/scholkit"
+	"github.com/internetarchive/scholar/scholkit/normal"
+	"github.com/internetarchive/scholar/scholkit/parallel"
+	"github.com/internetarchive/scholar/scholkit/schema/fatcat"
 )
 
 var (

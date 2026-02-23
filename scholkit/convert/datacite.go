@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/miku/scholkit/schema/datacite"
-	"github.com/miku/scholkit/schema/fatcat"
+	"github.com/internetarchive/scholar/scholkit/schema/datacite"
+	"github.com/internetarchive/scholar/scholkit/schema/fatcat"
 )
 
 func DataCiteToFatcatRelease(doc *datacite.Document) (*fatcat.Release, error) {

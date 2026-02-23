@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/miku/scholkit/schema/dblp"
-	"github.com/miku/scholkit/schema/fatcat"
+	"github.com/internetarchive/scholar/scholkit/schema/dblp"
+	"github.com/internetarchive/scholar/scholkit/schema/fatcat"
 )
 
 func DBLPArticleToFatcatRelease(doc *dblp.Article) (*fatcat.Release, error) {

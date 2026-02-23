@@ -20,8 +20,8 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/internetarchive/scholar/pubmed2json"
 	"github.com/klauspost/compress/zstd"
-	"github.com/miku/scholkit"
-	"github.com/miku/scholkit/atomicfile"
+	"github.com/internetarchive/scholar/scholkit"
+	"github.com/internetarchive/scholar/scholkit/atomicfile"
 )
 
 const DefaultCacheTTL = 24 * time.Hour // TODO: move to a cache pkg

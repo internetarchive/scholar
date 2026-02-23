@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/miku/scholkit/schema/arxiv"
-	"github.com/miku/scholkit/schema/fatcat"
+	"github.com/internetarchive/scholar/scholkit/schema/arxiv"
+	"github.com/internetarchive/scholar/scholkit/schema/fatcat"
 )
 
 // Consider moving abstract processing to a separate function

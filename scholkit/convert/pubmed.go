@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/miku/scholkit/schema/fatcat"
-	"github.com/miku/scholkit/schema/pubmed"
+	"github.com/internetarchive/scholar/scholkit/schema/fatcat"
+	"github.com/internetarchive/scholar/scholkit/schema/pubmed"
 )
 
 var ErrMissingPMID = errors.New("missing pmid")

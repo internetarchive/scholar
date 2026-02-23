@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/miku/scholkit"
+	"github.com/internetarchive/scholar/scholkit"
 )
 
 // mockHTML is a simple representation of the PubMed files HTML listing

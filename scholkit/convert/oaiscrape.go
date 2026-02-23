@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/miku/scholkit/schema/fatcat"
-	"github.com/miku/scholkit/schema/oaiscrape"
+	"github.com/internetarchive/scholar/scholkit/schema/fatcat"
+	"github.com/internetarchive/scholar/scholkit/schema/oaiscrape"
 )
 
 var (

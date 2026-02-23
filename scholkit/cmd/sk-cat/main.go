@@ -40,7 +40,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/miku/scholkit"
+	"github.com/internetarchive/scholar/scholkit"
 )
 
 var decompMap = map[string]string{

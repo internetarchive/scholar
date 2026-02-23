@@ -6,8 +6,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/miku/scholkit/schema/crossref"
-	"github.com/miku/scholkit/schema/fatcat"
+	"github.com/internetarchive/scholar/scholkit/schema/crossref"
+	"github.com/internetarchive/scholar/scholkit/schema/fatcat"
 )
 
 var CrossrefTypeMap = map[string]string{

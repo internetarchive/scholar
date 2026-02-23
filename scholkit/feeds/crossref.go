@@ -13,7 +13,7 @@ import (
 
 	"github.com/jinzhu/now"
 	"github.com/klauspost/compress/zstd"
-	"github.com/miku/scholkit/atomicfile"
+	"github.com/internetarchive/scholar/scholkit/atomicfile"
 )
 
 var bNewline = []byte("\n")

@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/miku/scholkit"
+	"github.com/internetarchive/scholar/scholkit"
 )
 
 var (

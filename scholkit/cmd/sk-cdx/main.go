@@ -31,7 +31,7 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
-	"github.com/miku/scholkit"
+	"github.com/internetarchive/scholar/scholkit"
 	"github.com/sethgrid/pester"
 )
 

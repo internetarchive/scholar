@@ -220,8 +220,6 @@ build:scholkit-deb:
     - export PATH=$PATH:$(go env GOPATH)/bin
     - nfpm --version
     # Extract version from tag (scholkit-1.2.3 -> 1.2.3)
-    - export VERSION=$(./sk-feed -version)
-    - echo "building scholkit version $VERSION..."
     - cd scholkit
     - make deb
   artifacts:
@@ -240,7 +238,6 @@ upload:scholkit:
       when: on_success
   script:
     - cd scholkit
-    - export VERSION=$(./sk-feed -version)
     - export DEB_FILE=$(ls *.deb)
     - echo "uploading $DEB_FILE to $NEXUS_URL..."
     - |

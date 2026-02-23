@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
-	"github.com/klauspost/compress/zstd"
 	"github.com/internetarchive/scholar/scholkit"
 	"github.com/internetarchive/scholar/scholkit/dateutil"
 	"github.com/internetarchive/scholar/scholkit/feeds"
 	"github.com/internetarchive/scholar/scholkit/xflag"
+	"github.com/klauspost/compress/zstd"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sethgrid/pester"
@@ -132,7 +132,7 @@ var (
 	s3Endpoint  = flag.String("s3-endpoint", "localhost:8333", "SeaweedFS S3 endpoint")
 	s3AccessKey = flag.String("s3-access-key", "", "S3 access key")
 	s3SecretKey = flag.String("s3-secret-key", "", "S3 secret key")
-	s3Bucket    = flag.String("s3-bucket", "sandcrawler", "S3 bucket to upload crossref data into")
+	s3Bucket    = flag.String("s3-bucket", "scholkit", "S3 bucket to upload crossref data into")
 	s3Prefix    = flag.String("s3-prefix", "", "optional folder prefix within the S3 bucket (e.g. \"pubmed/daily\")")
 	s3UseSSL    = flag.Bool("s3-use-ssl", false, "use SSL for S3 connection")
 	// sync date range (applies to crossref and pubmed)

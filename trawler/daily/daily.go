@@ -215,7 +215,7 @@ func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholk
 		syncStart = syncEnd.AddDate(0, 0, -1)
 	}
 
-	s3Prefix := in.Upstream + "/" + syncEnd.Format("2006") + "/"
+	s3Prefix := in.Upstream + "/" + syncEnd.Format("2006")
 
 	skPath := viper.GetString("scholkit.path")
 	// TODO verify binary path?
@@ -245,8 +245,14 @@ func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholk
 		return out, fmt.Errorf("sk failed: %w", err)
 	}
 
-	l.Info(fmt.Sprintf("scholkit uploaded %s data to s3 key %s", in.Upstream, string(bs)))
+	s3key := strings.TrimSpace(string(bs))
 
-	out.S3Key = strings.TrimSpace(string(bs))
+	if s3key == "" {
+		return out, errors.New("empty s3 key from scholkit")
+	}
+
+	l.Info(fmt.Sprintf("scholkit %s data to s3 key %q", in.Upstream, s3key))
+
+	out.S3Key = s3key
 	return out, nil
 }

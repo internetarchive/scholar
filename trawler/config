@@ -25,7 +25,6 @@ external_task_queue = "crossref_crawl_external"
 every = "24h"
 #every = "120s"
 scholkit_s3_bucket = "scholkit"
-default_limit = 1000 # for dev; typically would be -1 for unlimited
 
 [pubmed]
 internal_task_queue = "pubmed_crawl_internal"
@@ -33,7 +32,6 @@ external_task_queue = "pubmed_crawl_external"
 every = "24h"
 #every = "120s"
 scholkit_s3_bucket = "scholkit"
-default_limit = 9999
 
 [fatcat1]
 endpoint = "https://scholar.archive.org/api/fatcat/v1"

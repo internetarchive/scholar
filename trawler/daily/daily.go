@@ -21,8 +21,6 @@ import (
 type DailyCrawlWorkflowInput struct {
 	// Day value in format 2006-01-02
 	Day string
-	// Limit of items to fetch for a day; 0 or less for unlimited
-	Limit int
 	// SourceOverride sets a static string to use instead of letting trawler
 	// generate a source value dynamically
 	SourceOverride string
@@ -56,7 +54,6 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 
 	scrapeIn := scholkitScrapeInput{
 		Day:      in.Day,
-		Limit:    in.Limit,
 		Upstream: in.Upstream,
 	}
 	var scrapeOut scholkitScrapeOutput
@@ -189,8 +186,6 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 type scholkitScrapeInput struct {
 	// Day value in format 2006-01-02
 	Day string
-	// Limit of items to fetch for a day; 0 or less for unlimited
-	Limit int
 	// Upstream is which API we're scraping
 	Upstream string
 }
@@ -203,11 +198,6 @@ type scholkitScrapeOutput struct {
 func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholkitScrapeOutput, error) {
 	out := scholkitScrapeOutput{}
 	l := activity.GetLogger(ctx)
-
-	limit := in.Limit
-	if limit <= 0 {
-		limit = viper.GetInt(fmt.Sprintf("%s.default_limit", in.Upstream))
-	}
 
 	s3bucket := viper.GetString(fmt.Sprintf("%s.scholkit_s3_bucket", in.Upstream))
 
@@ -241,10 +231,6 @@ func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholk
 		"-s3-prefix", s3Prefix,
 		"-sync-start", syncStart.Format("2006-01-02"),
 		"-sync-end", syncEnd.Format("2006-01-02"),
-	}
-
-	if limit > 0 {
-		scholkitArgs = append(scholkitArgs, "--limit", fmt.Sprintf("%d", limit))
 	}
 
 	l.Info(fmt.Sprintf("sk cmd: %s %s", skPath, scholkitArgs))

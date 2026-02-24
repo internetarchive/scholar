@@ -12,12 +12,10 @@ var Cmd = &cobra.Command{
 	Short: "Work with the PubMed upstream",
 }
 
-var skLimit int
 var skDay string
 var sourceOverride string
 
 func init() {
-	StartOneOffCmd.Flags().IntVar(&skLimit, "limit", 9999, "cap number of metadata entries to pull from pubmed. Default: 9999")
 	StartOneOffCmd.Flags().StringVar(&skDay, "day", "", "Download metadata starting from midnight on specified day (format: 2006-01-02). Default: yesterday")
 	StartOneOffCmd.Flags().StringVar(&sourceOverride, "source", "", "Set a source string for any created Fatcat records. By default, a label is generated.")
 
@@ -32,7 +30,6 @@ var StartScheduleCmd = &cobra.Command{
 	Short: "start the schedule for daily pubmed crawling",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		crawlInput := daily.DailyCrawlWorkflowInput{
-			Limit:          skLimit,
 			SourceOverride: sourceOverride,
 			Upstream:       "pubmed",
 		}
@@ -46,7 +43,6 @@ var StartOneOffCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		crawlInput := daily.DailyCrawlWorkflowInput{
 			Day:            skDay,
-			Limit:          skLimit,
 			SourceOverride: sourceOverride,
 			Upstream:       "pubmed",
 		}

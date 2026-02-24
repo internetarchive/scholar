@@ -280,7 +280,7 @@ func main() {
 					}
 					if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
 						log.Printf("already in S3: %v", s3Key)
-						fmt.Println(s3Key)
+						fmt.Println(config.S3Bucket + "/" + s3Key)
 						continue
 					}
 					f, err := os.Open(localPath)
@@ -301,7 +301,7 @@ func main() {
 					if err != nil {
 						log.Fatalf("s3 upload %s: %v", s3Key, err)
 					}
-					fmt.Println(s3Key)
+					fmt.Println(config.S3Bucket + "/" + s3Key)
 				}
 			}
 		case "datacite":
@@ -375,7 +375,7 @@ func main() {
 						}
 						if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
 							log.Printf("already in S3: %v", s3Key)
-							fmt.Println(s3Key)
+							fmt.Println(config.S3Bucket + "/" + s3Key)
 							continue
 						}
 						f, err := os.Open(localPath)
@@ -396,7 +396,7 @@ func main() {
 						if err != nil {
 							log.Fatalf("s3 upload %s: %v", s3Key, err)
 						}
-						fmt.Println(s3Key)
+						fmt.Println(config.S3Bucket + "/" + s3Key)
 					}
 				}
 			} else {

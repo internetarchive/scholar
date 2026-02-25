@@ -313,6 +313,15 @@ func ProcessCrossrefLine(ctx context.Context, in harvesting.ProcessLineInput) (o
 		return out, err
 	}
 
+	existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
+	if err != nil {
+		return out, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
+	}
+	if len(existingFiles) > 0 {
+		l.Info(fmt.Sprintf("skipping crawl, release %q already has %d file(s)", release.ID, len(existingFiles)))
+		return out, nil
+	}
+
 	out.Releases.CrawlWanted++
 
 	// porting the monster that is process_file from sandcrawler:python/sandcrawler/ingest_file.py

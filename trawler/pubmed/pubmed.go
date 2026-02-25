@@ -734,6 +734,15 @@ func ProcessPubmedLine(ctx context.Context, in harvesting.ProcessLineInput) (out
 			return out, nil
 		}
 
+		existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
+		if err != nil {
+			return out, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
+		}
+		if len(existingFiles) > 0 {
+			l.Info("pubmed: skipping crawl, release already has files", "release_id", release.ID, "file_count", len(existingFiles))
+			return out, nil
+		}
+
 		out.Releases.CrawlWanted++
 
 		spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{

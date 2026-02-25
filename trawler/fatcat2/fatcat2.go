@@ -375,25 +375,22 @@ func CreateFile(client *http.Client, f *File) (*uuid.UUID, error) {
 func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 	r.ID = uuid.New()
 
-	var doi string
+	if len(r.ExternalIDs) == 0 {
+		panic("nothing without an external ID should get to this point")
+	}
+
+	var legacy *LegacyData
+	var err error
 	for _, eid := range r.ExternalIDs {
-		if eid.Type == "doi" {
-			doi = eid.Value
+		legacy, err = lookupLegacyRelease(client, eid.Type, eid.Value)
+		if err != nil {
+			return nil, fmt.Errorf("legacy lookup failed: %w", err)
+		}
+		if legacy != nil {
+			r.ID = legacy.Ident
+			r.LegacyRevID = &legacy.Revision
 			break
 		}
-	}
-	if doi == "" {
-		panic("nothing without a doi should get to this point")
-	}
-
-	legacy, err := lookupLegacyRelease(client, doi)
-	if err != nil {
-		return nil, fmt.Errorf("legacy lookup failed: %w", err)
-	}
-
-	if legacy != nil {
-		r.ID = legacy.Ident
-		r.LegacyRevID = &legacy.Revision
 	}
 
 	fc2url := viper.GetString("fatcat2.endpoint")
@@ -416,8 +413,8 @@ func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 
 	if resp.StatusCode != 201 {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status code for '%s' (%s) POST: %d; body '%s'",
-			doi, r.LegacyRevID, resp.StatusCode, b)
+		return nil, fmt.Errorf("unexpected status code for %q (%s) POST: %d; body '%s'",
+			r.ID, r.LegacyRevID, resp.StatusCode, b)
 	}
 
 	return &r.ID, nil
@@ -616,8 +613,8 @@ func lookupLegacyContainer(c *http.Client, issnl string) (*LegacyData, error) {
 	return lookupLegacy(c, "lookup_container", "issnl", issnl)
 }
 
-func lookupLegacyRelease(c *http.Client, doi string) (*LegacyData, error) {
-	return lookupLegacy(c, "lookup_release", "doi", doi)
+func lookupLegacyRelease(c *http.Client, idtype, idvalue string) (*LegacyData, error) {
+	return lookupLegacy(c, "lookup_release", idtype, idvalue)
 }
 
 func lookupLegacyFile(c *http.Client, sha1 string) (*LegacyData, error) {

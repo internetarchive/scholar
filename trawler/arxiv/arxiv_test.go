@@ -110,6 +110,51 @@ func TestArxivID(t *testing.T) {
 	}
 }
 
+func TestVersionedArxivID(t *testing.T) {
+	tests := []struct {
+		name     string
+		rec      *arxivRecord
+		expected string
+	}{
+		{
+			name:     "new format base id gets v1",
+			rec:      &arxivRecord{ID: "2301.12345"},
+			expected: "2301.12345v1",
+		},
+		{
+			name:     "old format base id gets v1",
+			rec:      &arxivRecord{ID: "hep-th/9901001"},
+			expected: "hep-th/9901001v1",
+		},
+		{
+			name:     "already versioned id is unchanged",
+			rec:      &arxivRecord{ID: "2301.12345v2"},
+			expected: "2301.12345v2",
+		},
+		{
+			name:     "v1 suffix already present is unchanged",
+			rec:      &arxivRecord{ID: "2301.12345v1"},
+			expected: "2301.12345v1",
+		},
+		{
+			name:     "fallback from identifier",
+			rec:      &arxivRecord{ID: "", Identifier: "oai:arXiv.org:2301.12345"},
+			expected: "2301.12345v1",
+		},
+		{
+			name:     "empty id returns empty",
+			rec:      &arxivRecord{ID: "", Identifier: ""},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, versionedArxivID(tt.rec))
+		})
+	}
+}
+
 func TestDoiFromRecord(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -204,9 +249,9 @@ func TestArxivToFc(t *testing.T) {
 
 	release := arxivToFc(rec, "arxiv-2023-01-15-abc123")
 
-	// Identifiers
+	// Identifiers — stored ID must be versioned
 	assert.Equal(t, "arxiv", release.ExternalIDs[0].Type)
-	assert.Equal(t, "2301.12345", release.ExternalIDs[0].Value)
+	assert.Equal(t, "2301.12345v1", release.ExternalIDs[0].Value)
 	assert.Equal(t, "doi", release.ExternalIDs[1].Type)
 	assert.Equal(t, "10.1234/test.paper", release.ExternalIDs[1].Value)
 

@@ -58,12 +58,30 @@ type arxivAuthor struct {
 	Affiliation string `json:"affiliation"`
 }
 
-// arxivID returns the base arxiv ID without "oai:arXiv.org:" prefix.
+// arxivID returns the base arxiv ID without "oai:arXiv.org:" prefix or version suffix.
 func arxivID(rec *arxivRecord) string {
 	if rec.ID != "" {
 		return rec.ID
 	}
 	return strings.TrimPrefix(rec.Identifier, "oai:arXiv.org:")
+}
+
+// versionedArxivID returns the arxiv ID with a version suffix. The arXiv OAI
+// feed provides base IDs only (no version info), so we default to "v1". This
+// satisfies the fatcat2 requirement that stored arxiv IDs be versioned.
+func versionedArxivID(rec *arxivRecord) string {
+	id := arxivID(rec)
+	if id == "" {
+		return ""
+	}
+	// If the ID already has a version suffix (e.g. from a future data source), keep it.
+	if i := strings.LastIndex(id, "v"); i > 0 {
+		suffix := id[i+1:]
+		if suffix != "" && strings.IndexFunc(suffix, func(r rune) bool { return r < '0' || r > '9' }) == -1 {
+			return id
+		}
+	}
+	return id + "v1"
 }
 
 // skipReason returns a non-empty string explaining why this record should be
@@ -206,10 +224,12 @@ func arxivToFc(rec *arxivRecord, source string) fatcat2.Release {
 
 	// --- Identifiers ---
 
-	id := arxivID(rec)
+	// fatcat2 requires versioned arxiv IDs (e.g. "2301.12345v1"). The arXiv
+	// OAI feed only provides the base ID, so we append "v1" by default.
+	vid := versionedArxivID(rec)
 	release.ExternalIDs = append(release.ExternalIDs, fatcat2.ExternalID{
 		Type:  "arxiv",
-		Value: id,
+		Value: vid,
 	})
 
 	doi := doiFromRecord(rec)
@@ -323,6 +343,7 @@ func ProcessArxivLine(ctx context.Context, in harvesting.ProcessLineInput) (out 
 	}
 
 	id := arxivID(&rec)
+	vid := versionedArxivID(&rec)
 
 	if reason := skipReason(&rec); reason != "" {
 		l.Info("arxiv: skipping record", "id", id, "reason", reason)
@@ -334,10 +355,10 @@ func ProcessArxivLine(ctx context.Context, in harvesting.ProcessLineInput) (out 
 
 	release := arxivToFc(&rec, in.Source)
 
-	// Lookup by arxiv ID first, then DOI as fallback.
-	foundID, err := fatcat2.LookupArxiv(client, id)
+	// Lookup by versioned arxiv ID first, then DOI as fallback.
+	foundID, err := fatcat2.LookupArxiv(client, vid)
 	if err != nil {
-		return out, fmt.Errorf("arxiv lookup failed for %q: %w", id, err)
+		return out, fmt.Errorf("arxiv lookup failed for %q: %w", vid, err)
 	}
 
 	if foundID == nil && release.DOI() != "" {
@@ -348,7 +369,7 @@ func ProcessArxivLine(ctx context.Context, in harvesting.ProcessLineInput) (out 
 	}
 
 	if foundID != nil {
-		l.Debug("arxiv: found existing release", "id", id, "release_id", foundID)
+		l.Debug("arxiv: found existing release", "id", vid, "release_id", foundID)
 		release, err = fatcat2.GetRelease(client, *foundID)
 		if err != nil {
 			return out, fmt.Errorf("could not fetch existing release: %w", err)
@@ -357,10 +378,10 @@ func ProcessArxivLine(ctx context.Context, in harvesting.ProcessLineInput) (out 
 	} else {
 		r, err := createRelease(client, &out, release)
 		if err != nil {
-			return out, fmt.Errorf("could not create release for arxiv %q: %w", id, err)
+			return out, fmt.Errorf("could not create release for arxiv %q: %w", vid, err)
 		}
 		release = *r
-		l.Debug("arxiv: created release", "id", id, "release_id", release.ID)
+		l.Debug("arxiv: created release", "id", vid, "release_id", release.ID)
 		out.Releases.Added++
 	}
 

@@ -178,16 +178,21 @@ func TestArxivHarvesterWriteSliceSingleRecord(t *testing.T) {
 	if buf.Len() == 0 {
 		t.Fatal("expected non-empty output")
 	}
-	var rec map[string]interface{}
+	var rec ArxivRecord
 	if err := json.NewDecoder(&buf).Decode(&rec); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
-	header, ok := rec["header"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected header in output, got: %v", rec)
+	if got := rec.Identifier; got != "oai:arXiv.org:2501.00001" {
+		t.Errorf("identifier: got %q, want oai:arXiv.org:2501.00001", got)
 	}
-	if got := header["identifier"]; got != "oai:arXiv.org:2501.00001" {
-		t.Errorf("header.identifier: got %v, want oai:arXiv.org:2501.00001", got)
+	if got := rec.ID; got != "2501.00001" {
+		t.Errorf("id: got %q, want 2501.00001", got)
+	}
+	if got := rec.Title; got != "Test Paper" {
+		t.Errorf("title: got %q, want Test Paper", got)
+	}
+	if len(rec.Authors) != 1 || rec.Authors[0].KeyName != "Smith" {
+		t.Errorf("authors: got %v, want [{KeyName:Smith ...}]", rec.Authors)
 	}
 }
 
@@ -367,11 +372,14 @@ func TestArxivHarvesterWriteDaySlice(t *testing.T) {
 		t.Fatalf("zstd.NewReader: %v", err)
 	}
 	defer zr.Close()
-	var rec map[string]interface{}
+	var rec ArxivRecord
 	if err := json.NewDecoder(zr).Decode(&rec); err != nil {
 		t.Fatalf("output is not valid JSON inside zstd: %v", err)
 	}
-	if _, ok := rec["header"]; !ok {
-		t.Errorf("expected header key in output record, got: %v", rec)
+	if rec.Identifier == "" {
+		t.Errorf("expected non-empty identifier in output record")
+	}
+	if rec.ID == "" {
+		t.Errorf("expected non-empty id in output record")
 	}
 }

@@ -5,24 +5,18 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"git.archive.org/webgroup/scholar/trawler/counts"
-	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/orcid"
-	"git.archive.org/webgroup/scholar/trawler/pdf"
-	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/sdk/activity"
@@ -249,14 +243,16 @@ func (c crossrefDoc) SkipReason() string {
 	return ""
 }
 
-func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.Counts, err error) {
-	out = counts.Counts{}
+func ProcessLine(ctx context.Context, client *http.Client, source string, lineb []byte) (counts.Counts, *fatcat2.Release, error) {
+	out := counts.Counts{}
 	l := activity.GetLogger(ctx)
 
+	var release *fatcat2.Release
+
 	var xrefdoc crossrefDoc
-	err = json.Unmarshal(lineb, &xrefdoc)
+	err := json.Unmarshal(lineb, &xrefdoc)
 	if err != nil {
-		return
+		return out, release, err
 	}
 
 	l.Info(fmt.Sprintf("got a '%s' with doi '%s'", xrefdoc.Type, xrefdoc.DOI))
@@ -264,226 +260,46 @@ func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.C
 	if reason := xrefdoc.SkipReason(); reason != "" {
 		l.Info(fmt.Sprintf("skipping doi '%s': %s", xrefdoc.DOI, reason))
 		out.Releases.Skipped++
-		return out, nil
+		return out, release, nil
 	}
 
 	// Check the DOI
-	client := &http.Client{}
 
-	release, err := xrefToFc(client, xrefdoc)
+	release, err = xrefToFc(client, xrefdoc)
 	if err != nil {
-		return out, fmt.Errorf("could not transform xref->fc2: %w", err)
+		return out, release, fmt.Errorf("could not transform xref->fc2: %w", err)
 	}
 
 	foundId, err := fatcat2.LookupDoi(client, strings.ToLower(xrefdoc.DOI))
 	if err != nil {
-		return out, err
+		return out, release, err
 	}
 
 	if foundId == nil {
 		release.Source = source
-		r, err := createRelease(client, &out, release, xrefdoc)
+		release, err = createRelease(client, &out, *release, xrefdoc)
 		if err != nil {
-			return out, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)
+			return out, release, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)
 		}
-		release = *r
 		l.Debug(fmt.Sprintf("created release %s", release.ID))
 		out.Releases.Added++
 	} else {
 		// TODO here is where we could update release with info from xref should we so desire
-		release, err = fatcat2.GetRelease(client, *foundId)
+		r, err := fatcat2.GetRelease(client, *foundId)
 		if err != nil {
-			return out, fmt.Errorf("could not look up existing release: %w", err)
+			return out, release, fmt.Errorf("could not look up existing release: %w", err)
 		}
+		release = &r
 		out.Releases.Ignored++
 
 		l.Debug(fmt.Sprintf("found release %s", release.ID))
 	}
 
-	if reason := crawlSkipReason(release); reason != "" {
-		l.Info(fmt.Sprintf("crawl unwanted for release %s: %s", release.ID, reason))
-		return out, err
-	}
-
-	existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
-	if err != nil {
-		return out, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
-	}
-	if len(existingFiles) > 0 {
-		l.Info(fmt.Sprintf("skipping crawl, release %q already has %d file(s)", release.ID, len(existingFiles)))
-		return out, nil
-	}
-
-	out.Releases.CrawlWanted++
-
-	// porting the monster that is process_file from sandcrawler:python/sandcrawler/ingest_file.py
-	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
-		AccessKey: viper.GetString("spn.access_key"),
-		SecretKey: viper.GetString("spn.secret_key"),
-		Endpoint:  viper.GetString("spn.endpoint"),
-		Debug:     true,
-	})
-	if err != nil {
-		l.Debug(err.Error())
-		panic("spn client was not created")
-	}
-
-	cdxClient := cdx.NewClient(cdx.Config{
-		Auth:      viper.GetString("cdx.auth"),
-		Endpoint:  viper.GetString("cdx.endpoint"),
-		UserAgent: viper.GetString("cdx.user_agent"),
-		Retries:   viper.GetInt("cdx.retries"),
-		Backoff:   viper.GetDuration("cdx.backoff"),
-		Debug:     true,
-	})
-
-	var res crawling.CrawlResult
-
-	for _, u := range release.FulltextURLs() {
-		crawler := crawling.PDFCrawler{
-			SPNClient:       spnClient,
-			CDXClient:       cdxClient,
-			MaxHops:         8,
-			UserAgent:       viper.GetString("crawling.user_agent"),
-			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
-			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
-			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
-			Logger:          slog.Default(),
-		}
-
-		res, err = crawler.Crawl(u)
-
-		if err != nil {
-			l.Info(fmt.Sprintf("%s: get failed: %s", release.ID, err.Error()))
-			continue
-		}
-
-		l.Debug(fmt.Sprintf("%s: got result %#v", release.ID, res))
-		if res.Success {
-			break
-		}
-		// TODO check result -- if success, break and continue. otherwise..?
-		// results we care about later are going to be in the slog
-		// question is if we should only use result for success and errors for failure
-	}
-
-	if err != nil || !res.Success {
-		return out, nil
-	}
-
-	// TODO can share this pdf byte handling stuff between different upstreams
-
-	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
-
-	fid := uuid.New()
-
-	file := fatcat2.File{
-		ID:       fid,
-		Releases: []fatcat2.Release{release},
-		Mimetype: mimetype,
-		Source:   release.Source,
-		URLs: []fatcat2.FileURL{
-			{
-				Rel:    "wayback",
-				URL:    res.SnapshotUrl,
-				FileID: fid,
-			},
-		},
-	}
-
-	pdfBs, err := io.ReadAll(res.Content)
-	if err != nil {
-		return out, fmt.Errorf("could not read pdf bytes: %w", err)
-	}
-
-	if err = file.SetMetadata(pdfBs); err != nil {
-		return out, err
-	}
-
-	// TODO check if file exists. This can happen if we're re-running this
-	// workflow. NB--in that case, we've pulled all of the stuff from a previous
-	// crawl from CDX and don't need to worry about wasting SPN time assuming
-	// stuff is fresh enough which reminds me if we ever want to care about cdx
-	// freshness...
-	fileID, err := fatcat2.LookupSha256(client, file.Sha256)
-	if err != nil {
-		return out, fmt.Errorf("failed to look up checksum '%s': %w", file.Sha256, err)
-	}
-
-	// TODO we could verify that the existing file is attached to the release ID
-	// we're working with...
-
-	// TODO at this moment it's unknowable whether we have already extracted
-	// content from this PDF and indexed it. I'd like to fix that at some point
-	// either by carving up this into smaller activities or some check to see if
-	// we have the file in elasticsearch yet.
-
-	if fileID != nil {
-		l.Debug(fmt.Sprintf("ignoring known sha256 '%s' (rid: '%s'", file.Sha256, release.ID))
-		return out, nil
-	}
-
-	_, err = fatcat2.CreateFile(client, &file)
-	if err != nil {
-		return out, fmt.Errorf("fc2 api failed to make file for '%s': %w", file.URLs[0].URL, err)
-	}
-	l.Debug(fmt.Sprintf("created file %s", fid))
-	out.Releases.Acquired++
-
-	fileDoc := indexing.PrepareFatcatFileDoc(file)
-	bs, err := json.Marshal(fileDoc)
-	if err != nil {
-		return out, fmt.Errorf("failed to marshal file es doc: %w", err)
-	}
-
-	err = indexing.DoElasticIndex(client,
-		viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
-	if err != nil {
-		return out, fmt.Errorf("failed to index doc for file '%s': %w", file.ID, err)
-	}
-
-	pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
-	if err != nil {
-		return out, fmt.Errorf("blobproc processing failed: %w", err)
-	}
-
-	ictx := indexing.FulltextTransformCtx{
-		HttpClient: client,
-		Release:    release,
-		File:       &file,
-		PdfText:    pdfContent.PdfText,
-		GrobidXML:  pdfContent.GrobidXML,
-	}
-
-	if release.ContainerID != nil {
-		container, err := fatcat2.GetContainer(client, *release.ContainerID)
-		if err != nil {
-			return out, fmt.Errorf("could not fetch container '%s': %w", release.ContainerID, err)
-		}
-		ictx.Container = &container
-	}
-
-	esDoc := indexing.PrepareFulltextDoc(ictx)
-
-	//fmt.Println(esDoc)
-
-	bs, err = json.Marshal(esDoc)
-	if err != nil {
-		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
-	}
-
-	err = indexing.DoElasticIndex(client, viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
-	if err != nil {
-		return out, fmt.Errorf("indexing fulltext failed: %w", err)
-	}
-
-	out.Releases.Ingested++
-
-	return out, nil
+	return out, release, nil
 }
 
-func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (fatcat2.Release, error) {
-	release := fatcat2.Release{
+func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (*fatcat2.Release, error) {
+	release := &fatcat2.Release{
 		Contribs:    []fatcat2.ReleaseContrib{},
 		ExternalIDs: []fatcat2.ExternalID{},
 		Extra:       map[string]any{},
@@ -851,63 +667,4 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 	}
 
 	return &release, nil
-}
-
-// crawlSkipReason returns a reason to skip crawling or empty string if crawling is wanted;
-// specific to things gleaned from crossref (the DOI check)
-func crawlSkipReason(release fatcat2.Release) string {
-	doi := release.DOI()
-
-	if doi == "" {
-		return "no-doi"
-	}
-
-	if !release.IsPaperlike() {
-		return "not-paperlike"
-	}
-
-	doiPrefixBlocklist := viper.GetStringSlice("crawling.doi_prefix_blocklist")
-	for _, prefix := range doiPrefixBlocklist {
-		if strings.HasPrefix(doi, prefix) {
-			return "blocked-doi-prefix"
-		}
-	}
-
-	if len(release.FulltextURLs()) == 0 {
-		return "no-fulltext-urls"
-	}
-
-	// TODO this check would only ever apply to releases that we already have
-	// files for (see the is_preserved property) so I'm punting on it because it
-	// doesn't make much sense. I think it's for processing a fatcat changelog in
-	// a world where humans are updating things.
-	/*
-		  if (
-		    es.get("publisher_type") == "big5"
-		    and es.get("is_preserved")
-		    and not (es["is_oa"] or in_acceptlist)
-		):
-		    return False
-	*/
-
-	// TODO these two checks seem to apply for datacite and arxiv, respectively. Punting on them for now:
-	/*
-	 # figshare
-	 if doi and (doi.startswith("10.6084/") or doi.startswith("10.25384/")):
-	     # don't crawl "most recent version" (aka "group") DOIs
-	     if not release.version:
-	         return False
-
-	 # zenodo
-	 if doi and doi.startswith("10.5281/"):
-	     # if this is a "grouping" DOI of multiple "version" DOIs, do not crawl (will crawl the versioned DOIs)
-	     if release.extra and release.extra.get("relations"):
-	         for rel in release.extra["relations"]:
-	             if rel.get("relationType") == "HasVersion" and rel.get(
-	                 "relatedIdentifier", ""
-	             ).startswith("10.5281/"):
-	                 return False
-	*/
-
-	return ""
 }

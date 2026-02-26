@@ -15,6 +15,7 @@ import (
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
+	"git.archive.org/webgroup/scholar/trawler/crossref"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
@@ -191,12 +192,15 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
 	}
 
+	// TODO use an input/output pointer arg for release
+
 	var processLine func(context.Context, *http.Client, string, []byte) (counts.Counts, *fatcat2.Release, error)
 	switch upstream {
 	case "arxiv":
+		// TODO next
 		//processLine = arxiv.ProcessLine
 	case "crossref":
-		//processLine = crossref.ProcessLine
+		processLine = crossref.ProcessLine
 	case "pubmed":
 		processLine = pubmed.ProcessLine
 	default:
@@ -215,9 +219,58 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 		panic("nil release after processLine")
 	}
 
+	// check if we want to crawl
+
 	if !release.IsPaperlike() {
 		return out, nil
 	}
+
+	if len(release.ExternalIDs) == 0 {
+		return out, nil
+	}
+
+	doiPrefixBlocklist := viper.GetStringSlice("crawling.doi_prefix_blocklist")
+	doi := release.DOI()
+	if doi != "" {
+		for _, prefix := range doiPrefixBlocklist {
+			if strings.HasPrefix(doi, prefix) {
+				l.Info(fmt.Sprintf("skipping crawl for %q, doi prefix %q blocked", release.ID, prefix))
+				return out, nil
+			}
+		}
+	}
+
+	// TODO this check would only ever apply to releases that we already have
+	// files for (see the is_preserved property) so I'm punting on it because it
+	// doesn't make much sense. I think it's for processing a fatcat changelog in
+	// a world where humans are updating things.
+	/*
+		  if (
+		    es.get("publisher_type") == "big5"
+		    and es.get("is_preserved")
+		    and not (es["is_oa"] or in_acceptlist)
+		):
+		    return False
+	*/
+
+	// TODO these two checks seem to apply for datacite and arxiv, respectively. Punting on them for now:
+	/*
+	 # figshare
+	 if doi and (doi.startswith("10.6084/") or doi.startswith("10.25384/")):
+	     # don't crawl "most recent version" (aka "group") DOIs
+	     if not release.version:
+	         return False
+
+	 # zenodo
+	 if doi and doi.startswith("10.5281/"):
+	     # if this is a "grouping" DOI of multiple "version" DOIs, do not crawl (will crawl the versioned DOIs)
+	     if release.extra and release.extra.get("relations"):
+	         for rel in release.extra["relations"]:
+	             if rel.get("relationType") == "HasVersion" and rel.get(
+	                 "relatedIdentifier", ""
+	             ).startswith("10.5281/"):
+	                 return False
+	*/
 
 	urls := release.FulltextURLs()
 	if len(urls) == 0 {
@@ -309,10 +362,24 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 		return out, err
 	}
 
+	// TODO check if file exists. This can happen if we're re-running this
+	// workflow. NB--in that case, we've pulled all of the stuff from a previous
+	// crawl from CDX and don't need to worry about wasting SPN time assuming
+	// stuff is fresh enough which reminds me if we ever want to care about cdx
+	// freshness...
+
 	fileID, err := fatcat2.LookupSha256(client, file.Sha256)
 	if err != nil {
 		return out, fmt.Errorf("sha256 lookup failed: %w", err)
 	}
+
+	// TODO we could verify that the existing file is attached to the release ID
+	// we're working with...
+
+	// TODO at this moment it's unknowable whether we have already extracted
+	// content from this PDF and indexed it. I'd like to fix that at some point
+	// either by carving up this into smaller activities or some check to see if
+	// we have the file in elasticsearch yet.
 
 	if fileID != nil {
 		l.Info(fmt.Sprintf("ignoring known file %q for %q", file.Sha256, release.ID))

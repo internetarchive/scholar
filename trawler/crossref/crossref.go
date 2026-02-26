@@ -18,7 +18,6 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
-	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/orcid"
@@ -250,18 +249,11 @@ func (c crossrefDoc) SkipReason() string {
 	return ""
 }
 
-func ProcessCrossrefLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
+func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.Counts, err error) {
 	out = counts.Counts{}
-
-	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
-	if err != nil {
-		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
-	}
-
 	l := activity.GetLogger(ctx)
 
 	var xrefdoc crossrefDoc
-
 	err = json.Unmarshal(lineb, &xrefdoc)
 	if err != nil {
 		return
@@ -289,7 +281,7 @@ func ProcessCrossrefLine(ctx context.Context, in harvesting.ProcessLineInput) (o
 	}
 
 	if foundId == nil {
-		release.Source = in.Source
+		release.Source = source
 		r, err := createRelease(client, &out, release, xrefdoc)
 		if err != nil {
 			return out, fmt.Errorf("failed to create release for doi '%s': %w", xrefdoc.DOI, err)

@@ -17,7 +17,6 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
-	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/pdf"
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
@@ -325,17 +324,9 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 	return &r, nil
 }
 
-// ProcessArxivLine is the Temporal activity that processes a single arXiv
-// ndjson line from S3. It follows the same pattern as ProcessPubmedLine and
-// ProcessCrossrefLine.
-func ProcessArxivLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
+func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.Counts, err error) {
 	out = counts.Counts{}
 	l := activity.GetLogger(ctx)
-
-	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
-	if err != nil {
-		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
-	}
 
 	var rec arxivRecord
 	if err := json.Unmarshal(lineb, &rec); err != nil {
@@ -353,7 +344,7 @@ func ProcessArxivLine(ctx context.Context, in harvesting.ProcessLineInput) (out 
 
 	client := &http.Client{}
 
-	release := arxivToFc(&rec, in.Source)
+	release := arxivToFc(&rec, source)
 
 	// Lookup by versioned arxiv ID first, then DOI as fallback.
 	foundID, err := fatcat2.LookupArxiv(client, vid)

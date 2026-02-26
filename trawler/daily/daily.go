@@ -164,25 +164,39 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 		// - handlePDF
 		// but for now i'll keep it one per line
 
-		var processLine func(context.Context, harvesting.ProcessLineInput) (counts.Counts, error)
-		switch in.Upstream {
-		case "arxiv":
-			processLine = arxiv.ProcessArxivLine
-		case "crossref":
-			processLine = crossref.ProcessCrossrefLine
-		case "pubmed":
-			processLine = pubmed.ProcessPubmedLine
-		default:
-			panic("unknown upstream: " + in.Upstream)
-
-		}
-
-		err := workflow.ExecuteActivity(ctx, processLine, lin).Get(ctx, &c)
+		err := workflow.ExecuteActivity(ctx, ProcessLine, lin).Get(ctx, &c)
 		if err != nil {
 			return out, err
 		}
 		out = out.Add(c)
 	}
+	return out, nil
+}
+
+func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLineInput) (counts.Counts, error) {
+	out := counts.Counts{}
+	//l := activity.GetLogger(ctx)
+
+	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
+	if err != nil {
+		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
+	}
+
+	var processLine func(context.Context, string, []byte) (counts.Counts, error)
+	switch upstream {
+	case "arxiv":
+		processLine = arxiv.ProcessLine
+	case "crossref":
+		processLine = crossref.ProcessLine
+	case "pubmed":
+		processLine = pubmed.ProcessLine
+	default:
+		panic("unknown upstream: " + upstream)
+	}
+
+	// TODO processLine should also return entites for further processing
+	out, err = processLine(ctx, in.Source, lineb)
+
 	return out, nil
 }
 

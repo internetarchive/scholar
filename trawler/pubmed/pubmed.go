@@ -19,7 +19,6 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
-	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
 	"git.archive.org/webgroup/scholar/trawler/orcid"
@@ -655,14 +654,9 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 	return &r, nil
 }
 
-func ProcessPubmedLine(ctx context.Context, in harvesting.ProcessLineInput) (out counts.Counts, err error) {
+func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.Counts, err error) {
 	out = counts.Counts{}
 	l := activity.GetLogger(ctx)
-
-	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
-	if err != nil {
-		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
-	}
 
 	var rec pubmed2json.Record
 	if err := json.Unmarshal(lineb, &rec); err != nil {
@@ -688,7 +682,7 @@ func ProcessPubmedLine(ctx context.Context, in harvesting.ProcessLineInput) (out
 
 		client := &http.Client{}
 
-		release, err := pubmedToFc(client, article, in.Source)
+		release, err := pubmedToFc(client, article, source)
 		if err != nil {
 			return out, fmt.Errorf("pubmed->fc2 transform failed for pmid '%s': %w", pmid, err)
 		}

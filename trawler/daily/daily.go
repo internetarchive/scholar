@@ -2,17 +2,26 @@ package daily
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"os/exec"
 	"strings"
 	"time"
 
-	"git.archive.org/webgroup/scholar/trawler/arxiv"
+	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/counts"
-	"git.archive.org/webgroup/scholar/trawler/crossref"
+	"git.archive.org/webgroup/scholar/trawler/crawling"
+	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
+	"git.archive.org/webgroup/scholar/trawler/indexing"
+	"git.archive.org/webgroup/scholar/trawler/pdf"
 	"git.archive.org/webgroup/scholar/trawler/pubmed"
+	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
@@ -175,27 +184,193 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 
 func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLineInput) (counts.Counts, error) {
 	out := counts.Counts{}
-	//l := activity.GetLogger(ctx)
+	l := activity.GetLogger(ctx)
 
 	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
 	if err != nil {
 		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
 	}
 
-	var processLine func(context.Context, string, []byte) (counts.Counts, error)
+	var processLine func(context.Context, *http.Client, string, []byte) (counts.Counts, *fatcat2.Release, error)
 	switch upstream {
 	case "arxiv":
-		processLine = arxiv.ProcessLine
+		//processLine = arxiv.ProcessLine
 	case "crossref":
-		processLine = crossref.ProcessLine
+		//processLine = crossref.ProcessLine
 	case "pubmed":
 		processLine = pubmed.ProcessLine
 	default:
 		panic("unknown upstream: " + upstream)
 	}
 
-	// TODO processLine should also return entites for further processing
-	out, err = processLine(ctx, in.Source, lineb)
+	client := &http.Client{}
+	var release *fatcat2.Release
+
+	out, release, err = processLine(ctx, client, in.Source, lineb)
+	if err != nil {
+		return out, fmt.Errorf("%s processing failed: %w", upstream, err)
+	}
+
+	if release == nil {
+		panic("nil release after processLine")
+	}
+
+	if !release.IsPaperlike() {
+		return out, nil
+	}
+
+	urls := release.FulltextURLs()
+	if len(urls) == 0 {
+		l.Info(fmt.Sprintf("skipping crawl for %q, no fulltext URLs", release.ID))
+		return out, nil
+	}
+
+	existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
+	if err != nil {
+		return out, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
+	}
+	if len(existingFiles) > 0 {
+		l.Info(fmt.Sprintf("skipping crawl for %q, already has %d files", release.ID, len(existingFiles)))
+		return out, nil
+	}
+
+	out.Releases.CrawlWanted++
+
+	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
+		AccessKey: viper.GetString("spn.access_key"),
+		SecretKey: viper.GetString("spn.secret_key"),
+		Endpoint:  viper.GetString("spn.endpoint"),
+		Debug:     true,
+	})
+	if err != nil {
+		return out, fmt.Errorf("spn client creation failed: %w", err)
+	}
+
+	cdxClient := cdx.NewClient(cdx.Config{
+		Auth:      viper.GetString("cdx.auth"),
+		Endpoint:  viper.GetString("cdx.endpoint"),
+		UserAgent: viper.GetString("cdx.user_agent"),
+		Retries:   viper.GetInt("cdx.retries"),
+		Backoff:   viper.GetDuration("cdx.backoff"),
+		Debug:     true,
+	})
+
+	var res crawling.CrawlResult
+
+	for _, u := range urls {
+		crawler := crawling.PDFCrawler{
+			SPNClient:       spnClient,
+			CDXClient:       cdxClient,
+			MaxHops:         8,
+			UserAgent:       viper.GetString("crawling.user_agent"),
+			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
+			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
+			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
+			Logger:          slog.Default(),
+		}
+
+		res, err = crawler.Crawl(u)
+		if err != nil {
+			l.Info(fmt.Sprintf("crawl failed for %q, %q: %s", release.ID, u, err))
+			continue
+		}
+		if res.Success {
+			break
+		}
+	}
+
+	if err != nil || !res.Success {
+		return out, nil
+	}
+
+	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
+
+	fid := uuid.New()
+	file := fatcat2.File{
+		ID:       fid,
+		Releases: []fatcat2.Release{*release},
+		Mimetype: mimetype,
+		Source:   release.Source,
+		URLs: []fatcat2.FileURL{
+			{
+				Rel:    "wayback",
+				URL:    res.SnapshotUrl,
+				FileID: fid,
+			},
+		},
+	}
+
+	pdfBs, err := io.ReadAll(res.Content)
+	if err != nil {
+		return out, fmt.Errorf("could not read pdf bytes: %w", err)
+	}
+
+	if err = file.SetMetadata(pdfBs); err != nil {
+		return out, err
+	}
+
+	fileID, err := fatcat2.LookupSha256(client, file.Sha256)
+	if err != nil {
+		return out, fmt.Errorf("sha256 lookup failed: %w", err)
+	}
+
+	if fileID != nil {
+		l.Info(fmt.Sprintf("ignoring known file %q for %q", file.Sha256, release.ID))
+		return out, nil
+	}
+
+	_, err = fatcat2.CreateFile(client, &file)
+	if err != nil {
+		return out, fmt.Errorf("file creation failed: %w", err)
+	}
+	out.Releases.Acquired++
+
+	fileDoc := indexing.PrepareFatcatFileDoc(file)
+	bs, err := json.Marshal(fileDoc)
+	if err != nil {
+		return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
+	}
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
+	if err != nil {
+		return out, fmt.Errorf("failed to index file: %w", err)
+	}
+
+	pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
+	if err != nil {
+		return out, fmt.Errorf("blobproc processing failed: %w", err)
+	}
+
+	var container *fatcat2.Container
+	if release.ContainerID != nil {
+		c, err := fatcat2.GetContainer(client, *release.ContainerID)
+		if err != nil {
+			return out, fmt.Errorf("could not fetch container: %w", err)
+		}
+		container = &c
+	}
+
+	esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
+		HttpClient: client,
+		Release:    *release,
+		File:       &file,
+		PdfText:    pdfContent.PdfText,
+		GrobidXML:  pdfContent.GrobidXML,
+		Container:  container,
+	})
+
+	bs, err = json.Marshal(esDoc)
+	if err != nil {
+		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
+	}
+
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
+	if err != nil {
+		return out, fmt.Errorf("indexing fulltext failed: %w", err)
+	}
+
+	out.Releases.Ingested++
 
 	return out, nil
 }

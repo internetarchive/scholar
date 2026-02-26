@@ -663,219 +663,7 @@ func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.C
 		return out, fmt.Errorf("pubmed unmarshal: %w", err)
 	}
 
-	switch rec.Type {
-	case "article":
-		if rec.Article == nil {
-			l.Warn("pubmed record type is article but article field is nil")
-			out.Releases.Skipped++
-			return out, nil
-		}
-
-		article := *rec.Article
-		pmid := article.MedlineCitation.PMID.Value
-
-		if reason := skipReason(article); reason != "" {
-			l.Info("pubmed: skipping article", "pmid", pmid, "reason", reason)
-			out.Releases.Skipped++
-			return out, nil
-		}
-
-		client := &http.Client{}
-
-		release, err := pubmedToFc(client, article, source)
-		if err != nil {
-			return out, fmt.Errorf("pubmed->fc2 transform failed for pmid '%s': %w", pmid, err)
-		}
-
-		// Lookup by PMID first, then DOI as fallback
-		foundID, err := fatcat2.LookupPmid(client, pmid)
-		if err != nil {
-			return out, fmt.Errorf("pmid lookup failed for '%s': %w", pmid, err)
-		}
-
-		if foundID == nil && release.DOI() != "" {
-			foundID, err = fatcat2.LookupDoi(client, release.DOI())
-			if err != nil {
-				return out, fmt.Errorf("doi lookup failed for '%s': %w", release.DOI(), err)
-			}
-		}
-
-		if foundID != nil {
-			l.Debug("pubmed: found existing release", "pmid", pmid, "id", foundID)
-			release, err = fatcat2.GetRelease(client, *foundID)
-			if err != nil {
-				return out, fmt.Errorf("could not fetch existing release: %w", err)
-			}
-			out.Releases.Ignored++
-		} else {
-			r, err := createRelease(client, &out, release, article)
-			if err != nil {
-				return out, fmt.Errorf("could not create release for pmid '%s': %w", pmid, err)
-			}
-			release = *r
-			l.Debug("pubmed: created release", "pmid", pmid, "id", release.ID)
-			out.Releases.Added++
-		}
-
-		if !release.IsPaperlike() {
-			l.Info("pubmed: skipping crawl, not paperlike", "pmid", pmid, "type", release.Type)
-			return out, nil
-		}
-
-		urls := release.FulltextURLs()
-		if len(urls) == 0 {
-			l.Info("pubmed: skipping crawl, no fulltext URLs", "pmid", pmid)
-			return out, nil
-		}
-
-		existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
-		if err != nil {
-			return out, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
-		}
-		if len(existingFiles) > 0 {
-			l.Info("pubmed: skipping crawl, release already has files", "release_id", release.ID, "file_count", len(existingFiles))
-			return out, nil
-		}
-
-		out.Releases.CrawlWanted++
-
-		spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
-			AccessKey: viper.GetString("spn.access_key"),
-			SecretKey: viper.GetString("spn.secret_key"),
-			Endpoint:  viper.GetString("spn.endpoint"),
-			Debug:     true,
-		})
-		if err != nil {
-			return out, fmt.Errorf("spn client creation failed: %w", err)
-		}
-
-		cdxClient := cdx.NewClient(cdx.Config{
-			Auth:      viper.GetString("cdx.auth"),
-			Endpoint:  viper.GetString("cdx.endpoint"),
-			UserAgent: viper.GetString("cdx.user_agent"),
-			Retries:   viper.GetInt("cdx.retries"),
-			Backoff:   viper.GetDuration("cdx.backoff"),
-			Debug:     true,
-		})
-
-		var res crawling.CrawlResult
-
-		for _, u := range urls {
-			crawler := crawling.PDFCrawler{
-				SPNClient:       spnClient,
-				CDXClient:       cdxClient,
-				MaxHops:         8,
-				UserAgent:       viper.GetString("crawling.user_agent"),
-				WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
-				SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
-				Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
-				Logger:          slog.Default(),
-			}
-
-			res, err = crawler.Crawl(u)
-			if err != nil {
-				l.Info("pubmed: crawl failed", "pmid", pmid, "url", u, "err", err)
-				continue
-			}
-			if res.Success {
-				break
-			}
-		}
-
-		if err != nil || !res.Success {
-			return out, nil
-		}
-
-		mimetype, _, _ := strings.Cut(res.Mimetype, ";")
-
-		fid := uuid.New()
-		file := fatcat2.File{
-			ID:       fid,
-			Releases: []fatcat2.Release{release},
-			Mimetype: mimetype,
-			Source:   release.Source,
-			URLs: []fatcat2.FileURL{
-				{
-					Rel:    "wayback",
-					URL:    res.SnapshotUrl,
-					FileID: fid,
-				},
-			},
-		}
-
-		pdfBs, err := io.ReadAll(res.Content)
-		if err != nil {
-			return out, fmt.Errorf("could not read pdf bytes: %w", err)
-		}
-
-		if err = file.SetMetadata(pdfBs); err != nil {
-			return out, err
-		}
-
-		fileID, err := fatcat2.LookupSha256(client, file.Sha256)
-		if err != nil {
-			return out, fmt.Errorf("sha256 lookup failed: %w", err)
-		}
-
-		if fileID != nil {
-			l.Debug("pubmed: ignoring known file", "sha256", file.Sha256, "pmid", pmid)
-			return out, nil
-		}
-
-		_, err = fatcat2.CreateFile(client, &file)
-		if err != nil {
-			return out, fmt.Errorf("file creation failed: %w", err)
-		}
-		out.Releases.Acquired++
-
-		fileDoc := indexing.PrepareFatcatFileDoc(file)
-		bs, err := json.Marshal(fileDoc)
-		if err != nil {
-			return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
-		}
-		err = indexing.DoElasticIndex(client,
-			viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
-		if err != nil {
-			return out, fmt.Errorf("failed to index file: %w", err)
-		}
-
-		pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
-		if err != nil {
-			return out, fmt.Errorf("blobproc processing failed: %w", err)
-		}
-
-		var container *fatcat2.Container
-		if release.ContainerID != nil {
-			c, err := fatcat2.GetContainer(client, *release.ContainerID)
-			if err != nil {
-				return out, fmt.Errorf("could not fetch container: %w", err)
-			}
-			container = &c
-		}
-
-		esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
-			HttpClient: client,
-			Release:    release,
-			File:       &file,
-			PdfText:    pdfContent.PdfText,
-			GrobidXML:  pdfContent.GrobidXML,
-			Container:  container,
-		})
-
-		bs, err = json.Marshal(esDoc)
-		if err != nil {
-			return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
-		}
-
-		err = indexing.DoElasticIndex(client,
-			viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
-		if err != nil {
-			return out, fmt.Errorf("indexing fulltext failed: %w", err)
-		}
-
-		out.Releases.Ingested++
-
-	case "deleteCitation":
+	if rec.Type == "deleteCitation" {
 		if rec.DeleteCitation == nil {
 			l.Warn("pubmed record type is deleteCitation but deleteCitation field is nil")
 			out.Releases.Skipped++
@@ -886,10 +674,222 @@ func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.C
 			pmids = append(pmids, p.Value)
 		}
 		l.Info("pubmed: deleteCitation (no-op)", "count", len(pmids), "pmids", pmids)
+		return out, nil
+	}
 
-	default:
+	if rec.Type != "article" {
 		return out, fmt.Errorf("pubmed: unknown record type: %q", rec.Type)
 	}
+
+	if rec.Article == nil {
+		l.Warn("pubmed record type is article but article field is nil")
+		out.Releases.Skipped++
+		return out, nil
+	}
+
+	article := *rec.Article
+	pmid := article.MedlineCitation.PMID.Value
+
+	if reason := skipReason(article); reason != "" {
+		l.Info("pubmed: skipping article", "pmid", pmid, "reason", reason)
+		out.Releases.Skipped++
+		return out, nil
+	}
+
+	client := &http.Client{}
+
+	release, err := pubmedToFc(client, article, source)
+	if err != nil {
+		return out, fmt.Errorf("pubmed->fc2 transform failed for pmid '%s': %w", pmid, err)
+	}
+
+	// Lookup by PMID first, then DOI as fallback
+	foundID, err := fatcat2.LookupPmid(client, pmid)
+	if err != nil {
+		return out, fmt.Errorf("pmid lookup failed for '%s': %w", pmid, err)
+	}
+
+	if foundID == nil && release.DOI() != "" {
+		foundID, err = fatcat2.LookupDoi(client, release.DOI())
+		if err != nil {
+			return out, fmt.Errorf("doi lookup failed for '%s': %w", release.DOI(), err)
+		}
+	}
+
+	if foundID != nil {
+		l.Debug("pubmed: found existing release", "pmid", pmid, "id", foundID)
+		release, err = fatcat2.GetRelease(client, *foundID)
+		if err != nil {
+			return out, fmt.Errorf("could not fetch existing release: %w", err)
+		}
+		out.Releases.Ignored++
+	} else {
+		r, err := createRelease(client, &out, release, article)
+		if err != nil {
+			return out, fmt.Errorf("could not create release for pmid '%s': %w", pmid, err)
+		}
+		release = *r
+		l.Debug("pubmed: created release", "pmid", pmid, "id", release.ID)
+		out.Releases.Added++
+	}
+
+	if !release.IsPaperlike() {
+		l.Info("pubmed: skipping crawl, not paperlike", "pmid", pmid, "type", release.Type)
+		return out, nil
+	}
+
+	urls := release.FulltextURLs()
+	if len(urls) == 0 {
+		l.Info("pubmed: skipping crawl, no fulltext URLs", "pmid", pmid)
+		return out, nil
+	}
+
+	existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
+	if err != nil {
+		return out, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
+	}
+	if len(existingFiles) > 0 {
+		l.Info("pubmed: skipping crawl, release already has files", "release_id", release.ID, "file_count", len(existingFiles))
+		return out, nil
+	}
+
+	out.Releases.CrawlWanted++
+
+	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
+		AccessKey: viper.GetString("spn.access_key"),
+		SecretKey: viper.GetString("spn.secret_key"),
+		Endpoint:  viper.GetString("spn.endpoint"),
+		Debug:     true,
+	})
+	if err != nil {
+		return out, fmt.Errorf("spn client creation failed: %w", err)
+	}
+
+	cdxClient := cdx.NewClient(cdx.Config{
+		Auth:      viper.GetString("cdx.auth"),
+		Endpoint:  viper.GetString("cdx.endpoint"),
+		UserAgent: viper.GetString("cdx.user_agent"),
+		Retries:   viper.GetInt("cdx.retries"),
+		Backoff:   viper.GetDuration("cdx.backoff"),
+		Debug:     true,
+	})
+
+	var res crawling.CrawlResult
+
+	for _, u := range urls {
+		crawler := crawling.PDFCrawler{
+			SPNClient:       spnClient,
+			CDXClient:       cdxClient,
+			MaxHops:         8,
+			UserAgent:       viper.GetString("crawling.user_agent"),
+			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
+			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
+			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
+			Logger:          slog.Default(),
+		}
+
+		res, err = crawler.Crawl(u)
+		if err != nil {
+			l.Info("pubmed: crawl failed", "pmid", pmid, "url", u, "err", err)
+			continue
+		}
+		if res.Success {
+			break
+		}
+	}
+
+	if err != nil || !res.Success {
+		return out, nil
+	}
+
+	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
+
+	fid := uuid.New()
+	file := fatcat2.File{
+		ID:       fid,
+		Releases: []fatcat2.Release{release},
+		Mimetype: mimetype,
+		Source:   release.Source,
+		URLs: []fatcat2.FileURL{
+			{
+				Rel:    "wayback",
+				URL:    res.SnapshotUrl,
+				FileID: fid,
+			},
+		},
+	}
+
+	pdfBs, err := io.ReadAll(res.Content)
+	if err != nil {
+		return out, fmt.Errorf("could not read pdf bytes: %w", err)
+	}
+
+	if err = file.SetMetadata(pdfBs); err != nil {
+		return out, err
+	}
+
+	fileID, err := fatcat2.LookupSha256(client, file.Sha256)
+	if err != nil {
+		return out, fmt.Errorf("sha256 lookup failed: %w", err)
+	}
+
+	if fileID != nil {
+		l.Debug("pubmed: ignoring known file", "sha256", file.Sha256, "pmid", pmid)
+		return out, nil
+	}
+
+	_, err = fatcat2.CreateFile(client, &file)
+	if err != nil {
+		return out, fmt.Errorf("file creation failed: %w", err)
+	}
+	out.Releases.Acquired++
+
+	fileDoc := indexing.PrepareFatcatFileDoc(file)
+	bs, err := json.Marshal(fileDoc)
+	if err != nil {
+		return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
+	}
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
+	if err != nil {
+		return out, fmt.Errorf("failed to index file: %w", err)
+	}
+
+	pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
+	if err != nil {
+		return out, fmt.Errorf("blobproc processing failed: %w", err)
+	}
+
+	var container *fatcat2.Container
+	if release.ContainerID != nil {
+		c, err := fatcat2.GetContainer(client, *release.ContainerID)
+		if err != nil {
+			return out, fmt.Errorf("could not fetch container: %w", err)
+		}
+		container = &c
+	}
+
+	esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
+		HttpClient: client,
+		Release:    release,
+		File:       &file,
+		PdfText:    pdfContent.PdfText,
+		GrobidXML:  pdfContent.GrobidXML,
+		Container:  container,
+	})
+
+	bs, err = json.Marshal(esDoc)
+	if err != nil {
+		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
+	}
+
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
+	if err != nil {
+		return out, fmt.Errorf("indexing fulltext failed: %w", err)
+	}
+
+	out.Releases.Ingested++
 
 	return out, nil
 }

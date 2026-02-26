@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"git.archive.org/webgroup/scholar/trawler/cmd/arxivcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/crossrefcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/pubmedcmd"
@@ -43,6 +44,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file override")
 
+	rootCmd.AddCommand(arxivcmd.Cmd)
 	rootCmd.AddCommand(crossrefcmd.Cmd)
 	rootCmd.AddCommand(indexcmd.IndexCmd)
 	rootCmd.AddCommand(pubmedcmd.Cmd)

@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/arxiv"
 	"git.archive.org/webgroup/scholar/trawler/crossref"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/pubmed"
@@ -116,6 +117,7 @@ func StartWorker(d WorkerDetails) error {
 	} else if d.Access == "internal" {
 		w.RegisterWorkflow(DailyCrawlWorkflow)
 		w.RegisterWorkflow(LineBatchWorkflow)
+		w.RegisterActivity(arxiv.ProcessArxivLine)
 		w.RegisterActivity(crossref.ProcessCrossrefLine)
 		w.RegisterActivity(pubmed.ProcessPubmedLine)
 		w.RegisterActivity(harvesting.FindLineBatch)

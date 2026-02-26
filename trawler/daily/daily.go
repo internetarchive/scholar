@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/arxiv"
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crossref"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
@@ -165,6 +166,8 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 
 		var processLine func(context.Context, harvesting.ProcessLineInput) (counts.Counts, error)
 		switch in.Upstream {
+		case "arxiv":
+			processLine = arxiv.ProcessArxivLine
 		case "crossref":
 			processLine = crossref.ProcessCrossrefLine
 		case "pubmed":

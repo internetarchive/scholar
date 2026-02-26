@@ -143,6 +143,15 @@ func (r Release) PMCID() string {
 	return ""
 }
 
+func (r Release) ArxivID() string {
+	for _, eid := range r.ExternalIDs {
+		if eid.Type == "arxiv" {
+			return eid.Value
+		}
+	}
+	return ""
+}
+
 func (r Release) IsPaperlike() bool {
 	paperLikeTypes := []string{
 		"article-journal",
@@ -201,6 +210,10 @@ func (r Release) FulltextURLs() []string {
 
 	out := []string{}
 
+	if r.ArxivID() != "" {
+		out = append(out, fmt.Sprintf("https://arxiv.org/pdf/%s.pdf", r.ArxivID()))
+	}
+
 	if r.PMCID() != "" {
 		out = append(out, fmt.Sprintf(
 			"http://europepmc.org/backend/ptpmcrender.fcgi?accid=%s&blobtype=pdf", r.PMCID()))
@@ -210,7 +223,6 @@ func (r Release) FulltextURLs() []string {
 		out = append(out, fmt.Sprintf("https://doi.org/%s", r.DOI()))
 	}
 
-	// TODO arxiv
 	// TODO doaj
 	// TODO hdl
 	return out
@@ -671,6 +683,11 @@ func LookupDoi(c *http.Client, doi string) (*uuid.UUID, error) {
 // LookupPmid returns the ID of a fatcat2 Release with the given PMID, if any.
 func LookupPmid(c *http.Client, pmid string) (*uuid.UUID, error) {
 	return lookup(c, "release", "pmid", pmid)
+}
+
+// LookupArxiv returns the ID of a fatcat2 Release with the given arXiv ID, if any.
+func LookupArxiv(c *http.Client, arxivID string) (*uuid.UUID, error) {
+	return lookup(c, "release", "arxiv", arxivID)
 }
 
 // LookupOrcid returns the ID of a fatcat2 Creator with the given orcid, if any.

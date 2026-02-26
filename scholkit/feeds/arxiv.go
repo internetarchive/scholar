@@ -2,17 +2,112 @@ package feeds
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/internetarchive/scholar/scholkit/atomicfile"
 	"github.com/klauspost/compress/zstd"
 	"github.com/miku/metha"
 )
+
+// ArxivRecord is the serializable flat representation of an OAI-PMH arXiv
+// record. Each line in the NDJSON output files is one JSON-encoded ArxivRecord.
+type ArxivRecord struct {
+	Identifier string        `json:"identifier"` // e.g. "oai:arXiv.org:2301.12345"
+	Status     string        `json:"status"`     // "deleted" or ""
+	Datestamp  string        `json:"datestamp"`  // "2023-01-15"
+	SetSpec    []string      `json:"set_spec"`
+	ID         string        `json:"id"`         // "2301.12345" (no version suffix)
+	Title      string        `json:"title"`
+	Authors    []ArxivAuthor `json:"authors"`
+	Categories string        `json:"categories"` // space-separated, e.g. "cs.AI cs.LG"
+	Abstract   string        `json:"abstract"`
+	DOI        string        `json:"doi"`
+	Created    string        `json:"created"` // "2007-04-02"
+	Updated    string        `json:"updated"`
+	Comments   string        `json:"comments"`
+	License    string        `json:"license"`
+	JournalRef string        `json:"journal_ref"`
+	ReportNo   string        `json:"report_no"`
+}
+
+// ArxivAuthor holds parsed author name components from the arXiv OAI format.
+type ArxivAuthor struct {
+	KeyName     string `json:"keyname"`
+	ForeName    string `json:"forename"`
+	Suffix      string `json:"suffix"`
+	Affiliation string `json:"affiliation"`
+}
+
+// arXivMeta is used to XML-unmarshal the inner body of a metha.Record when
+// the OAI metadata prefix is "arXiv".
+type arXivMeta struct {
+	XMLName    xml.Name `xml:"arXiv"`
+	ID         string   `xml:"id"`
+	Title      string   `xml:"title"`
+	Authors    struct {
+		Author []struct {
+			KeyName     string `xml:"keyname"`
+			ForeName    string `xml:"forenames"`
+			Suffix      string `xml:"suffix"`
+			Affiliation string `xml:"affiliation"`
+		} `xml:"author"`
+	} `xml:"authors"`
+	Categories string `xml:"categories"`
+	Abstract   string `xml:"abstract"`
+	DOI        string `xml:"doi"`
+	Created    string `xml:"created"`
+	Updated    string `xml:"updated"`
+	Comments   string `xml:"comments"`
+	License    string `xml:"license"`
+	JournalRef string `xml:"journal-ref"`
+	ReportNo   string `xml:"report-no"`
+}
+
+// flattenArxivRecord converts a metha.Record into an ArxivRecord with
+// structured fields suitable for JSON serialization.
+func flattenArxivRecord(r *metha.Record) *ArxivRecord {
+	ar := &ArxivRecord{
+		Identifier: r.Header.Identifier,
+		Status:     r.Header.Status,
+		Datestamp:  r.Header.DateStamp,
+		SetSpec:    r.Header.SetSpec,
+	}
+	if len(r.Metadata.Body) == 0 {
+		return ar
+	}
+	var meta arXivMeta
+	if err := xml.Unmarshal(r.Metadata.Body, &meta); err != nil {
+		log.Printf("arxiv: could not unmarshal metadata for %s: %v", r.Header.Identifier, err)
+		return ar
+	}
+	ar.ID = meta.ID
+	ar.Title = strings.TrimSpace(meta.Title)
+	ar.Categories = strings.TrimSpace(meta.Categories)
+	ar.Abstract = strings.TrimSpace(meta.Abstract)
+	ar.DOI = strings.TrimSpace(meta.DOI)
+	ar.Created = meta.Created
+	ar.Updated = meta.Updated
+	ar.Comments = strings.TrimSpace(meta.Comments)
+	ar.License = meta.License
+	ar.JournalRef = strings.TrimSpace(meta.JournalRef)
+	ar.ReportNo = strings.TrimSpace(meta.ReportNo)
+	for _, a := range meta.Authors.Author {
+		ar.Authors = append(ar.Authors, ArxivAuthor{
+			KeyName:     a.KeyName,
+			ForeName:    a.ForeName,
+			Suffix:      a.Suffix,
+			Affiliation: a.Affiliation,
+		})
+	}
+	return ar
+}
 
 const (
 	arxivDefaultBaseURL        = "https://export.arxiv.org/oai2"
@@ -92,7 +187,7 @@ func (h *ArxivHarvester) WriteDaySlice(t time.Time, dir, prefix string) error {
 }
 
 // WriteSlice fetches all arXiv OAI records with datestamps between from and
-// until, writing NDJSON to w. Each line is a JSON-encoded metha.Record.
+// until, writing NDJSON to w. Each line is a JSON-encoded ArxivRecord.
 func (h *ArxivHarvester) WriteSlice(w io.Writer, from, until time.Time) error {
 	enc := json.NewEncoder(w)
 	client := h.client()
@@ -120,7 +215,8 @@ func (h *ArxivHarvester) WriteSlice(w io.Writer, from, until time.Time) error {
 			return fmt.Errorf("arxiv oai error: %v", resp.Error)
 		}
 		for i := range resp.ListRecords.Records {
-			if err := enc.Encode(&resp.ListRecords.Records[i]); err != nil {
+			flat := flattenArxivRecord(&resp.ListRecords.Records[i])
+			if err := enc.Encode(flat); err != nil {
 				return fmt.Errorf("arxiv encode record: %v", err)
 			}
 		}

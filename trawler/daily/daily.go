@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/arxiv"
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
@@ -197,8 +198,7 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 	var processLine func(context.Context, *http.Client, string, []byte) (counts.Counts, *fatcat2.Release, error)
 	switch upstream {
 	case "arxiv":
-		// TODO next
-		//processLine = arxiv.ProcessLine
+		processLine = arxiv.ProcessLine
 	case "crossref":
 		processLine = crossref.ProcessLine
 	case "pubmed":
@@ -220,6 +220,7 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 	}
 
 	// check if we want to crawl
+	// TODO make this a helper so it can be unit tested
 
 	if !release.IsPaperlike() {
 		return out, nil

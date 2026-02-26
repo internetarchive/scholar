@@ -5,22 +5,14 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"io"
-
-	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"git.archive.org/webgroup/scholar/trawler/counts"
-	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
-	"git.archive.org/webgroup/scholar/trawler/pdf"
-	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
-	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/sdk/activity"
 )
@@ -211,8 +203,8 @@ func categories(rec *arxivRecord) []string {
 }
 
 // arxivToFc transforms an arxivRecord into a fatcat2.Release.
-func arxivToFc(rec *arxivRecord, source string) fatcat2.Release {
-	release := fatcat2.Release{
+func arxivToFc(rec *arxivRecord, source string) *fatcat2.Release {
+	release := &fatcat2.Release{
 		Contribs:    []fatcat2.ReleaseContrib{},
 		ExternalIDs: []fatcat2.ExternalID{},
 		Extra:       map[string]any{},
@@ -324,13 +316,15 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 	return &r, nil
 }
 
-func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.Counts, err error) {
-	out = counts.Counts{}
+func ProcessLine(ctx context.Context, client *http.Client, source string, lineb []byte) (counts.Counts, *fatcat2.Release, error) {
+	out := counts.Counts{}
 	l := activity.GetLogger(ctx)
+
+	var release *fatcat2.Release
 
 	var rec arxivRecord
 	if err := json.Unmarshal(lineb, &rec); err != nil {
-		return out, fmt.Errorf("arxiv unmarshal: %w", err)
+		return out, release, fmt.Errorf("arxiv unmarshal: %w", err)
 	}
 
 	id := arxivID(&rec)
@@ -339,190 +333,40 @@ func ProcessLine(ctx context.Context, source string, lineb []byte) (out counts.C
 	if reason := skipReason(&rec); reason != "" {
 		l.Info("arxiv: skipping record", "id", id, "reason", reason)
 		out.Releases.Skipped++
-		return out, nil
+		return out, release, nil
 	}
 
-	client := &http.Client{}
-
-	release := arxivToFc(&rec, source)
+	release = arxivToFc(&rec, source)
 
 	// Lookup by versioned arxiv ID first, then DOI as fallback.
 	foundID, err := fatcat2.LookupArxiv(client, vid)
 	if err != nil {
-		return out, fmt.Errorf("arxiv lookup failed for %q: %w", vid, err)
+		return out, release, fmt.Errorf("arxiv lookup failed for %q: %w", vid, err)
 	}
 
 	if foundID == nil && release.DOI() != "" {
 		foundID, err = fatcat2.LookupDoi(client, release.DOI())
 		if err != nil {
-			return out, fmt.Errorf("doi lookup failed for %q: %w", release.DOI(), err)
+			return out, release, fmt.Errorf("doi lookup failed for %q: %w", release.DOI(), err)
 		}
 	}
 
 	if foundID != nil {
 		l.Debug("arxiv: found existing release", "id", vid, "release_id", foundID)
-		release, err = fatcat2.GetRelease(client, *foundID)
+		r, err := fatcat2.GetRelease(client, *foundID)
 		if err != nil {
-			return out, fmt.Errorf("could not fetch existing release: %w", err)
+			return out, release, fmt.Errorf("could not fetch existing release: %w", err)
 		}
+		release = &r
 		out.Releases.Ignored++
 	} else {
-		r, err := createRelease(client, &out, release)
+		release, err = createRelease(client, &out, *release)
 		if err != nil {
-			return out, fmt.Errorf("could not create release for arxiv %q: %w", vid, err)
+			return out, release, fmt.Errorf("could not create release for arxiv %q: %w", vid, err)
 		}
-		release = *r
 		l.Debug("arxiv: created release", "id", vid, "release_id", release.ID)
 		out.Releases.Added++
 	}
 
-	if !release.IsPaperlike() {
-		l.Info("arxiv: skipping crawl, not paperlike", "id", id, "type", release.Type)
-		return out, nil
-	}
-
-	urls := release.FulltextURLs()
-	if len(urls) == 0 {
-		l.Info("arxiv: skipping crawl, no fulltext URLs", "id", id)
-		return out, nil
-	}
-
-	existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
-	if err != nil {
-		return out, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
-	}
-	if len(existingFiles) > 0 {
-		l.Info("arxiv: skipping crawl, release already has files", "release_id", release.ID)
-		return out, nil
-	}
-
-	out.Releases.CrawlWanted++
-
-	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
-		AccessKey: viper.GetString("spn.access_key"),
-		SecretKey: viper.GetString("spn.secret_key"),
-		Endpoint:  viper.GetString("spn.endpoint"),
-		Debug:     true,
-	})
-	if err != nil {
-		return out, fmt.Errorf("spn client creation failed: %w", err)
-	}
-
-	cdxClient := cdx.NewClient(cdx.Config{
-		Auth:      viper.GetString("cdx.auth"),
-		Endpoint:  viper.GetString("cdx.endpoint"),
-		UserAgent: viper.GetString("cdx.user_agent"),
-		Retries:   viper.GetInt("cdx.retries"),
-		Backoff:   viper.GetDuration("cdx.backoff"),
-		Debug:     true,
-	})
-
-	var res crawling.CrawlResult
-
-	for _, u := range urls {
-		crawler := crawling.PDFCrawler{
-			SPNClient:       spnClient,
-			CDXClient:       cdxClient,
-			MaxHops:         8,
-			UserAgent:       viper.GetString("crawling.user_agent"),
-			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
-			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
-			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
-			Logger:          slog.Default(),
-		}
-
-		res, err = crawler.Crawl(u)
-		if err != nil {
-			l.Info("arxiv: crawl failed", "id", id, "url", u, "err", err)
-			continue
-		}
-		if res.Success {
-			break
-		}
-	}
-
-	if err != nil || !res.Success {
-		return out, nil
-	}
-
-	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
-
-	fid := uuid.New()
-	file := fatcat2.File{
-		ID:       fid,
-		Releases: []fatcat2.Release{release},
-		Mimetype: mimetype,
-		Source:   release.Source,
-		URLs: []fatcat2.FileURL{
-			{
-				Rel:    "wayback",
-				URL:    res.SnapshotUrl,
-				FileID: fid,
-			},
-		},
-	}
-
-	pdfBs, err := io.ReadAll(res.Content)
-	if err != nil {
-		return out, fmt.Errorf("could not read pdf bytes: %w", err)
-	}
-
-	if err = file.SetMetadata(pdfBs); err != nil {
-		return out, err
-	}
-
-	fileID, err := fatcat2.LookupSha256(client, file.Sha256)
-	if err != nil {
-		return out, fmt.Errorf("sha256 lookup failed: %w", err)
-	}
-
-	if fileID != nil {
-		l.Debug("arxiv: ignoring known file", "sha256", file.Sha256, "id", id)
-		return out, nil
-	}
-
-	_, err = fatcat2.CreateFile(client, &file)
-	if err != nil {
-		return out, fmt.Errorf("file creation failed: %w", err)
-	}
-	out.Releases.Acquired++
-
-	fileDoc := indexing.PrepareFatcatFileDoc(file)
-	bs, err := json.Marshal(fileDoc)
-	if err != nil {
-		return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
-	}
-	err = indexing.DoElasticIndex(client,
-		viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
-	if err != nil {
-		return out, fmt.Errorf("failed to index file: %w", err)
-	}
-
-	pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
-	if err != nil {
-		return out, fmt.Errorf("blobproc processing failed: %w", err)
-	}
-
-	esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
-		HttpClient: client,
-		Release:    release,
-		File:       &file,
-		PdfText:    pdfContent.PdfText,
-		GrobidXML:  pdfContent.GrobidXML,
-	})
-
-	bs, err = json.Marshal(esDoc)
-	if err != nil {
-		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
-	}
-
-	err = indexing.DoElasticIndex(client,
-		viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
-	if err != nil {
-		return out, fmt.Errorf("indexing fulltext failed: %w", err)
-	}
-
-	out.Releases.Ingested++
-
-	return out, nil
+	return out, release, nil
 }

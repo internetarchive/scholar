@@ -33,6 +33,118 @@ func Test_File_SetMetadata(t *testing.T) {
 	}
 }
 
+func Test_Release_IsPaperlike(t *testing.T) {
+	cs := []struct {
+		releaseType string
+		expected    bool
+	}{
+		{"article-journal", true},
+		{"book", true},
+		{"paper-conference", true},
+		{"chapter", true},
+		{"report", true},
+		{"thesis", true},
+		{"dataset", false},
+		{"software", false},
+		{"", false},
+	}
+
+	for _, c := range cs {
+		t.Run(c.releaseType, func(t *testing.T) {
+			r := Release{Type: c.releaseType}
+			if r.IsPaperlike() != c.expected {
+				t.Errorf("type %q: expected IsPaperlike()=%v, got %v", c.releaseType, c.expected, r.IsPaperlike())
+			}
+		})
+	}
+}
+
+func Test_Release_FulltextURLs(t *testing.T) {
+	cs := []struct {
+		name     string
+		release  Release
+		expected []string
+	}{
+		{
+			name:     "no IDs",
+			release:  Release{},
+			expected: []string{},
+		},
+		{
+			name: "arxiv only",
+			release: Release{
+				ExternalIDs: []ExternalID{{Type: "arxiv", Value: "2301.00001"}},
+			},
+			expected: []string{"https://arxiv.org/pdf/2301.00001.pdf"},
+		},
+		{
+			name: "pmcid only",
+			release: Release{
+				ExternalIDs: []ExternalID{{Type: "pmcid", Value: "PMC1234567"}},
+			},
+			expected: []string{
+				"http://europepmc.org/backend/ptpmcrender.fcgi?accid=PMC1234567&blobtype=pdf",
+			},
+		},
+		{
+			name: "doi only",
+			release: Release{
+				ExternalIDs: []ExternalID{{Type: "doi", Value: "10.1234/foo"}},
+			},
+			expected: []string{"https://doi.org/10.1234/foo"},
+		},
+		{
+			name: "pmid alone yields no URLs",
+			release: Release{
+				ExternalIDs: []ExternalID{{Type: "pmid", Value: "12345678"}},
+			},
+			expected: []string{},
+		},
+		{
+			name: "arxiv + doi: arxiv first",
+			release: Release{
+				ExternalIDs: []ExternalID{
+					{Type: "arxiv", Value: "2301.00001"},
+					{Type: "doi", Value: "10.1234/foo"},
+				},
+			},
+			expected: []string{
+				"https://arxiv.org/pdf/2301.00001.pdf",
+				"https://doi.org/10.1234/foo",
+			},
+		},
+		{
+			name: "all three: arxiv, pmcid, doi",
+			release: Release{
+				ExternalIDs: []ExternalID{
+					{Type: "arxiv", Value: "2301.00001"},
+					{Type: "pmcid", Value: "PMC9999"},
+					{Type: "doi", Value: "10.1234/bar"},
+				},
+			},
+			expected: []string{
+				"https://arxiv.org/pdf/2301.00001.pdf",
+				"http://europepmc.org/backend/ptpmcrender.fcgi?accid=PMC9999&blobtype=pdf",
+				"https://doi.org/10.1234/bar",
+			},
+		},
+	}
+
+	for _, c := range cs {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.release.FulltextURLs()
+			if len(got) != len(c.expected) {
+				t.Fatalf("expected %d URLs, got %d: %v", len(c.expected), len(got), got)
+			}
+			for i, u := range got {
+				if u != c.expected[i] {
+					t.Errorf("URL[%d]: expected %q, got %q", i, c.expected[i], u)
+				}
+			}
+		})
+	}
+}
+
 const sample = `
 A PIECE OF COFFEE.
 

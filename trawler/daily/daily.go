@@ -219,27 +219,13 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 		panic("nil release after processLine")
 	}
 
-	// check if we want to crawl
-	// TODO make this a helper so it can be unit tested
-
-	if !release.IsPaperlike() {
-		return out, nil
-	}
-
-	if len(release.ExternalIDs) == 0 {
-		return out, nil
-	}
-
 	doiPrefixBlocklist := viper.GetStringSlice("crawling.doi_prefix_blocklist")
-	doi := release.DOI()
-	if doi != "" {
-		for _, prefix := range doiPrefixBlocklist {
-			if strings.HasPrefix(doi, prefix) {
-				l.Info(fmt.Sprintf("skipping crawl for %q, doi prefix %q blocked", release.ID, prefix))
-				return out, nil
-			}
-		}
+	if ok, reason := shouldCrawlRelease(release, doiPrefixBlocklist); !ok {
+		l.Info(fmt.Sprintf("skipping crawl for %q: %s", release.ID, reason))
+		return out, nil
 	}
+
+	urls := release.FulltextURLs()
 
 	// TODO this check would only ever apply to releases that we already have
 	// files for (see the is_preserved property) so I'm punting on it because it
@@ -272,12 +258,6 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 	             ).startswith("10.5281/"):
 	                 return False
 	*/
-
-	urls := release.FulltextURLs()
-	if len(urls) == 0 {
-		l.Info(fmt.Sprintf("skipping crawl for %q, no fulltext URLs", release.ID))
-		return out, nil
-	}
 
 	existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
 	if err != nil {
@@ -441,6 +421,34 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 	out.Releases.Ingested++
 
 	return out, nil
+}
+
+// shouldCrawlRelease returns false with a reason string when we should skip
+// attempting to crawl a release's fulltext. It encapsulates the pure
+// decision logic so it can be unit tested independently of ProcessLine's I/O.
+func shouldCrawlRelease(release *fatcat2.Release, doiPrefixBlocklist []string) (bool, string) {
+	if !release.IsPaperlike() {
+		return false, "not-paperlike"
+	}
+
+	if len(release.ExternalIDs) == 0 {
+		return false, "no-extids"
+	}
+
+	doi := release.DOI()
+	if doi != "" {
+		for _, prefix := range doiPrefixBlocklist {
+			if strings.HasPrefix(doi, prefix) {
+				return false, fmt.Sprintf("doi-prefix-blocked:%s", prefix)
+			}
+		}
+	}
+
+	if len(release.FulltextURLs()) == 0 {
+		return false, "no-fulltext-urls"
+	}
+
+	return true, ""
 }
 
 type scholkitScrapeInput struct {

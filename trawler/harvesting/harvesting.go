@@ -118,6 +118,7 @@ type ProcessLineInput struct {
 	LineStart int64
 	Length    int64
 	Source    string
+	Upstream  string
 }
 
 func GetLine(ctx context.Context, s3key string, start, length int64) ([]byte, error) {

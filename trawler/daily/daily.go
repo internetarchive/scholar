@@ -160,8 +160,9 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 	lin := harvesting.ProcessLineInput{
-		S3Key:  in.S3Key,
-		Source: in.Source,
+		S3Key:    in.S3Key,
+		Source:   in.Source,
+		Upstream: in.Upstream,
 	}
 	for _, offset := range in.Offsets {
 		lin.LineStart = offset[0]
@@ -175,7 +176,7 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 		// - handlePDF
 		// but for now i'll keep it one per line
 
-		err := workflow.ExecuteActivity(ctx, ProcessLine, in.Upstream, lin).Get(ctx, &c)
+		err := workflow.ExecuteActivity(ctx, ProcessLine, lin).Get(ctx, &c)
 		if err != nil {
 			return out, err
 		}
@@ -184,7 +185,7 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 	return out, nil
 }
 
-func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLineInput) (counts.Counts, error) {
+func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Counts, error) {
 	out := counts.Counts{}
 	l := activity.GetLogger(ctx)
 
@@ -196,7 +197,7 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 	// TODO use an input/output pointer arg for release
 
 	var processLine func(context.Context, *http.Client, string, []byte) (counts.Counts, *fatcat2.Release, error)
-	switch upstream {
+	switch in.Upstream {
 	case "arxiv":
 		processLine = arxiv.ProcessLine
 	case "crossref":
@@ -204,7 +205,7 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 	case "pubmed":
 		processLine = pubmed.ProcessLine
 	default:
-		panic("unknown upstream: " + upstream)
+		panic("unknown upstream: " + in.Upstream)
 	}
 
 	client := &http.Client{}
@@ -212,7 +213,7 @@ func ProcessLine(ctx context.Context, upstream string, in harvesting.ProcessLine
 
 	out, release, err = processLine(ctx, client, in.Source, lineb)
 	if err != nil {
-		return out, fmt.Errorf("%s processing failed: %w", upstream, err)
+		return out, fmt.Errorf("%s processing failed: %w", in.Upstream, err)
 	}
 
 	if release == nil {

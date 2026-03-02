@@ -175,7 +175,7 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 		// - handlePDF
 		// but for now i'll keep it one per line
 
-		err := workflow.ExecuteActivity(ctx, ProcessLine, lin).Get(ctx, &c)
+		err := workflow.ExecuteActivity(ctx, ProcessLine, in.Upstream, lin).Get(ctx, &c)
 		if err != nil {
 			return out, err
 		}

@@ -73,7 +73,7 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 	out.Version = release.Version
 
 	out.Publisher = release.Publisher
-	if out.Publisher == "" {
+	if out.Publisher == "" && container != nil {
 		out.Publisher = container.Publisher
 	}
 

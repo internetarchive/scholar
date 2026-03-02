@@ -210,6 +210,7 @@ func (h *ArxivHarvester) WriteSlice(w io.Writer, from, until time.Time) error {
 		}
 		if resp.Error.Code != "" {
 			if resp.Error.Code == "noRecordsMatch" {
+				log.Printf("arxiv: no records match for %s – %s", from.Format("2006-01-02"), until.Format("2006-01-02"))
 				break
 			}
 			return fmt.Errorf("arxiv oai error: %v", resp.Error)

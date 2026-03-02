@@ -262,6 +262,10 @@ func arxivToFc(rec *arxivRecord, source string) *fatcat2.Release {
 
 	release.Contribs = contribs(rec.Authors)
 
+	// --- License ---
+
+	release.LicenseSlug = cleaning.LicenseSlugLookup(rec.License)
+
 	// --- Extra ---
 
 	cats := categories(rec)

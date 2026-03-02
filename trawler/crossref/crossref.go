@@ -324,7 +324,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (*fatcat2.Release, error
 		if lic.ContentVersion != "vor" && lic.ContentVersion != "unspecified" {
 			continue
 		}
-		release.LicenseSlug = licenseSlugLookup(lic.URL)
+		release.LicenseSlug = cleaning.LicenseSlugLookup(lic.URL)
 	}
 
 	// references

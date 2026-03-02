@@ -1,15 +1,13 @@
-package crossref
+package cleaning
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+)
 
-// The following was taken directly from old fatcat code. It might behoove us
-// to review popular licenses on crossref.
-
-// These are based, informally, on sorting the most popular licenses found in
-// Crossref metadata. There were over 500 unique strings and only a few most
-// popular are here; many were variants of the CC URLs. Would be useful to
-// normalize CC licenses better.
-// The current norm is to only add license slugs that are at least partially OA.
+// licenseSlugMap maps normalized license URLs to short slug identifiers.
+// Only licenses that are at least partially OA are included.
+// Based on popular licenses found in Crossref metadata.
 var licenseSlugMap = map[string]string{
 	"//creativecommons.org/publicdomain/mark/1.0":                     "CC-0",
 	"//creativecommons.org/publicdomain/mark/1.0/deed.de":             "CC-0",
@@ -52,32 +50,25 @@ var licenseSlugMap = map[string]string{
 	"//www.gnu.org/licenses/gpl-3.0.en.html":                          "GPLv3",
 	"//www.gnu.org/licenses/old-licenses/gpl-2.0.en.html":             "GPLv2",
 	"//arxiv.org/licenses/nonexclusive-distrib/1.0":                   "ARXIV-1.0",
-
-	// skip these non-OA licenses
-	//# //iopscience.iop.org/page/copyright is closed
-	//# //www.acm.org/publications/policies/copyright_policy#Background is closed
-	//# //www.ieee.org/publications_standards/publications/rights/ieeecopyrightform.pdf is 404 (!)
-	//# skip these TDM licenses; they don't apply to content
-	//# "//www.springer.com/tdm": "SPRINGER-TDM",
-	//# "//journals.sagepub.com/page/policies/text-and-data-mining-license": "SAGE-TDM",
-	//# "//doi.wiley.com/10.1002/tdm_license_1.1": "WILEY-TDM-1.1",
-	//# //onlinelibrary.wiley.com/termsAndConditions doesn't seem like a license
-	//# //www.springer.com/tdm doesn't seem like a license
-	//# //rsc.li/journals-terms-of-use is closed for vor (am open)
 }
 
-func licenseSlugLookup(rawURL string) string {
+// LicenseSlugLookup normalizes a license URL and returns a short slug, or
+// empty string if unrecognized.
+func LicenseSlugLookup(rawURL string) string {
 	if rawURL == "" {
 		return ""
 	}
 
-	rawURL = strings.ToLower(rawURL)
-	rawURL = strings.TrimSuffix(rawURL, "/")
-	rawURL = strings.ReplaceAll(rawURL, "https://", "//")
-	rawURL = strings.ReplaceAll(rawURL, "http://", "//")
-	if strings.Contains(rawURL, "creativecommons.org") {
-		rawURL = strings.ReplaceAll(rawURL, "/legalcode", "")
-		rawURL = strings.ReplaceAll(rawURL, "/uk", "")
+	u, err := url.Parse(strings.ToLower(rawURL))
+	if err != nil {
+		return ""
 	}
-	return licenseSlugMap[rawURL]
+
+	path := strings.TrimSuffix(u.Path, "/")
+	if u.Host == "creativecommons.org" {
+		path = strings.TrimSuffix(path, "/legalcode")
+		path = strings.TrimSuffix(path, "/uk")
+	}
+
+	return licenseSlugMap["//"+u.Host+path]
 }

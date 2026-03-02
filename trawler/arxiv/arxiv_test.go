@@ -245,6 +245,7 @@ func TestArxivToFc(t *testing.T) {
 		Comments:   "10 pages, 3 figures",
 		JournalRef: "Nature 2023",
 		ReportNo:   "",
+		License:    "http://arxiv.org/licenses/nonexclusive-distrib/1.0/",
 	}
 
 	release := arxivToFc(rec, "arxiv-2023-01-15-abc123")
@@ -291,8 +292,38 @@ func TestArxivToFc(t *testing.T) {
 	assert.Equal(t, []string{"cs.AI", "cs.LG"}, cats)
 	assert.Equal(t, "10 pages, 3 figures", arxivExtra["comments"])
 
+	// License
+	assert.Equal(t, "ARXIV-1.0", release.LicenseSlug)
+
 	// Source
 	assert.Equal(t, "arxiv-2023-01-15-abc123", release.Source)
+}
+
+func TestArxivToFcCCLicense(t *testing.T) {
+	rec := &arxivRecord{
+		ID:         "2301.99999",
+		Identifier: "oai:arXiv.org:2301.99999",
+		Title:      "A CC Licensed Paper",
+		Abstract:   "This is a long enough abstract that meets the minimum length requirement for inclusion in the release record.",
+		Created:    "2023-01-15",
+		Authors:    []arxivAuthor{{KeyName: "Smith", ForeName: "John"}},
+		License:    "https://creativecommons.org/licenses/by/4.0/",
+	}
+	release := arxivToFc(rec, "arxiv-2023-01-15-abc123")
+	assert.Equal(t, "CC-BY", release.LicenseSlug)
+}
+
+func TestArxivToFcNoLicense(t *testing.T) {
+	rec := &arxivRecord{
+		ID:         "2301.88888",
+		Identifier: "oai:arXiv.org:2301.88888",
+		Title:      "A Paper Without a License",
+		Abstract:   "This is a long enough abstract that meets the minimum length requirement for inclusion in the release record.",
+		Created:    "2023-01-15",
+		Authors:    []arxivAuthor{{KeyName: "Smith", ForeName: "John"}},
+	}
+	release := arxivToFc(rec, "arxiv-2023-01-15-abc123")
+	assert.Equal(t, "", release.LicenseSlug)
 }
 
 func TestAbstract(t *testing.T) {

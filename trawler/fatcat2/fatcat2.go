@@ -152,6 +152,15 @@ func (r Release) ArxivID() string {
 	return ""
 }
 
+func (r Release) DoajID() string {
+	for _, eid := range r.ExternalIDs {
+		if eid.Type == "doaj" {
+			return eid.Value
+		}
+	}
+	return ""
+}
+
 func (r Release) IsPaperlike() bool {
 	paperLikeTypes := []string{
 		"article-journal",
@@ -223,7 +232,10 @@ func (r Release) FulltextURLs() []string {
 		out = append(out, fmt.Sprintf("https://doi.org/%s", r.DOI()))
 	}
 
-	// TODO doaj
+	if r.DoajID() != "" {
+		out = append(out, fmt.Sprintf("https://doaj.org/article/%s", r.DoajID()))
+	}
+
 	// TODO hdl
 	return out
 }
@@ -698,6 +710,11 @@ func LookupOrcid(c *http.Client, orcid string) (*uuid.UUID, error) {
 // LookupIssnl returns the ID of a fatcat2 Container with the given ISSNL, if any.
 func LookupIssnl(c *http.Client, issnl string) (*uuid.UUID, error) {
 	return lookup(c, "container", "issnl", issnl)
+}
+
+// LookupDoaj returns the ID of a fatcat2 Release with the given DOAJ article ID, if any.
+func LookupDoaj(c *http.Client, doajID string) (*uuid.UUID, error) {
+	return lookup(c, "release", "doaj", doajID)
 }
 
 // LookupSha256 returns the ID of a fatcat2 File with the given Sha256, if any.

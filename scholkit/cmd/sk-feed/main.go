@@ -74,8 +74,9 @@ var (
 		"datacite",
 		"pubmed",
 		"arxiv",
+		"doaj",
 		"oai",
-		// TODO: add dblp, doaj, wikicite (maybe), JALC
+		// TODO: add dblp, wikicite (maybe), JALC
 	}
 	yesterday = time.Now().Add(-86400 * time.Second)
 	oneDay    = 86400 * time.Second
@@ -110,6 +111,9 @@ type Config struct {
 	ArxivMetadataPrefix string
 	ArxivSet            string
 	ArxivRequestDelay   time.Duration
+	// DOAJ OAI-PMH options
+	DOAJFeedPrefix    string
+	DOAJRequestDelay  time.Duration
 	// S3 settings for SeaweedFS upload
 	S3Upload    bool
 	S3Endpoint  string
@@ -159,6 +163,9 @@ var (
 	arxivMetadataPrefix = flag.String("arxiv-metadata-prefix", "arXiv", "OAI metadata prefix for arxiv (e.g. arXiv or oai_dc)")
 	arxivSet            = flag.String("arxiv-set", "", "optional OAI set filter for arxiv (e.g. cs or physics:hep-ex)")
 	arxivRequestDelay   = flag.Duration("arxiv-request-delay", 0, "delay between arxiv OAI-PMH requests (e.g. 10s)")
+	// doaj specific options
+	doajFeedPrefix   = flag.String("doaj-feed-prefix", "doaj-feed-0-", "prefix for doaj feed filenames")
+	doajRequestDelay = flag.Duration("doaj-request-delay", 0, "delay between doaj OAI-PMH requests (e.g. 5s)")
 	// oai specific options
 	endpointURL = flag.String("oai-endpoint", "", "endpoint URL for OAI")
 )
@@ -201,6 +208,8 @@ func main() {
 		ArxivMetadataPrefix: *arxivMetadataPrefix,
 		ArxivSet:            *arxivSet,
 		ArxivRequestDelay:   *arxivRequestDelay,
+		DOAJFeedPrefix:      *doajFeedPrefix,
+		DOAJRequestDelay:    *doajRequestDelay,
 		S3Upload:            *s3Upload,
 		S3Endpoint:          *s3Endpoint,
 		S3AccessKey:         *s3AccessKey,
@@ -501,6 +510,63 @@ func main() {
 				}
 				if config.S3Upload {
 					key, _, _ := h.DaySliceKey(iv.Start, config.ArxivFeedPrefix)
+					localPath := path.Join(dstDir, key)
+					s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
+					if config.S3Prefix != "" {
+						s3Key = config.S3Prefix + "/" + s3Key
+					}
+					if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
+						log.Printf("already in S3: %v", s3Key)
+						fmt.Println(config.S3Bucket + "/" + s3Key)
+						continue
+					}
+					f, err := os.Open(localPath)
+					if err != nil {
+						log.Fatalf("open %s: %v", localPath, err)
+					}
+					dec, err := zstd.NewReader(f)
+					if err != nil {
+						f.Close()
+						log.Fatalf("zstd reader: %v", err)
+					}
+					log.Printf("uploading to S3: %v", s3Key)
+					_, err = mc.PutObject(ctx, config.S3Bucket, s3Key, dec, -1, minio.PutObjectOptions{
+						ContentType: "application/x-ndjson",
+					})
+					dec.Close()
+					f.Close()
+					if err != nil {
+						log.Fatalf("s3 upload %s: %v", s3Key, err)
+					}
+					fmt.Println(config.S3Bucket + "/" + s3Key)
+				}
+			}
+		case "doaj":
+			dstDir := path.Join(config.FeedDir, "doaj")
+			if err := os.MkdirAll(dstDir, 0755); err != nil {
+				log.Fatal(err)
+			}
+			h := feeds.DOAJHarvester{
+				RequestDelay: config.DOAJRequestDelay,
+			}
+			var mc *minio.Client
+			if config.S3Upload {
+				mc, err = minio.New(config.S3Endpoint, &minio.Options{
+					Creds:  credentials.NewStaticV4(config.S3AccessKey, config.S3SecretKey, ""),
+					Secure: config.S3UseSSL,
+				})
+				if err != nil {
+					log.Fatalf("s3 client: %v", err)
+				}
+			}
+			ctx := context.Background()
+			ivs := dateutil.Daily(syncStart.Time, syncEnd.Time)
+			for _, iv := range ivs {
+				if err := h.WriteDaySlice(iv.Start, dstDir, config.DOAJFeedPrefix); err != nil {
+					log.Fatalf("doaj day slice: %v", err)
+				}
+				if config.S3Upload {
+					key, _, _ := h.DaySliceKey(iv.Start, config.DOAJFeedPrefix)
 					localPath := path.Join(dstDir, key)
 					s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
 					if config.S3Prefix != "" {

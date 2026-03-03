@@ -155,31 +155,6 @@ func TestVersionedArxivID(t *testing.T) {
 	}
 }
 
-func TestDoiFromRecord(t *testing.T) {
-	tests := []struct {
-		name     string
-		doi      string
-		expected string
-	}{
-		{"bare doi", "10.1234/test", "10.1234/test"},
-		{"doi prefix", "doi:10.1234/test", "10.1234/test"},
-		{"https doi.org", "https://doi.org/10.1234/test", "10.1234/test"},
-		{"http dx.doi.org", "http://dx.doi.org/10.1234/test", "10.1234/test"},
-		{"https dx.doi.org", "https://dx.doi.org/10.1234/test", "10.1234/test"},
-		{"empty", "", ""},
-		{"url not doi", "https://arxiv.org/abs/2301.12345", ""},
-		{"uppercased", "10.1234/TEST", "10.1234/test"},
-		{"with whitespace", "  10.1234/test  ", "10.1234/test"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := &arxivRecord{DOI: tt.doi}
-			assert.Equal(t, tt.expected, doiFromRecord(rec))
-		})
-	}
-}
-
 func TestReleaseDate(t *testing.T) {
 	tests := []struct {
 		name     string

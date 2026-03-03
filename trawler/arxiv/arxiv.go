@@ -133,20 +133,6 @@ func releaseYear(s string) int {
 	return y
 }
 
-// doiFromRecord returns a normalised DOI from the record's DOI field.
-func doiFromRecord(rec *arxivRecord) string {
-	d := strings.TrimSpace(rec.DOI)
-	d = strings.TrimPrefix(d, "doi:")
-	d = strings.TrimPrefix(d, "https://doi.org/")
-	d = strings.TrimPrefix(d, "http://doi.org/")
-	d = strings.TrimPrefix(d, "https://dx.doi.org/")
-	d = strings.TrimPrefix(d, "http://dx.doi.org/")
-	if strings.HasPrefix(d, "10.") {
-		return strings.ToLower(d)
-	}
-	return ""
-}
-
 // contribs converts arxiv author records to fatcat2 contribs. There is no
 // ORCID in the arXiv OAI format.
 func contribs(authors []arxivAuthor) []fatcat2.ReleaseContrib {
@@ -223,7 +209,7 @@ func arxivToFc(rec *arxivRecord, source string) *fatcat2.Release {
 		Value: vid,
 	})
 
-	doi := doiFromRecord(rec)
+	doi := cleaning.NormalizeDOI(rec.DOI)
 	if doi != "" {
 		release.ExternalIDs = append(release.ExternalIDs, fatcat2.ExternalID{
 			Type:  "doi",

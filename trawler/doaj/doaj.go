@@ -117,20 +117,6 @@ func releaseYear(s string) int {
 	return y
 }
 
-// normalizeDOI strips common DOI URL prefixes and returns a lowercase DOI.
-func normalizeDOI(raw string) string {
-	d := strings.TrimSpace(raw)
-	d = strings.TrimPrefix(d, "doi:")
-	d = strings.TrimPrefix(d, "https://doi.org/")
-	d = strings.TrimPrefix(d, "http://doi.org/")
-	d = strings.TrimPrefix(d, "https://dx.doi.org/")
-	d = strings.TrimPrefix(d, "http://dx.doi.org/")
-	if strings.HasPrefix(d, "10.") {
-		return strings.ToLower(d)
-	}
-	return ""
-}
-
 // licenseSlug converts a CC license URL to a fatcat license slug.
 // e.g. "https://creativecommons.org/licenses/by/4.0/" → "cc-by"
 func licenseSlug(ref string) string {
@@ -224,7 +210,7 @@ func doajToFc(rec *doajRecord, source string) *fatcat2.Release {
 		Value: id,
 	})
 
-	doi := normalizeDOI(rec.DOI)
+	doi := cleaning.NormalizeDOI(rec.DOI)
 	if doi != "" {
 		release.ExternalIDs = append(release.ExternalIDs, fatcat2.ExternalID{
 			Type:  "doi",

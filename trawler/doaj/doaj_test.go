@@ -92,33 +92,6 @@ func Test_skipReason(t *testing.T) {
 	}
 }
 
-func Test_normalizeDOI(t *testing.T) {
-	cases := []struct {
-		input    string
-		expected string
-	}{
-		{"10.1234/foo", "10.1234/foo"},
-		{"10.1234/FOO", "10.1234/foo"},
-		{"doi:10.1234/foo", "10.1234/foo"},
-		{"https://doi.org/10.1234/foo", "10.1234/foo"},
-		{"http://doi.org/10.1234/foo", "10.1234/foo"},
-		{"https://dx.doi.org/10.1234/foo", "10.1234/foo"},
-		{"http://dx.doi.org/10.1234/foo", "10.1234/foo"},
-		{"  10.1234/foo  ", "10.1234/foo"},
-		{"not-a-doi", ""},
-		{"", ""},
-		{"https://example.com/10.1234/foo", ""},
-	}
-	for _, c := range cases {
-		t.Run(c.input, func(t *testing.T) {
-			got := normalizeDOI(c.input)
-			if got != c.expected {
-				t.Errorf("input %q: expected %q, got %q", c.input, c.expected, got)
-			}
-		})
-	}
-}
-
 func Test_licenseSlug(t *testing.T) {
 	cases := []struct {
 		input    string

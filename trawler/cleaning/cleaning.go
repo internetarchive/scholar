@@ -42,7 +42,8 @@ func CleanString(s string) string {
 		s = strings.ReplaceAll(s, sq, "'")
 	}
 	s = strings.ReplaceAll(s, "„", "\"")
-	s = strings.ReplaceAll(s, "“", "\"")
+	s = strings.ReplaceAll(s, "\u201c", "\"")
+	s = strings.ReplaceAll(s, "\u201d", "\"")
 	s = strings.ReplaceAll(s, "''", "\"")
 	s = strings.ReplaceAll(s, ",,", "\"")
 

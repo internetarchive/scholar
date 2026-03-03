@@ -128,6 +128,57 @@ func Test_Release_FulltextURLs(t *testing.T) {
 				"https://doi.org/10.1234/bar",
 			},
 		},
+		{
+			name: "doaj only, no extra",
+			release: Release{
+				ExternalIDs: []ExternalID{{Type: "doaj", Value: "abc123"}},
+			},
+			expected: []string{
+				"https://doaj.org/article/abc123",
+			},
+		},
+		{
+			name: "doaj with full_text_url in extra",
+			release: Release{
+				ExternalIDs: []ExternalID{{Type: "doaj", Value: "abc123"}},
+				Extra: map[string]any{
+					"doaj": map[string]any{"full_text_url": "https://example.com/paper.pdf"},
+				},
+			},
+			expected: []string{
+				"https://example.com/paper.pdf",
+				"https://doaj.org/article/abc123",
+			},
+		},
+		{
+			name: "doaj with extra but no full_text_url key",
+			release: Release{
+				ExternalIDs: []ExternalID{{Type: "doaj", Value: "abc123"}},
+				Extra: map[string]any{
+					"doaj": map[string]any{"keywords": []string{"foo"}},
+				},
+			},
+			expected: []string{
+				"https://doaj.org/article/abc123",
+			},
+		},
+		{
+			name: "doaj + doi: doaj before doi",
+			release: Release{
+				ExternalIDs: []ExternalID{
+					{Type: "doaj", Value: "abc123"},
+					{Type: "doi", Value: "10.1234/foo"},
+				},
+				Extra: map[string]any{
+					"doaj": map[string]any{"full_text_url": "https://example.com/paper.pdf"},
+				},
+			},
+			expected: []string{
+				"https://example.com/paper.pdf",
+				"https://doaj.org/article/abc123",
+				"https://doi.org/10.1234/foo",
+			},
+		},
 	}
 
 	for _, c := range cs {

@@ -228,12 +228,17 @@ func (r Release) FulltextURLs() []string {
 			"http://europepmc.org/backend/ptpmcrender.fcgi?accid=%s&blobtype=pdf", r.PMCID()))
 	}
 
-	if r.DOI() != "" {
-		out = append(out, fmt.Sprintf("https://doi.org/%s", r.DOI()))
+	if r.DoajID() != "" {
+		if doajExtra, ok := r.Extra["doaj"]; ok {
+			if ftu, ok := doajExtra.(map[string]any)["full_text_url"]; ok {
+				out = append(out, ftu.(string))
+			}
+		}
+		out = append(out, fmt.Sprintf("https://doaj.org/article/%s", r.DoajID()))
 	}
 
-	if r.DoajID() != "" {
-		out = append(out, fmt.Sprintf("https://doaj.org/article/%s", r.DoajID()))
+	if r.DOI() != "" {
+		out = append(out, fmt.Sprintf("https://doi.org/%s", r.DOI()))
 	}
 
 	// TODO hdl

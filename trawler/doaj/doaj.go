@@ -24,29 +24,29 @@ const maxAuthors = 2000
 // article record as written by scholkit's DOAJHarvester. Each ndjson line is
 // one doajRecord.
 type doajRecord struct {
-	Identifier      string      `json:"identifier"`
-	Status          string      `json:"status"`
-	Datestamp       string      `json:"datestamp"`
-	SetSpec         []string    `json:"set_spec"`
-	ID              string      `json:"id"`
-	Title           string      `json:"title"`
-	Publisher       string      `json:"publisher"`
-	JournalTitle    string      `json:"journal_title"`
-	ISSN            string      `json:"issn"`
-	EISSN           string      `json:"eissn"`
-	PublicationDate string      `json:"publication_date"`
-	Volume          string      `json:"volume"`
-	Issue           string      `json:"issue"`
-	StartPage       string      `json:"start_page"`
-	EndPage         string      `json:"end_page"`
-	DOI             string      `json:"doi"`
-	Language        string      `json:"language"`
-	Abstract        string      `json:"abstract"`
+	Identifier      string       `json:"identifier"`
+	Status          string       `json:"status"`
+	Datestamp       string       `json:"datestamp"`
+	SetSpec         []string     `json:"set_spec"`
+	ID              string       `json:"id"`
+	Title           string       `json:"title"`
+	Publisher       string       `json:"publisher"`
+	JournalTitle    string       `json:"journal_title"`
+	ISSN            string       `json:"issn"`
+	EISSN           string       `json:"eissn"`
+	PublicationDate string       `json:"publication_date"`
+	Volume          string       `json:"volume"`
+	Issue           string       `json:"issue"`
+	StartPage       string       `json:"start_page"`
+	EndPage         string       `json:"end_page"`
+	DOI             string       `json:"doi"`
+	Language        string       `json:"language"`
+	Abstract        string       `json:"abstract"`
 	Authors         []doajAuthor `json:"authors"`
-	Keywords        []string    `json:"keywords"`
-	FullTextURL     string      `json:"full_text_url"`
-	FullTextFormat  string      `json:"full_text_format"`
-	LicenseRef      string      `json:"license_ref"`
+	Keywords        []string     `json:"keywords"`
+	FullTextURL     string       `json:"full_text_url"`
+	FullTextFormat  string       `json:"full_text_format"`
+	LicenseRef      string       `json:"license_ref"`
 }
 
 type doajAuthor struct {
@@ -256,6 +256,7 @@ func doajToFc(rec *doajRecord, source string) *fatcat2.Release {
 
 	// --- License ---
 
+	// TODO not seeing license data on anything from DOAJ's oaipmh endpoint
 	release.LicenseSlug = licenseSlug(rec.LicenseRef)
 
 	// --- Abstract ---

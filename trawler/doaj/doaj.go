@@ -117,6 +117,70 @@ func releaseYear(s string) int {
 	return y
 }
 
+// iso6392to1 maps ISO 639-2/B three-letter language codes (as used by DOAJ)
+// to ISO 639-1 two-letter codes required by fatcat.
+var iso6392to1 = map[string]string{
+	"eng": "en",
+	"fre": "fr",
+	"ger": "de",
+	"spa": "es",
+	"ita": "it",
+	"por": "pt",
+	"rus": "ru",
+	"jpn": "ja",
+	"chi": "zh",
+	"kor": "ko",
+	"dut": "nl",
+	"pol": "pl",
+	"swe": "sv",
+	"dan": "da",
+	"nor": "no",
+	"fin": "fi",
+	"ara": "ar",
+	"heb": "he",
+	"tur": "tr",
+	"cze": "cs",
+	"hun": "hu",
+	"rum": "ro",
+	"gre": "el",
+	"ukr": "uk",
+	"hrv": "hr",
+	"slv": "sl",
+	"bul": "bg",
+	"cat": "ca",
+	"vie": "vi",
+	"ind": "id",
+	"per": "fa",
+	"hin": "hi",
+	"lat": "la",
+	"wel": "cy",
+	"geo": "ka",
+	"afr": "af",
+	"slo": "sk",
+	"lit": "lt",
+	"lav": "lv",
+	"est": "et",
+	"alb": "sq",
+	"ice": "is",
+	"mac": "mk",
+	"ser": "sr",
+	"bos": "bs",
+	"mon": "mn",
+	"ben": "bn",
+	"tam": "ta",
+}
+
+// normalizeLanguage converts a DOAJ language code to a 2-char ISO 639-1 code.
+// DOAJ provides 3-char ISO 639-2 codes (e.g. "ENG"); fatcat requires 2-char.
+// Returns empty string if the code cannot be mapped.
+func normalizeLanguage(lang string) string {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if len(lang) == 2 {
+		return lang
+	}
+	return iso6392to1[lang]
+}
+
 // licenseSlug converts a CC license URL to a fatcat license slug.
 // e.g. "https://creativecommons.org/licenses/by/4.0/" → "cc-by"
 func licenseSlug(ref string) string {
@@ -225,7 +289,7 @@ func doajToFc(rec *doajRecord, source string) *fatcat2.Release {
 	// --- Language ---
 
 	if rec.Language != "" {
-		release.Language = strings.ToLower(rec.Language)
+		release.Language = normalizeLanguage(rec.Language)
 	}
 
 	// --- Date ---

@@ -304,8 +304,8 @@ func Test_doajToFc(t *testing.T) {
 	if r.Title != "A Test Article" {
 		t.Errorf("Title: expected %q, got %q", "A Test Article", r.Title)
 	}
-	if r.Language != "eng" {
-		t.Errorf("Language: expected %q (lowercased), got %q", "eng", r.Language)
+	if r.Language != "en" {
+		t.Errorf("Language: expected %q, got %q", "en", r.Language)
 	}
 	if r.ReleaseYear != 2023 {
 		t.Errorf("ReleaseYear: expected 2023, got %d", r.ReleaseYear)

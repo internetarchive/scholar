@@ -411,6 +411,9 @@ func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 	var legacy *LegacyData
 	var err error
 	for _, eid := range r.ExternalIDs {
+		if eid.Type == "doaj" {
+			continue
+		}
 		legacy, err = lookupLegacyRelease(client, eid.Type, eid.Value)
 		if err != nil {
 			return nil, fmt.Errorf("legacy lookup failed: %w", err)

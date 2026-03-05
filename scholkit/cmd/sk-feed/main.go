@@ -103,7 +103,7 @@ type Config struct {
 	CrossrefApiFilter  string
 	RcloneTransfers    int
 	RcloneCheckers     int
-	DataciteSyncStart  string
+	DataciteFeedPrefix string
 	PubMedApiKey       string
 	PubMedFeedPrefix   string
 	// Arxiv OAI-PMH options
@@ -154,7 +154,7 @@ var (
 	crossrefUserAgent  = flag.String("crossref-user-agent", "scholkit/dev", "crossref user agent")
 	crossrefFeedPrefix = flag.String("crossref-feed-prefix", "crossref-feed-0-", "prefix for filename to distinguish different runs")
 	// datacite specific options
-	dataciteSyncStart xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
+	dataciteFeedPrefix = flag.String("datacite-feed-prefix", "datacite-feed-0-", "prefix for datacite feed filenames")
 	// pubmed specific options
 	pubmedApiKey     = flag.String("pubmed-api-key", "", "NCBI API key (increases rate limit from 3 to 10 req/s)")
 	pubmedFeedPrefix = flag.String("pubmed-feed-prefix", "pubmed-feed-0-", "prefix for pubmed feed filenames")
@@ -171,9 +171,8 @@ var (
 )
 
 func main() {
-	flag.Var(&syncStart, "sync-start", "start date for harvest (crossref, pubmed)")
-	flag.Var(&syncEnd, "sync-end", "end date for harvest (crossref, pubmed)")
-	flag.Var(&dataciteSyncStart, "datacite-sync-start", "start date for datacite harvest")
+	flag.Var(&syncStart, "sync-start", "start date for harvest")
+	flag.Var(&syncEnd, "sync-end", "end date for harvest")
 	flag.Usage = func() {
 		io.WriteString(os.Stderr, docs)
 		flag.PrintDefaults()
@@ -201,7 +200,7 @@ func main() {
 		CrossrefFeedPrefix:  *crossrefFeedPrefix,
 		RcloneTransfers:     *rcloneTransfers,
 		RcloneCheckers:      *rcloneCheckers,
-		DataciteSyncStart:   dataciteSyncStart.Format("2006-01-02"),
+		DataciteFeedPrefix:  *dataciteFeedPrefix,
 		PubMedApiKey:        *pubmedApiKey,
 		PubMedFeedPrefix:    *pubmedFeedPrefix,
 		ArxivFeedPrefix:     *arxivFeedPrefix,
@@ -329,32 +328,59 @@ func main() {
 				}
 			}
 		case "datacite":
-			// TODO: fix GOAWAY
-			//
-			// Mar 25 08:31:53 sk-feed[3837740]: time="2025-03-25T08:31:53Z" level=info msg="batch done: https://api.datacite.org/dois?affiliation=true&page%5Bcursor%5D=1&page%5Bsize%5D=100&query=updated%3A%5B2022-05-02T18%3A>
-			// Mar 25 08:31:54 sk-feed[3837740]: time="2025-03-25T08:31:54Z" level=info msg="requests=1, pages=1, total=47"
-			// Mar 25 08:31:54 sk-feed[3837740]: time="2025-03-25T08:31:54Z" level=info msg="batch done: https://api.datacite.org/dois?affiliation=true&page%5Bcursor%5D=1&page%5Bsize%5D=100&query=updated%3A%5B2022-05-02T18%3A>
-			// Mar 25 08:31:54 sk-feed[3837740]: time="2025-03-25T08:31:54Z" level=info msg="failed to create file for https://api.datacite.org/dois?affiliation=true&page%5Bcursor%5D=1&page%5Bsize%5D=100&query=updated%3A%5B20>
-			// Mar 25 08:31:54 sk-feed[3837740]: time="2025-03-25T08:31:54Z" level=warning msg="incomplete harvest - maybe rm -f /var/data/schol/feeds/datacite/dcdump-*.ndjson"
-			// Mar 25 08:31:54 sk-feed[3837740]: time="2025-03-25T08:31:54Z" level=fatal msg="http2: server sent GOAWAY and closed the connection; LastStreamID=18849, ErrCode=NO_ERROR, debug=\"\""
-			// Mar 25 08:31:54 sk-feed[3837724]: 2025/03/25 08:31:54 exit status 1
-			// Mar 25 08:31:54 systemd[1]: sk-feed-datacite.service: Main process exited, code=exited, status=1/FAILURE
-			// Mar 25 08:31:54 systemd[1]: sk-feed-datacite.service: Failed with result 'exit-code'.
-			// Mar 25 08:31:54 systemd[1]: Failed to start Harvest metadata from api.datacite.org.
+			ch := feeds.DataciteHarvester{}
 			dstDir := path.Join(config.FeedDir, "datacite")
 			if err := os.MkdirAll(dstDir, 0755); err != nil {
 				log.Fatal(err)
 			}
-			cmd := exec.Command("dcdump",
-				"-s", config.DataciteSyncStart,
-				"-e", date.Add(oneDay).Format("2006-01-02"),
-				"-i", "e", // most fine granular, takes a while to backfill
-				"-d", dstDir)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			log.Println(cmd)
-			if err = cmd.Run(); err != nil {
-				log.Fatal(err)
+			var mc *minio.Client
+			if config.S3Upload {
+				mc, err = minio.New(config.S3Endpoint, &minio.Options{
+					Creds:  credentials.NewStaticV4(config.S3AccessKey, config.S3SecretKey, ""),
+					Secure: config.S3UseSSL,
+				})
+				if err != nil {
+					log.Fatalf("s3 client: %v", err)
+				}
+			}
+			ctx := context.Background()
+			ivs := dateutil.Daily(syncStart.Time, syncEnd.Time)
+			for _, iv := range ivs {
+				if err := ch.WriteDaySlice(iv.Start, dstDir, config.DataciteFeedPrefix); err != nil {
+					log.Fatalf("datacite day slice: %v", err)
+				}
+				if config.S3Upload {
+					key, _, _ := ch.DaySliceKey(iv.Start, config.DataciteFeedPrefix)
+					localPath := path.Join(dstDir, key)
+					s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
+					if config.S3Prefix != "" {
+						s3Key = config.S3Prefix + "/" + s3Key
+					}
+					if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
+						log.Printf("already in S3: %v", s3Key)
+						fmt.Println(config.S3Bucket + "/" + s3Key)
+						continue
+					}
+					f, err := os.Open(localPath)
+					if err != nil {
+						log.Fatalf("open %s: %v", localPath, err)
+					}
+					dec, err := zstd.NewReader(f)
+					if err != nil {
+						f.Close()
+						log.Fatalf("zstd reader: %v", err)
+					}
+					log.Printf("uploading to S3: %v", s3Key)
+					_, err = mc.PutObject(ctx, config.S3Bucket, s3Key, dec, -1, minio.PutObjectOptions{
+						ContentType: "application/x-ndjson",
+					})
+					dec.Close()
+					f.Close()
+					if err != nil {
+						log.Fatalf("s3 upload %s: %v", s3Key, err)
+					}
+					fmt.Println(config.S3Bucket + "/" + s3Key)
+				}
 			}
 		case "pubmed":
 			dstDir := path.Join(config.FeedDir, "pubmed")

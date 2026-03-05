@@ -220,7 +220,7 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	}
 
 	if release == nil {
-		panic("nil release after processLine")
+		return out, nil
 	}
 
 	doiPrefixBlocklist := viper.GetStringSlice("crawling.doi_prefix_blocklist")

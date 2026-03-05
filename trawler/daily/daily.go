@@ -17,6 +17,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/crawling"
 	"git.archive.org/webgroup/scholar/trawler/crossref"
+	"git.archive.org/webgroup/scholar/trawler/datacite"
 	"git.archive.org/webgroup/scholar/trawler/doaj"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
@@ -203,6 +204,8 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		processLine = arxiv.ProcessLine
 	case "crossref":
 		processLine = crossref.ProcessLine
+	case "datacite":
+		processLine = datacite.ProcessLine
 	case "doaj":
 		processLine = doaj.ProcessLine
 	case "pubmed":

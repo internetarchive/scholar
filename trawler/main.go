@@ -7,6 +7,7 @@ import (
 
 	"git.archive.org/webgroup/scholar/trawler/cmd/arxivcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/crossrefcmd"
+	"git.archive.org/webgroup/scholar/trawler/cmd/datacitecmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/doajcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/pubmedcmd"
@@ -47,6 +48,7 @@ func init() {
 
 	rootCmd.AddCommand(arxivcmd.Cmd)
 	rootCmd.AddCommand(crossrefcmd.Cmd)
+	rootCmd.AddCommand(datacitecmd.Cmd)
 	rootCmd.AddCommand(doajcmd.Cmd)
 	rootCmd.AddCommand(indexcmd.IndexCmd)
 	rootCmd.AddCommand(pubmedcmd.Cmd)

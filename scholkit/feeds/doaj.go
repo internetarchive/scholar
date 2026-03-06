@@ -180,6 +180,8 @@ type DOAJHarvester struct {
 	RequestDelay time.Duration
 	// Client is the metha HTTP client; nil uses metha.DefaultClient.
 	Client *metha.Client
+	// MaxRecords limits total records written; 0 means unlimited.
+	MaxRecords int
 }
 
 func (h *DOAJHarvester) baseURL() string {
@@ -269,6 +271,10 @@ func (h *DOAJHarvester) WriteSlice(w io.Writer, from, until time.Time) error {
 		log.Printf("doaj: %d records (total=%d) [%s – %s]",
 			len(resp.ListRecords.Records), total,
 			from.Format("2006-01-02"), until.Format("2006-01-02"))
+		if h.MaxRecords > 0 && total >= h.MaxRecords {
+			log.Printf("doaj: reached sync limit %d, stopping", h.MaxRecords)
+			break
+		}
 		token := resp.GetResumptionToken()
 		if token == "" {
 			break

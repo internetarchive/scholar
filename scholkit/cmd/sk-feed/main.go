@@ -114,6 +114,8 @@ type Config struct {
 	// DOAJ OAI-PMH options
 	DOAJFeedPrefix    string
 	DOAJRequestDelay  time.Duration
+	// SyncLimit caps records per day slice; 0 means unlimited.
+	SyncLimit int
 	// S3 settings for SeaweedFS upload
 	S3Upload    bool
 	S3Endpoint  string
@@ -148,6 +150,7 @@ var (
 	// sync date range (applies to crossref and pubmed)
 	syncStart xflag.Date = xflag.Date{Time: dateutil.MustParse("2020-01-01")}
 	syncEnd   xflag.Date = xflag.Date{Time: yesterday}
+	syncLimit            = flag.Int("sync-limit", 0, "max records to fetch per day slice (0 = unlimited; supported by crossref, datacite, pubmed API, arxiv, doaj)")
 	// crossref specific options
 	crossrefApiEmail   = flag.String("crossref-api-email", "", "crossref api email, add for more gracious limits")
 	crossrefApiFilter  = flag.String("crossref-api-filter", "index", "api filter to use with crossref")
@@ -209,6 +212,7 @@ func main() {
 		ArxivRequestDelay:   *arxivRequestDelay,
 		DOAJFeedPrefix:      *doajFeedPrefix,
 		DOAJRequestDelay:    *doajRequestDelay,
+		SyncLimit:           *syncLimit,
 		S3Upload:            *s3Upload,
 		S3Endpoint:          *s3Endpoint,
 		S3AccessKey:         *s3AccessKey,
@@ -270,6 +274,7 @@ func main() {
 				UserAgent:           config.CrossrefUserAgent,
 				AcceptableMissRatio: 0.1,
 				MaxRetries:          3,
+				MaxRecords:          config.SyncLimit,
 			}
 			dstDir := path.Join(config.FeedDir, "crossref")
 			if err := os.MkdirAll(dstDir, 0755); err != nil {
@@ -328,7 +333,7 @@ func main() {
 				}
 			}
 		case "datacite":
-			ch := feeds.DataciteHarvester{}
+			ch := feeds.DataciteHarvester{MaxRecords: config.SyncLimit}
 			dstDir := path.Join(config.FeedDir, "datacite")
 			if err := os.MkdirAll(dstDir, 0755); err != nil {
 				log.Fatal(err)
@@ -397,8 +402,9 @@ func main() {
 			})
 			if useAPIHarvester {
 				h := feeds.PubMedHarvester{
-					Client: client,
-					ApiKey: config.PubMedApiKey,
+					Client:     client,
+					ApiKey:     config.PubMedApiKey,
+					MaxRecords: config.SyncLimit,
 				}
 				var mc *minio.Client
 				if config.S3Upload {
@@ -517,6 +523,7 @@ func main() {
 				MetadataPrefix: config.ArxivMetadataPrefix,
 				Set:            config.ArxivSet,
 				RequestDelay:   config.ArxivRequestDelay,
+				MaxRecords:     config.SyncLimit,
 			}
 			var mc *minio.Client
 			if config.S3Upload {
@@ -574,6 +581,7 @@ func main() {
 			}
 			h := feeds.DOAJHarvester{
 				RequestDelay: config.DOAJRequestDelay,
+				MaxRecords:   config.SyncLimit,
 			}
 			var mc *minio.Client
 			if config.S3Upload {

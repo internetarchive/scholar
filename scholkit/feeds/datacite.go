@@ -49,6 +49,8 @@ type DataciteHarvester struct {
 	// PageSize is the number of records per API page; 0 defaults to
 	// dataciteDefaultPageSize.
 	PageSize int
+	// MaxRecords limits total records written; 0 means unlimited.
+	MaxRecords int
 }
 
 func (h *DataciteHarvester) endpoint() string {
@@ -173,6 +175,10 @@ func (h *DataciteHarvester) WriteSlice(w io.Writer, from, until time.Time) error
 		log.Printf("datacite: page=%d seen=%d total=%d [%s – %s]",
 			page, seen, total,
 			from.Format("2006-01-02"), until.Format("2006-01-02"))
+		if h.MaxRecords > 0 && seen >= int64(h.MaxRecords) {
+			log.Printf("datacite: reached sync limit %d, stopping", h.MaxRecords)
+			break
+		}
 		link = result.Links.Next
 	}
 	log.Printf("datacite: done, seen=%d total=%d for %s",

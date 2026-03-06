@@ -177,11 +177,12 @@ type esearchResult struct {
 // PubMedHarvester fetches records from the NCBI E-utilities API and writes
 // zstd-compressed NDJSON to disk, analogous to CrossrefHarvester.
 type PubMedHarvester struct {
-	Client    Doer   // HTTP client; use pester.New() for retries
-	ApiBase   string // defaults to https://eutils.ncbi.nlm.nih.gov/entrez/eutils
-	ApiKey    string // optional; raises rate limit from 3 to 10 req/s
-	FetchSize int    // PMIDs per esearch page (max 10000; default 10000)
-	BatchSize int    // PMIDs per efetch request (max ~200; default 200)
+	Client     Doer   // HTTP client; use pester.New() for retries
+	ApiBase    string // defaults to https://eutils.ncbi.nlm.nih.gov/entrez/eutils
+	ApiKey     string // optional; raises rate limit from 3 to 10 req/s
+	FetchSize  int    // PMIDs per esearch page (max 10000; default 10000)
+	BatchSize  int    // PMIDs per efetch request (max ~200; default 200)
+	MaxRecords int    // 0 means unlimited
 
 	mu      sync.Mutex
 	lastReq time.Time
@@ -354,6 +355,10 @@ func (h *PubMedHarvester) WriteSlice(w io.Writer, from, until time.Time) error {
 		log.Printf("pubmed WARNING: %d total records exceeds efetch retstart limit (%d); only %d records will be retrieved for %s",
 			total, pubmedMaxRetStart, pubmedMaxRetStart, from.Format("2006-01-02"))
 		fetchable = pubmedMaxRetStart
+	}
+	if h.MaxRecords > 0 && fetchable > h.MaxRecords {
+		log.Printf("pubmed: applying sync limit %d (would fetch %d)", h.MaxRecords, fetchable)
+		fetchable = h.MaxRecords
 	}
 	for retstart := 0; retstart < fetchable; retstart += batchSize {
 		count := batchSize

@@ -29,6 +29,7 @@ type CrossrefHarvester struct {
 	UserAgent           string
 	MaxRetries          int
 	AcceptableMissRatio float64 // recommended: 0.1
+	MaxRecords          int     // 0 means unlimited
 }
 
 // Doer abstracts https://pkg.go.dev/net/http#Client.Do.
@@ -173,6 +174,10 @@ func (c *CrossrefHarvester) WriteSlice(w io.Writer, from, until time.Time) error
 		}
 		seen += len(wr.Message.Items)
 		c.logSeenRatio(seen, &wr)
+		if c.MaxRecords > 0 && seen >= c.MaxRecords {
+			log.Printf("crossref: reached sync limit %d, stopping", c.MaxRecords)
+			return nil
+		}
 		if wr.IsLast() || seen >= int(wr.Message.TotalResults) {
 			log.Printf("crossref slice done: seen=%d, total=%d", seen, wr.Message.TotalResults)
 			return nil

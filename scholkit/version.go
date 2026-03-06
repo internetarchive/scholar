@@ -2,5 +2,5 @@ package scholkit
 
 var (
 	AppName = "scholkit"
-	Version = "0.3.3"
+	Version = "1.2.0"
 )

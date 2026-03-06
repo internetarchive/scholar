@@ -4,10 +4,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -112,8 +114,8 @@ type Config struct {
 	ArxivSet            string
 	ArxivRequestDelay   time.Duration
 	// DOAJ OAI-PMH options
-	DOAJFeedPrefix    string
-	DOAJRequestDelay  time.Duration
+	DOAJFeedPrefix   string
+	DOAJRequestDelay time.Duration
 	// SyncLimit caps records per day slice; 0 means unlimited.
 	SyncLimit int
 	// S3 settings for SeaweedFS upload
@@ -133,7 +135,7 @@ var (
 	showStatus  = flag.Bool("a", false, "show status and path")
 	dateStr     = flag.String("t", yesterday.Format("2006-01-02"), "date to capture")
 	runBackfill = flag.String("B", "", "run a backfill, if possible, from a given day (YYYY-MM-DD) on")
-	maxRetries  = flag.Int("r", 3, "max retries")
+	maxRetries  = flag.Int("r", 5, "max retries")
 	timeout     = flag.Duration("T", oneHour, "connectiont timeout")
 	showVersion = flag.Bool("version", false, "show version")
 	// rclone is used for openalex
@@ -333,7 +335,15 @@ func main() {
 				}
 			}
 		case "datacite":
-			ch := feeds.DataciteHarvester{MaxRecords: config.SyncLimit}
+			dcClient := pester.New()
+			dcClient.Backoff = pester.ExponentialBackoff
+			dcClient.MaxRetries = *maxRetries
+			dcClient.RetryOnHTTP429 = true
+			dcClient.Timeout = *timeout
+			dcClient.Transport = &http.Transport{
+				TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
+			}
+			ch := feeds.DataciteHarvester{Client: dcClient, MaxRecords: config.SyncLimit}
 			dstDir := path.Join(config.FeedDir, "datacite")
 			if err := os.MkdirAll(dstDir, 0755); err != nil {
 				log.Fatal(err)

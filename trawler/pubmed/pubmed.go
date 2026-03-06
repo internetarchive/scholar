@@ -48,60 +48,6 @@ var pubmedReleaseTypeMap = map[string]string{
 	"Legislation":                  "legislation",
 }
 
-// marcLangMap maps MARC 3-letter language codes to ISO 639-1 2-letter codes.
-var marcLangMap = map[string]string{
-	"eng": "en",
-	"fre": "fr",
-	"ger": "de",
-	"spa": "es",
-	"ita": "it",
-	"por": "pt",
-	"rus": "ru",
-	"jpn": "ja",
-	"chi": "zh",
-	"kor": "ko",
-	"dut": "nl",
-	"pol": "pl",
-	"swe": "sv",
-	"dan": "da",
-	"nor": "no",
-	"fin": "fi",
-	"ara": "ar",
-	"heb": "he",
-	"tur": "tr",
-	"cze": "cs",
-	"hun": "hu",
-	"rum": "ro",
-	"gre": "el",
-	"ukr": "uk",
-	"hrv": "hr",
-	"slv": "sl",
-	"bul": "bg",
-	"cat": "ca",
-	"vie": "vi",
-	"ind": "id",
-	"per": "fa",
-	"hin": "hi",
-	"lat": "la",
-	"wel": "cy",
-	"geo": "ka",
-	"afr": "af",
-	"slo": "sk",
-	"lit": "lt",
-	"lav": "lv",
-	"est": "et",
-	"alb": "sq",
-	"ice": "is",
-	"mac": "mk",
-	"ser": "sr",
-	"bos": "bs",
-	"mon": "mn",
-	"ben": "bn",
-	"tam": "ta",
-	"glg": "gl",
-	"scr": "hr", // deprecated MARC code for Croatian
-	"scc": "sr", // deprecated MARC code for Serbian
-}
 
 // containerTypeMap maps Fatcat release types to their parent container type.
 var containerTypeMap = map[string]string{
@@ -335,7 +281,7 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 	if len(art.Language) > 0 {
 		marc := art.Language[0]
 		if marc != "und" && marc != "un" {
-			if iso, ok := marcLangMap[marc]; ok {
+			if iso := cleaning.NormalizeLanguage(marc); iso != "" {
 				release.Language = iso
 			} else {
 				slog.Warn("pubmed: unknown MARC language code", "code", marc, "pmid", pmid)
@@ -425,7 +371,7 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 	for _, oa := range mc.OtherAbstracts {
 		lang := "en"
 		if oa.Language != "" {
-			if iso, ok := marcLangMap[oa.Language]; ok {
+			if iso := cleaning.NormalizeLanguage(oa.Language); iso != "" {
 				lang = iso
 			}
 		}

@@ -97,34 +97,6 @@ var containerTypeMap = map[string]string{
 	"Journal": "journal", "Series": "journal", "Book Series": "book-series",
 }
 
-// iso6392to1 maps three-letter ISO 639-2 codes to two-letter ISO 639-1 codes.
-var iso6392to1 = map[string]string{
-	"eng": "en", "fre": "fr", "ger": "de", "spa": "es", "ita": "it",
-	"por": "pt", "rus": "ru", "jpn": "ja", "chi": "zh", "kor": "ko",
-	"dut": "nl", "pol": "pl", "swe": "sv", "dan": "da", "nor": "no",
-	"fin": "fi", "ara": "ar", "heb": "he", "tur": "tr", "cze": "cs",
-	"hun": "hu", "rum": "ro", "gre": "el", "ukr": "uk", "hrv": "hr",
-	"slv": "sl", "bul": "bg", "cat": "ca", "vie": "vi", "ind": "id",
-	"per": "fa", "hin": "hi", "lat": "la", "wel": "cy", "geo": "ka",
-}
-
-func normalizeLanguage(lang string) string {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	if len(lang) == 2 {
-		return lang
-	}
-	// Three-letter code
-	if len(lang) == 3 {
-		if v, ok := iso6392to1[lang]; ok {
-			return v
-		}
-	}
-	// "en-us" style
-	if len(lang) > 2 && lang[2] == '-' {
-		return lang[:2]
-	}
-	return ""
-}
 
 // --- Struct definitions ---
 
@@ -699,7 +671,7 @@ func dataciteToFc(doc *dataciteDoc, source string) *fatcat2.Release {
 	}
 
 	// Language
-	release.Language = normalizeLanguage(a.Language)
+	release.Language = cleaning.NormalizeLanguage(a.Language)
 
 	// Version
 	if a.Version != "" && !isUnknown(a.Version) {

@@ -103,6 +103,52 @@ func TestDeTag(t *testing.T) {
 	}
 }
 
+func TestNormalizeLanguage(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		// empty
+		{"", ""},
+
+		// 2-char ISO 639-1: passed through as-is (lowercased)
+		{"en", "en"},
+		{"fr", "fr"},
+		{"EN", "en"},
+
+		// 3-char ISO 639-2/B and MARC codes
+		{"eng", "en"},
+		{"fre", "fr"},
+		{"ger", "de"},
+		{"ENG", "en"}, // case-insensitive
+
+		// deprecated MARC codes included for PubMed compat
+		{"scr", "hr"}, // deprecated Croatian
+		{"scc", "sr"}, // deprecated Serbian
+
+		// BCP 47 tags: extract the primary subtag
+		{"en-US", "en"},
+		{"zh-TW", "zh"},
+		{"en-us", "en"},
+
+		// whitespace trimmed
+		{"  eng  ", "en"},
+
+		// unknown codes return empty string
+		{"und", ""},
+		{"xyz", ""},
+		{"zzz", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.input, func(t *testing.T) {
+			got := NormalizeLanguage(c.input)
+			if got != c.expected {
+				t.Errorf("NormalizeLanguage(%q) = %q, want %q", c.input, got, c.expected)
+			}
+		})
+	}
+}
+
 func TestNormalizeDOI(t *testing.T) {
 	cases := []struct {
 		input    string

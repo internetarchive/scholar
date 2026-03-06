@@ -25,8 +25,8 @@ const (
 // the /dois endpoint.  We only need Data (raw per-record JSON), Meta.Total,
 // and Links.Next for cursor-based pagination.
 type dataciteAPIResponse struct {
-	Data  []json.RawMessage `json:"data"`
-	Meta  struct {
+	Data []json.RawMessage `json:"data"`
+	Meta struct {
 		Total int64 `json:"total"`
 	} `json:"meta"`
 	Links struct {
@@ -76,7 +76,7 @@ func (h *DataciteHarvester) client() Doer {
 		Transport: &http.Transport{
 			TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
 		},
-		Timeout: 5 * time.Minute,
+		Timeout: 30 * time.Minute,
 	}
 }
 

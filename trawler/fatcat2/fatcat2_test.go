@@ -1,7 +1,9 @@
 package fatcat2
 
 import (
+	"encoding/json"
 	"testing"
+	"time"
 )
 
 func Test_File_SetMetadata(t *testing.T) {
@@ -191,6 +193,37 @@ func Test_Release_FulltextURLs(t *testing.T) {
 				if u != c.expected[i] {
 					t.Errorf("URL[%d]: expected %q, got %q", i, c.expected[i], u)
 				}
+			}
+		})
+	}
+}
+
+func Test_ReleaseDate_MarshalJSON(t *testing.T) {
+	cs := []struct {
+		name     string
+		time     time.Time
+		expected string
+	}{
+		{
+			name:     "date only",
+			time:     time.Date(2023, 5, 15, 0, 0, 0, 0, time.UTC),
+			expected: `"2023-05-15"`,
+		},
+		{
+			name:     "datetime with non-zero time is truncated to date",
+			time:     time.Date(2023, 5, 15, 14, 30, 0, 0, time.UTC),
+			expected: `"2023-05-15"`,
+		},
+	}
+	for _, c := range cs {
+		t.Run(c.name, func(t *testing.T) {
+			rd := ReleaseDate(c.time)
+			got, err := json.Marshal(&rd)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if string(got) != c.expected {
+				t.Errorf("expected %s, got %s", c.expected, string(got))
 			}
 		})
 	}

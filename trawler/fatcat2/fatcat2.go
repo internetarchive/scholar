@@ -83,7 +83,7 @@ func (rd *ReleaseDate) MarshalJSON() ([]byte, error) {
 		return json.Marshal(nil)
 	}
 	t := time.Time(*rd)
-	return t.MarshalJSON()
+	return json.Marshal(t.Format("2006-01-02"))
 }
 
 func (rd ReleaseDate) Format(s string) string {

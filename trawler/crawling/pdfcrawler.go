@@ -475,9 +475,13 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 
 	if spnJobResult.Status != "success" {
 		c.slogInfo("spn failure", "result", spnJobResult)
+		errUrl := u
+		if spnJobResult.OriginalURL != "" {
+			errUrl = spnJobResult.OriginalURL
+		}
 		return out, SPNError{
 			Message: spnJobResult.Message,
-			URL:     spnJobResult.OriginalURL,
+			URL:     errUrl,
 			JobID:   spnJobResult.JobID,
 		}
 	}

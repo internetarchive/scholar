@@ -420,6 +420,17 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 
 	for jobID == "" {
 		resp, err := c.SPNClient.Save(req)
+
+		var spne *spn.SPNError
+		if errors.As(err, &spne) {
+			if spne.StatusCode == 429 {
+				interval := 60 * time.Second
+				c.slogInfo("SPN 429 on /save, sleeping", "interval", interval)
+				time.Sleep(interval)
+				continue
+			}
+		}
+
 		if err != nil {
 			// TODO slog? what to do here? if transient we want temporal to poll;
 			// if related to input, crawl should end; otherwise..? I *this* an

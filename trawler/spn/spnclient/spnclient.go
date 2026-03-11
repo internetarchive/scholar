@@ -218,8 +218,7 @@ func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) erro
 		return fmt.Errorf("SPN call failed: %w", err)
 	}
 
-	// TODO old code checked for a 429 *and* checked for slots full. do I need to do both?
-	// the SPN docs don't say they themselves return a 429 so I'm going to pass for now but I think I will do a status code check here
+	// TODO not handling 429 on /save, here; leaving it for calling code for now
 
 	if c.Debug {
 		fmt.Printf("<- %d\n", resp.StatusCode)

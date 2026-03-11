@@ -77,6 +77,7 @@ var (
 		"pubmed",
 		"arxiv",
 		"doaj",
+		"doaj-container",
 		"oai",
 		// TODO: add dblp, wikicite (maybe), JALC
 	}
@@ -116,6 +117,9 @@ type Config struct {
 	// DOAJ OAI-PMH options
 	DOAJFeedPrefix   string
 	DOAJRequestDelay time.Duration
+	// DOAJ container (journal) search API options
+	DOAJContainerFeedPrefix   string
+	DOAJContainerRequestDelay time.Duration
 	// SyncLimit caps records per day slice; 0 means unlimited.
 	SyncLimit int
 	// S3 settings for SeaweedFS upload
@@ -171,6 +175,9 @@ var (
 	// doaj specific options
 	doajFeedPrefix   = flag.String("doaj-feed-prefix", "doaj-feed-0-", "prefix for doaj feed filenames")
 	doajRequestDelay = flag.Duration("doaj-request-delay", 0, "delay between doaj OAI-PMH requests (e.g. 5s)")
+	// doaj-container specific options
+	doajContainerFeedPrefix   = flag.String("doaj-container-feed-prefix", "doaj-container-feed-0-", "prefix for doaj container feed filenames")
+	doajContainerRequestDelay = flag.Duration("doaj-container-request-delay", 500*time.Millisecond, "delay between doaj container API requests (default 500ms for 2 req/s limit)")
 	// oai specific options
 	endpointURL = flag.String("oai-endpoint", "", "endpoint URL for OAI")
 )
@@ -212,8 +219,10 @@ func main() {
 		ArxivMetadataPrefix: *arxivMetadataPrefix,
 		ArxivSet:            *arxivSet,
 		ArxivRequestDelay:   *arxivRequestDelay,
-		DOAJFeedPrefix:      *doajFeedPrefix,
-		DOAJRequestDelay:    *doajRequestDelay,
+		DOAJFeedPrefix:                *doajFeedPrefix,
+		DOAJRequestDelay:              *doajRequestDelay,
+		DOAJContainerFeedPrefix:       *doajContainerFeedPrefix,
+		DOAJContainerRequestDelay:     *doajContainerRequestDelay,
 		SyncLimit:           *syncLimit,
 		S3Upload:            *s3Upload,
 		S3Endpoint:          *s3Endpoint,
@@ -611,6 +620,65 @@ func main() {
 				}
 				if config.S3Upload {
 					key, _, _ := h.DaySliceKey(iv.Start, config.DOAJFeedPrefix)
+					localPath := path.Join(dstDir, key)
+					s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
+					if config.S3Prefix != "" {
+						s3Key = config.S3Prefix + "/" + s3Key
+					}
+					if _, statErr := mc.StatObject(ctx, config.S3Bucket, s3Key, minio.StatObjectOptions{}); statErr == nil {
+						log.Printf("already in S3: %v", s3Key)
+						fmt.Println(config.S3Bucket + "/" + s3Key)
+						continue
+					}
+					f, err := os.Open(localPath)
+					if err != nil {
+						log.Fatalf("open %s: %v", localPath, err)
+					}
+					dec, err := zstd.NewReader(f)
+					if err != nil {
+						f.Close()
+						log.Fatalf("zstd reader: %v", err)
+					}
+					log.Printf("uploading to S3: %v", s3Key)
+					_, err = mc.PutObject(ctx, config.S3Bucket, s3Key, dec, -1, minio.PutObjectOptions{
+						ContentType: "application/x-ndjson",
+					})
+					dec.Close()
+					f.Close()
+					if err != nil {
+						log.Fatalf("s3 upload %s: %v", s3Key, err)
+					}
+					fmt.Println(config.S3Bucket + "/" + s3Key)
+				}
+			}
+		case "doaj-container":
+			dstDir := path.Join(config.FeedDir, "doaj-container")
+			if err := os.MkdirAll(dstDir, 0755); err != nil {
+				log.Fatal(err)
+			}
+			h := feeds.DOAJContainerHarvester{
+				Client:       client,
+				RequestDelay: config.DOAJContainerRequestDelay,
+				MaxRecords:   config.SyncLimit,
+			}
+			var mc *minio.Client
+			if config.S3Upload {
+				mc, err = minio.New(config.S3Endpoint, &minio.Options{
+					Creds:  credentials.NewStaticV4(config.S3AccessKey, config.S3SecretKey, ""),
+					Secure: config.S3UseSSL,
+				})
+				if err != nil {
+					log.Fatalf("s3 client: %v", err)
+				}
+			}
+			ctx := context.Background()
+			ivs := dateutil.Daily(syncStart.Time, syncEnd.Time)
+			for _, iv := range ivs {
+				if err := h.WriteDaySlice(iv.Start, dstDir, config.DOAJContainerFeedPrefix); err != nil {
+					log.Fatalf("doaj-container day slice: %v", err)
+				}
+				if config.S3Upload {
+					key, _, _ := h.DaySliceKey(iv.Start, config.DOAJContainerFeedPrefix)
 					localPath := path.Join(dstDir, key)
 					s3Key := strings.TrimSuffix(key, ".json.zst") + ".ndjson"
 					if config.S3Prefix != "" {

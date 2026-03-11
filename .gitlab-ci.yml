@@ -260,14 +260,14 @@ test:djscholar:
   variables:
     DJANGO_POSTGRESQL_HOST: fatcat-postgres-17
     PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-    POSTGRES_USER: fatcat2
-    POSTGRES_PASSWORD: fatcat2
+    POSTGRES_USER: fatcat
+    POSTGRES_PASSWORD: fatcat
     ENV: CI
   script:
     - cd djscholar
     - pip install uv
     - uv sync --no-dev --no-python-downloads
-    - DJANGO_SETTINGS_MODULE=djscholar.site.settings.base uv run pytest
+    - DJANGO_SETTINGS_MODULE=djscholar.site.settings.ci uv run pytest
   rules:
     # run tests when any file in djscholar/ changes
     - if: '$CI_PIPELINE_SOURCE == "push"'

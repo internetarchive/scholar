@@ -256,7 +256,7 @@ test:djscholar:
     name: python:3.13-bookworm
   services:
     - name: postgres:17-bookworm
-      alias: scholar-postgres-17
+      alias: fatcat-postgres-17
   variables:
     DJANGO_POSTGRESQL_HOST: fatcat-postgres-17
     PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"

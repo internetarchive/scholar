@@ -274,3 +274,5 @@ test:djscholar:
       changes:
         - djscholar/**/*
       #when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: always

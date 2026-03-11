@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 )
@@ -589,6 +590,13 @@ func GetCreator(c *http.Client, id uuid.UUID) (Creator, error) {
 }
 
 func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData, error) {
+	if idtype == "doi" {
+		if !cleaning.IsAscii(idvalue) {
+			// fatcat v1 does not support unicode in DOI even though UTF-8 is allowed.
+			return nil, nil
+		}
+
+	}
 	fc1url := viper.GetString("fatcat1.endpoint")
 	req, err := http.NewRequest("GET", fc1url+"/"+endpoint, nil)
 	if err != nil {

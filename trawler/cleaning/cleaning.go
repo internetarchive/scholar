@@ -3,6 +3,7 @@ package cleaning
 import (
 	"bytes"
 	"strings"
+	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -48,4 +49,15 @@ func CleanString(s string) string {
 	s = strings.ReplaceAll(s, ",,", "\"")
 
 	return s
+}
+
+// https://stackoverflow.com/questions/53069040/checking-a-string-contains-only-ascii-characters
+func IsAscii(s string) bool {
+	for _, c := range s {
+		if c > unicode.MaxASCII {
+			return false
+		}
+	}
+
+	return true
 }

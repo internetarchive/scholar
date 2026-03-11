@@ -246,3 +246,31 @@ upload:scholkit:
         "${NEXUS_URL}/repository/raw-internal/scholar/${DEB_FILE}"
   needs:
     - build:scholkit-deb
+
+# = djscholar ======================
+
+# based on https://git.archive.org/archive-it/ait/-/blob/main/.gitlab-ci.yml?ref_type=heads
+test:djscholar:
+  stage: test
+  image:
+    name: python:3.12-bookworm
+  services:
+    - name: postgres:17-bookworm
+      alias: scholar-postgres-17
+  variables:
+    DJANGO_POSTGRESQL_HOST: fatcat-postgres-17
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+    POSTGRES_USER: fatcat2
+    POSTGRES_PASSWORD: fatcat2
+    ENV: CI
+  script:
+    - cd djscholar
+    - pip install uv
+    - uv sync --no-dev
+    - DJANGO_SETTINGS_MODULE=djscholar.site.settings.base uv run pytest
+  rules:
+    # run tests when any file in djscholar/ changes
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      changes:
+        - djscholar/**/*
+      #when: on_success

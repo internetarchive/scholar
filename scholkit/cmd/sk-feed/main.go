@@ -250,6 +250,16 @@ func main() {
 			fmt.Println(s)
 		}
 	case config.Source != "":
+		valid := false
+		for _, s := range availableSources {
+			if s == config.Source {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			log.Fatalf("unknown source %q; use -l to list available sources", config.Source)
+		}
 		log.Printf("fetching %v [...]", config.Source)
 		switch config.Source {
 		case "openalex":

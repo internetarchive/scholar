@@ -261,8 +261,22 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				}
 				var spnErr *SPNError
 				if errors.As(err, &spnErr) {
-					if spnErr.StatusExt == "error:job-failed" {
+					switch spnErr.StatusExt {
+					case "error:job-failed":
+						// mystery to me but _probably_ transient. I'm choosing to end the
+						// crawl, though, and leave it for a re-run of the day instead of
+						// blocking since SPN outages can take a long time to recover.
 						out.FailReason = "spn-error:job-failed"
+					case "error:browser-running-error":
+						// something about the page crashed the headless browser. I found
+						// that this was not transient for at least zenodo. It may mean
+						// that a failing domain should be put into the simple get list; if
+						// that doesn't lead to successful crawls it might need to be
+						// blocked.
+						out.FailReason = "spn-error:browser-running-error"
+					case "error:no-captures":
+						// SPN was not able to reach the host at all; it was either down or blocking them
+						out.FailReason = "spn-error:no-captures"
 					}
 					return *out, nil
 				}

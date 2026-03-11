@@ -23,13 +23,14 @@ import (
 )
 
 type SPNError struct {
-	Message string
-	JobID   string
-	URL     string
+	Message   string
+	StatusExt string
+	JobID     string
+	URL       string
 }
 
 func (e SPNError) Error() string {
-	return fmt.Sprintf("SPN job %s failed for '%s': %s", e.JobID, e.URL, e.Message)
+	return fmt.Sprintf("SPN job %s failed for %q: %s: %q", e.JobID, e.URL, e.Message, e.StatusExt)
 }
 
 type CdxNoRowsError struct {
@@ -253,8 +254,16 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				row, err = c.spnBrowserToCdx(u)
 			}
 			if err != nil {
-				if errors.Is(err, CdxNoRowsError{}) {
+				var cdxNoRowsErr *CdxNoRowsError
+				if errors.As(err, &cdxNoRowsErr) {
 					out.FailReason = "cdx-no-rows"
+					return *out, nil
+				}
+				var spnErr *SPNError
+				if errors.As(err, &spnErr) {
+					if spnErr.StatusExt == "error:job-failed" {
+						out.FailReason = "spn-error:job-failed"
+					}
 					return *out, nil
 				}
 				return *out, err
@@ -480,9 +489,10 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 			errUrl = spnJobResult.OriginalURL
 		}
 		return out, SPNError{
-			Message: spnJobResult.Message,
-			URL:     errUrl,
-			JobID:   spnJobResult.JobID,
+			Message:   spnJobResult.Message,
+			StatusExt: spnJobResult.StatusExt,
+			URL:       errUrl,
+			JobID:     spnJobResult.JobID,
 		}
 	}
 	// TODO this shouldn't be necessary as we have sleeping in the cdx client;

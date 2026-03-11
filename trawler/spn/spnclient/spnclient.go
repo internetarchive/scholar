@@ -39,6 +39,7 @@ type UserStatus struct {
 // type JobStatus describes the result of the /status/<job id> endpoint
 type JobStatus struct {
 	Status      string `json:"status"`
+	StatusExt   string `json:"status_ext"`
 	JobID       string `json:"job_id"`
 	OriginalURL string `json:"original_url"`
 	Screenshot  string `json:"screenshot"`

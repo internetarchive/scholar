@@ -253,7 +253,7 @@ upload:scholkit:
 test:djscholar:
   stage: test
   image:
-    name: python:3.12-bookworm
+    name: python:3.13-bookworm
   services:
     - name: postgres:17-bookworm
       alias: scholar-postgres-17
@@ -266,7 +266,7 @@ test:djscholar:
   script:
     - cd djscholar
     - pip install uv
-    - uv sync --no-dev
+    - uv sync --no-dev --no-python-downloads
     - DJANGO_SETTINGS_MODULE=djscholar.site.settings.base uv run pytest
   rules:
     # run tests when any file in djscholar/ changes

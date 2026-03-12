@@ -1,4 +1,5 @@
 from django.http import HttpRequest, HttpResponse
+from django.shortcuts import render
 
 
 def webhealth(request: HttpRequest) -> HttpResponse:
@@ -14,7 +15,7 @@ def searchhealth(request: HttpRequest) -> HttpResponse:
 
 
 def home(request: HttpRequest) -> HttpResponse:
-    raise NotImplementedError
+    return render(request, "ftsearch/home.html")
 
 
 def about(request: HttpRequest) -> HttpResponse:

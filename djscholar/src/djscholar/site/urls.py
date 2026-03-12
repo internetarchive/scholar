@@ -22,5 +22,5 @@ from djscholar.fcapi.views import v2api
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("api/fatcat/v2/", v2api.urls),
-    path("", include("ftsearch.urls")),
+    path("", include("djscholar.ftsearch.urls")),
 ]

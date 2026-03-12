@@ -13,6 +13,21 @@
       font-style: normal;
     }
 
+    @keyframes rainbow {
+      0%   { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
+    a:hover {
+      background: linear-gradient(90deg, #e05, #f90, #ed0, #0c6, #09f, #c3f, #e05);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: rainbow 4s linear infinite;
+      text-decoration: none !important;
+    }
+
     *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;

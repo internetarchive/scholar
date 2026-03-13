@@ -63,10 +63,25 @@ def search(request: HttpRequest) -> HttpResponse:
         data = json.loads(resp.read())
 
     hits = data.get("hits", {}).get("hits", [])[:50]
-    print(hits)
-    results = [{"title": h["_source"]["biblio"].get("title", "(untitled)")} for h in hits]
+    results = []
+    for h in hits:
+        source = h["_source"]
+        results.append({
+            "title": source.get("biblio", {}).get("title", "(untitled)"),
+            "thumbnail_url": source.get("fulltext", {}).get("thumbnail_url", "").replace(
+                "https://blobs.fatcat.wiki/", "https://scholar.archive.org/_s3/"
+            ),
+        })
 
-    return render(request, "ftsearch/search.html", {"query": q, "results": results})
+    mode = request.GET.get("mode", "list")
+    if mode not in ("list", "grid"):
+        mode = "list"
+
+    return render(request, "ftsearch/search.html", {
+        "query": q,
+        "results": results,
+        "mode": mode,
+    })
 
 
 def work(request: HttpRequest, work_ident: str) -> HttpResponse:

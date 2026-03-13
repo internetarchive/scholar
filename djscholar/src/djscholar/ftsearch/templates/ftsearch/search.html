@@ -40,9 +40,53 @@
       list-style: none;
     }
 
-    .results li {
+    .results-list li {
       padding: 0.5rem 0;
       border-bottom: 1px solid #eee;
+    }
+
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+
+    .results-grid li {
+      text-align: center;
+      font-size: 0.8rem;
+    }
+
+    .results-grid li img {
+      width: 100%;
+      aspect-ratio: 3/4;
+      object-fit: cover;
+      background: #f0f0f0;
+      border: 1px solid #ddd;
+      margin-bottom: 0.4rem;
+    }
+
+    .thumbnail-placeholder {
+      width: 100%;
+      aspect-ratio: 3/4;
+      background: #f0f0f0;
+      border: 1px solid #ddd;
+      margin-bottom: 0.4rem;
+    }
+
+    .mode-toggle {
+      margin-bottom: 1rem;
+      font-size: 0.875rem;
+    }
+
+    .mode-toggle a {
+      color: #555;
+      text-decoration: none;
+      margin-right: 0.75rem;
+    }
+
+    .mode-toggle .active {
+      color: #333;
+      font-weight: bold;
     }
 
     .results .no-results {
@@ -60,11 +104,26 @@
   </header>
   <section class="results">
     {% if results %}
-      <ul>
-        {% for result in results %}
-          <li>{{ result.title }}</li>
-        {% endfor %}
-      </ul>
+      <div class="mode-toggle">
+        <a href="?q={{ query }}&mode=list" class="{% if mode == 'list' %}active{% endif %}">List</a>
+        <a href="?q={{ query }}&mode=grid" class="{% if mode == 'grid' %}active{% endif %}">Grid</a>
+      </div>
+      {% if mode == "grid" %}
+        <ul class="results-grid">
+          {% for result in results %}
+            <li>
+              {% if result.thumbnail_url %}<img src="{{ result.thumbnail_url }}" alt="">{% else %}<div class="thumbnail-placeholder"></div>{% endif %}
+              <div>{{ result.title }}</div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <ul class="results-list">
+          {% for result in results %}
+            <li>{{ result.title }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
     {% else %}
       <p class="no-results">No results found for "{{ query }}".</p>
     {% endif %}

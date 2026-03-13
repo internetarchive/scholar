@@ -1,0 +1,72 @@
+{% extends "ftsearch/base.html" %}
+
+{% block title %}{{ query }} - IA Scholar{% endblock %}
+
+{% block styles %}
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid #eee;
+    }
+
+    .top-bar h1 {
+      font-family: "Jacquard", serif;
+      font-size: 1.5rem;
+      font-weight: normal;
+      white-space: nowrap;
+    }
+
+    .top-bar h1 a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .top-bar .search-form {
+      flex: 1;
+      max-width: 600px;
+    }
+
+    .results {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+      flex: 1;
+    }
+
+    .results ul {
+      list-style: none;
+    }
+
+    .results li {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .results .no-results {
+      color: #777;
+    }
+{% endblock %}
+
+{% block content %}
+  <header class="top-bar">
+    <h1><a href="{% url 'ftsearch:home' %}">IA Scholar</a></h1>
+    <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
+      <input type="text" name="q" value="{{ query }}" placeholder="Search open access papers..." aria-label="Search">
+      <button type="submit">Search</button>
+    </form>
+  </header>
+  <section class="results">
+    {% if results %}
+      <ul>
+        {% for result in results %}
+          <li>{{ result.title }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="no-results">No results found for "{{ query }}".</p>
+    {% endif %}
+  </section>
+{% endblock %}

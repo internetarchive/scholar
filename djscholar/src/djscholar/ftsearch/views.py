@@ -1,5 +1,11 @@
+import json
+import urllib.request
+
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
+
+ES_BASE = "https://scholar.archive.org/_es"
+ES_INDEX = "qa_scholar_fulltext"
 
 
 def webhealth(request: HttpRequest) -> HttpResponse:
@@ -31,7 +37,36 @@ def permalink(request: HttpRequest) -> HttpResponse:
 
 
 def search(request: HttpRequest) -> HttpResponse:
-    raise NotImplementedError
+    q = request.POST.get("q", "").strip() or request.GET.get("q", "").strip()
+    if not q:
+        return render(request, "ftsearch/home.html")
+
+    es_query = json.dumps({
+        "query": {
+            "query_string": {
+                "query": q,
+                "default_operator": "AND",
+                "analyze_wildcard": True,
+                "allow_leading_wildcard": False,
+                "lenient": True,
+            }
+        },
+        "size": 20,
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{ES_BASE}/{ES_INDEX}/_search",
+        data=es_query,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        data = json.loads(resp.read())
+
+    hits = data.get("hits", {}).get("hits", [])[:50]
+    print(hits)
+    results = [{"title": h["_source"]["biblio"].get("title", "(untitled)")} for h in hits]
+
+    return render(request, "ftsearch/search.html", {"query": q, "results": results})
 
 
 def work(request: HttpRequest, work_ident: str) -> HttpResponse:

@@ -1,47 +1,8 @@
+{% extends "ftsearch/base.html" %}
+
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Internet Archive Scholar</title>
-  <style>
-    @font-face {
-      font-family: "Jacquard";
-      src: url("{% static 'ftsearch/fonts/Jacquard12-Regular.ttf' %}") format("truetype");
-      font-weight: normal;
-      font-style: normal;
-    }
 
-    @keyframes rainbow {
-      0%   { background-position: 0% 50%; }
-      100% { background-position: 200% 50%; }
-    }
-
-    a:hover {
-      background: linear-gradient(90deg, #e05, #f90, #ed0, #0c6, #09f, #c3f, #e05);
-      background-size: 200% 100%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: rainbow 4s linear infinite;
-      text-decoration: none !important;
-    }
-
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      color: #333;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
+{% block styles %}
     main {
       flex: 1;
       display: flex;
@@ -68,83 +29,6 @@
     .search-form {
       width: 100%;
       max-width: 600px;
-      display: flex;
-      gap: 0.5rem;
-    }
-
-    .search-form input[type="text"] {
-      flex: 1;
-      padding: 0.75rem 1rem;
-      font-size: 1rem;
-      border: 2px solid #ccc;
-      border-radius: 4px;
-    }
-
-    .search-form input[type="text"]:focus {
-      outline: none;
-      border-color: #333;
-    }
-
-    .search-form button {
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      background: #333;
-      color: #fff;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    .search-form button:hover {
-      background: #555;
-    }
-
-    footer {
-      background: #eee;
-      color: #555;
-      padding: 3rem 2rem;
-      margin-top: 3rem;
-      font-size: 0.875rem;
-      line-height: 1.6;
-    }
-
-    .footer-grid {
-      max-width: 960px;
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 2rem;
-    }
-
-    @media (max-width: 640px) {
-      .footer-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    footer h4 {
-      color: #333;
-      font-size: 1rem;
-      margin-bottom: 0.75rem;
-    }
-
-    footer a {
-      color: #555;
-      text-decoration: none;
-    }
-
-    footer a:hover {
-      color: #111;
-      text-decoration: underline;
-    }
-
-    .footer-links {
-      list-style: none;
-      padding: 0;
-    }
-
-    .footer-links li {
-      margin-bottom: 0.4rem;
     }
 
     .home-links {
@@ -163,16 +47,9 @@
       color: #333;
       text-decoration: underline;
     }
+{% endblock %}
 
-    .footer-ia-links {
-      margin-top: 0.75rem;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.25rem 1rem;
-    }
-  </style>
-</head>
-<body>
+{% block content %}
   <main>
     <img class="logo" src="{% static 'ftsearch/images/ia.svg' %}" alt="Internet Archive">
     <h1>Internet Archive Scholar</h1>
@@ -186,40 +63,4 @@
       <a href="https://fatcat.wiki">Fatcat Bibliographic Database</a>
     </nav>
   </main>
-  <footer>
-    <div class="footer-grid">
-      <nav style="display: flex; gap: 1.5rem;">
-        <img src="{% static 'ftsearch/images/ia.svg' %}" alt="" style="width: 80px; height: 80px; flex-shrink: 0;">
-        <div>
-        <h4>Internet Archive</h4>
-        <p>
-          We are a US 501(c)(3) non-profit library, building a global archive
-          of Internet sites and other cultural artifacts in digital form.
-          Other projects include
-          <a target="_blank" rel="noopener" href="https://web.archive.org">The Wayback Machine</a>,
-          <a target="_blank" rel="noopener" href="https://archive.org">archive.org</a>,
-          <a target="_blank" rel="noopener" href="https://openlibrary.org">Open Library</a>, and
-          <a target="_blank" rel="noopener" href="https://archive-it.org">Archive-It</a>.
-        </p>
-        <div class="footer-ia-links">
-          <a target="_blank" rel="noopener" href="https://archive.org/about/">About Us</a>
-          <a target="_blank" rel="noopener" href="https://archive.org/about/contact.php">Contact Us</a>
-          <a target="_blank" rel="noopener" href="https://archive.org/about/terms.php">Policies</a>
-          <a target="_blank" rel="noopener" href="https://archive.org/donate">Donate</a>
-        </div>
-        </div>
-      </nav>
-      <nav>
-        <h4>scholar.archive.org</h4>
-        <ul class="footer-links">
-          <li><a href="{% url 'ftsearch:about' %}">How It Works</a></li>
-          <li><a href="{% url 'ftsearch:about' %}">Content Sources</a></li>
-          <li><a href="{% url 'ftsearch:about' %}">Text and Data Mining</a></li>
-          <li><a href="{% url 'ftsearch:help' %}">Help</a></li>
-          <li><a target="_blank" rel="external noopener noreferrer" href="https://github.com/internetarchive/scholar">Source Code</a></li>
-        </ul>
-      </nav>
-    </div>
-  </footer>
-</body>
-</html>
+{% endblock %}

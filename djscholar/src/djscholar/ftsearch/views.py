@@ -1,11 +1,9 @@
 import json
 import urllib.request
 
+from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
-
-ES_BASE = "https://scholar.archive.org/_es"
-ES_INDEX = "qa_scholar_fulltext"
 
 
 def webhealth(request: HttpRequest) -> HttpResponse:
@@ -55,7 +53,7 @@ def search(request: HttpRequest) -> HttpResponse:
     }).encode()
 
     req = urllib.request.Request(
-        f"{ES_BASE}/{ES_INDEX}/_search",
+        f"{settings.ES_BASE}/{settings.ES_INDEX}/_search",
         data=es_query,
         headers={"Content-Type": "application/json"},
     )

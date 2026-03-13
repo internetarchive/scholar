@@ -43,3 +43,5 @@ sentry_sdk.init(
 )
 
 STATIC_ROOT = "/var/www/djscholar/static"
+
+ES_INDEX = "scholar_fulltext"

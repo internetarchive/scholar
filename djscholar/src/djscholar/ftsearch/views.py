@@ -51,6 +51,13 @@ def search(request: HttpRequest) -> HttpResponse:
     if not q:
         return render(request, "ftsearch/home.html")
 
+    page_size = 25
+    try:
+        page = max(1, int(request.GET.get("page", 1)))
+    except (ValueError, TypeError):
+        page = 1
+    offset = (page - 1) * page_size
+
     # TODO handler for get_es failing that can render a nice outage page
     data = get_es().search(
         index=settings.ES_INDEX,
@@ -64,12 +71,14 @@ def search(request: HttpRequest) -> HttpResponse:
                     "lenient": True,
                 }
             },
-            "size": 50,
+            "from": offset,
+            "size": page_size,
         },
         request_timeout=20,
     )
 
-    hits = data.get("hits", {}).get("hits", [])[:50]
+    total = data.get("hits", {}).get("total", {}).get("value", 0)
+    hits = data.get("hits", {}).get("hits", [])
     results = []
     for h in hits:
         source = h["_source"]
@@ -84,10 +93,16 @@ def search(request: HttpRequest) -> HttpResponse:
     if mode not in ("list", "grid"):
         mode = "list"
 
+    total_pages = (total + page_size - 1) // page_size
+
     return render(request, "ftsearch/search.html", {
         "query": q,
         "results": results,
         "mode": mode,
+        "page": page,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
     })
 
 

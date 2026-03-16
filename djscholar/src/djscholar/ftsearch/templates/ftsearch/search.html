@@ -92,6 +92,29 @@
     .results .no-results {
       color: #777;
     }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 2rem;
+      font-size: 0.875rem;
+    }
+
+    .pagination a {
+      color: #333;
+      text-decoration: none;
+    }
+
+    .pagination .disabled {
+      color: #ccc;
+      pointer-events: none;
+    }
+
+    .pagination .page-info {
+      color: #777;
+    }
 {% endblock %}
 
 {% block content %}
@@ -124,6 +147,19 @@
           {% endfor %}
         </ul>
       {% endif %}
+      <nav class="pagination">
+        {% if has_prev %}
+          <a href="?q={{ query }}&mode={{ mode }}&page={{ page|add:"-1" }}">&larr; Previous</a>
+        {% else %}
+          <span class="disabled">&larr; Previous</span>
+        {% endif %}
+        <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+        {% if has_next %}
+          <a href="?q={{ query }}&mode={{ mode }}&page={{ page|add:"1" }}"">Next &rarr;</a>
+        {% else %}
+          <span class="disabled">Next &rarr;</span>
+        {% endif %}
+      </nav>
     {% else %}
       <p class="no-results">No results found for "{{ query }}".</p>
     {% endif %}

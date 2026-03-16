@@ -82,8 +82,12 @@ def search(request: HttpRequest) -> HttpResponse:
     results = []
     for h in hits:
         source = h["_source"]
+        biblio = source.get("biblio", {})
         results.append({
-            "title": source.get("biblio", {}).get("title", "(untitled)"),
+            "title": biblio.get("title", "(untitled)"),
+            "authors": biblio.get("contrib_names", []),
+            "year": biblio.get("release_year"),
+            "journal": biblio.get("container_name", ""),
             "thumbnail_url": source.get("fulltext", {}).get("thumbnail_url", "").replace(
                 "https://blobs.fatcat.wiki/", "https://scholar.archive.org/_s3/"
             ),

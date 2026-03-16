@@ -41,8 +41,25 @@
     }
 
     .results-list li {
-      padding: 0.5rem 0;
+      padding: 0.75rem 0;
       border-bottom: 1px solid #eee;
+    }
+
+    .result-title {
+      font-size: 1.125rem;
+      font-weight: 500;
+    }
+
+    .result-authors {
+      color: #555;
+      font-size: 0.875rem;
+      margin-top: 0.2rem;
+    }
+
+    .result-meta {
+      color: #777;
+      font-size: 0.8rem;
+      margin-top: 0.15rem;
     }
 
     .results-grid {
@@ -136,14 +153,24 @@
           {% for result in results %}
             <li>
               {% if result.thumbnail_url %}<img src="{{ result.thumbnail_url }}" alt="">{% else %}<div class="thumbnail-placeholder"></div>{% endif %}
-              <div>{{ result.title }}</div>
+              <div class="result-title">{{ result.title }}</div>
+              {% if result.authors %}<div class="result-authors">{{ result.authors|join:", " }}</div>{% endif %}
+              {% if result.year or result.journal %}
+                <div class="result-meta">{% if result.year %}{{ result.year }}{% endif %}{% if result.year and result.journal %} &middot; {% endif %}{% if result.journal %}{{ result.journal }}{% endif %}</div>
+              {% endif %}
             </li>
           {% endfor %}
         </ul>
       {% else %}
         <ul class="results-list">
           {% for result in results %}
-            <li>{{ result.title }}</li>
+            <li>
+              <div class="result-title">{{ result.title }}</div>
+              {% if result.authors %}<div class="result-authors">{{ result.authors|join:", " }}</div>{% endif %}
+              {% if result.year or result.journal %}
+                <div class="result-meta">{% if result.year %}{{ result.year }}{% endif %}{% if result.year and result.journal %} &middot; {% endif %}{% if result.journal %}{{ result.journal }}{% endif %}</div>
+              {% endif %}
+            </li>
           {% endfor %}
         </ul>
       {% endif %}

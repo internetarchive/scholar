@@ -1,4 +1,5 @@
 {% extends "ftsearch/base.html" %}
+{% load humanize %}
 
 {% block title %}{{ query }} - IA Scholar{% endblock %}
 
@@ -29,10 +30,34 @@
       max-width: 600px;
     }
 
-    .results {
-      max-width: 960px;
+    .search-layout {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 2rem;
+      max-width: 1100px;
       margin: 2rem auto;
       padding: 0 2rem;
+      flex: 1;
+    }
+
+    .sidebar {
+      padding-top: 0.25rem;
+      border-right: 1px solid grey;
+    }
+
+    .sidebar .result-count {
+      font-size: 1.2rem;
+      font-weight: 200;
+      color: #333;
+    }
+
+    .sidebar .query-time {
+      font-size: 0.8rem;
+      color: #999;
+      margin-top: 0.25rem;
+    }
+
+    .results {
       flex: 1;
     }
 
@@ -149,7 +174,12 @@
       <button type="submit">Search</button>
     </form>
   </header>
-  <section class="results">
+  <div class="search-layout">
+    <aside class="sidebar">
+      <div class="result-count"><strong>{{ total|intcomma }}</strong> hits</div>
+      <div class="query-time">in {{ took_secs }}s</div>
+    </aside>
+    <section class="results">
     {% if results %}
       <div class="mode-toggle">
         <a href="?q={{ query }}&mode=list" class="{% if mode == 'list' %}active{% endif %}">List</a>
@@ -198,5 +228,6 @@
     {% else %}
       <p class="no-results">No results found for "{{ query }}".</p>
     {% endif %}
-  </section>
+    </section>
+  </div>
 {% endblock %}

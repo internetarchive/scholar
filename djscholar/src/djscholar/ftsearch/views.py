@@ -99,6 +99,7 @@ def search(request: HttpRequest) -> HttpResponse:
         request_timeout=20,
     )
 
+    took_secs = round(data.get("took", 0) / 1000, 2)
     total = data.get("hits", {}).get("total", {}).get("value", 0)
     hits = data.get("hits", {}).get("hits", [])
     results = []
@@ -138,6 +139,8 @@ def search(request: HttpRequest) -> HttpResponse:
         "total_pages": total_pages,
         "has_prev": page > 1,
         "has_next": page < total_pages,
+        "total": total,
+        "took_secs": took_secs,
     })
 
 

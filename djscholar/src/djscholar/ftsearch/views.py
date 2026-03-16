@@ -1,9 +1,21 @@
-import json
-import urllib.request
-
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
+from elasticsearch import Elasticsearch
+
+_es = None
+
+
+def get_es() -> Elasticsearch:
+    global _es
+    if _es is None:
+        _es = Elasticsearch(
+            settings.ES_HOSTS,
+            sniff_on_start=settings.ES_SNIFF,
+            sniff_on_connection_fail=settings.ES_SNIFF,
+            sniffer_timeout=60,
+        )
+    return _es
 
 
 def webhealth(request: HttpRequest) -> HttpResponse:
@@ -39,26 +51,23 @@ def search(request: HttpRequest) -> HttpResponse:
     if not q:
         return render(request, "ftsearch/home.html")
 
-    es_query = json.dumps({
-        "query": {
-            "query_string": {
-                "query": q,
-                "default_operator": "AND",
-                "analyze_wildcard": True,
-                "allow_leading_wildcard": False,
-                "lenient": True,
-            }
+    # TODO handler for get_es failing that can render a nice outage page
+    data = get_es().search(
+        index=settings.ES_INDEX,
+        body={
+            "query": {
+                "query_string": {
+                    "query": q,
+                    "default_operator": "AND",
+                    "analyze_wildcard": True,
+                    "allow_leading_wildcard": False,
+                    "lenient": True,
+                }
+            },
+            "size": 50,
         },
-        "size": 20,
-    }).encode()
-
-    req = urllib.request.Request(
-        f"{settings.ES_BASE}/{settings.ES_INDEX}/_search",
-        data=es_query,
-        headers={"Content-Type": "application/json"},
+        request_timeout=20,
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        data = json.loads(resp.read())
 
     hits = data.get("hits", {}).get("hits", [])[:50]
     results = []

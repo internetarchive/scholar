@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "django==5.1.5",
+    "elasticsearch==7.13.4",
     "django-ninja==1.4.0",
     "gevent>=24.11",
     "gunicorn>=23.0",

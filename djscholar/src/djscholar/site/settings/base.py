@@ -135,6 +135,6 @@ SILENCED_SYSTEM_CHECKS = ["models.E034"]
 STATIC_ROOT = BASE_DIR / "static"
 
 # Elasticsearch
-ES_BASE = "https://scholar.archive.org/_es"
-# ES_INDEX = "qa_scholar_fulltext"
+ES_HOSTS = ["https://scholar.archive.org/_es"]
+ES_SNIFF = True
 ES_INDEX = "scholar_fulltext"

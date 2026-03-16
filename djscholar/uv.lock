@@ -141,6 +141,7 @@ source = { editable = "." }
 dependencies = [
     { name = "django" },
     { name = "django-ninja" },
+    { name = "elasticsearch" },
     { name = "gevent" },
     { name = "gunicorn" },
     { name = "ninja-api-key" },
@@ -164,6 +165,7 @@ dev = [
 requires-dist = [
     { name = "django", specifier = "==5.1.5" },
     { name = "django-ninja", specifier = "==1.4.0" },
+    { name = "elasticsearch", specifier = "==7.13.4" },
     { name = "gevent", specifier = ">=24.11" },
     { name = "gunicorn", specifier = ">=23.0" },
     { name = "ninja-api-key", specifier = "==1.0.2" },
@@ -181,6 +183,19 @@ dev = [
     { name = "pytest-django", specifier = "==4.11.0" },
     { name = "ruff", specifier = "==0.13.1" },
     { name = "ty", specifier = ">=0.0.12" },
+]
+
+[[package]]
+name = "elasticsearch"
+version = "7.13.4"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "urllib3" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/elasticsearch/7.13.4/elasticsearch-7.13.4.tar.gz", hash = "sha256:52dda85f76eeb85ec873bf9ffe0ba6849e544e591f66d4048a5e48016de268e0" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/elasticsearch/7.13.4/elasticsearch-7.13.4-py2.py3-none-any.whl", hash = "sha256:5920df0ab2630778680376d86bea349dc99860977eec9b6d2bd0860f337313f2" },
 ]
 
 [[package]]
@@ -646,11 +661,11 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.4.0"
+version = "1.26.20"
 source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
-sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/urllib3/2.4.0/urllib3-2.4.0.tar.gz", hash = "sha256:414bc6535b787febd7567804cc015fee39daab8ad86268f1310a9250697de466" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/urllib3/1.26.20/urllib3-1.26.20.tar.gz", hash = "sha256:40c2dc0c681e47eb8f90e7e27bf6ff7df2e677421fd46756da1161c39ca70d32" }
 wheels = [
-    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/urllib3/2.4.0/urllib3-2.4.0-py3-none-any.whl", hash = "sha256:4e16665048960a0900c702d4a66415956a584919c03361cac9f1df5c5dd7e813" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/urllib3/1.26.20/urllib3-1.26.20-py2.py3-none-any.whl", hash = "sha256:0ed14ccfbf1c30a9072c7ca157e4319b70d65f623e91e7b32fadb2853431016e" },
 ]
 
 [[package]]

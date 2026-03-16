@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
 from elasticsearch import Elasticsearch
 
 _es = None
@@ -73,6 +75,26 @@ def search(request: HttpRequest) -> HttpResponse:
             },
             "from": offset,
             "size": page_size,
+            "highlight": {
+                "fields": {
+                    "abstracts.body": {
+                        "number_of_fragments": 2,
+                        "fragment_size": 150,
+                    },
+                    "fulltext.body": {
+                        "number_of_fragments": 3,
+                        "fragment_size": 150,
+                    },
+                    "fulltext.acknowledgement": {
+                        "number_of_fragments": 2,
+                        "fragment_size": 150,
+                    },
+                    "fulltext.annex": {
+                        "number_of_fragments": 2,
+                        "fragment_size": 150,
+                    },
+                },
+            },
         },
         request_timeout=20,
     )
@@ -83,6 +105,14 @@ def search(request: HttpRequest) -> HttpResponse:
     for h in hits:
         source = h["_source"]
         biblio = source.get("biblio", {})
+        highlight = h.get("highlight", {})
+        raw_snippets = []
+        for field in highlight.values():
+            raw_snippets.extend(field)
+        snippets = [
+            mark_safe(escape(s).replace("&lt;em&gt;", "<strong>").replace("&lt;/em&gt;", "</strong>"))
+            for s in raw_snippets
+        ]
         results.append({
             "title": biblio.get("title", "(untitled)"),
             "authors": biblio.get("contrib_names", []),
@@ -91,6 +121,7 @@ def search(request: HttpRequest) -> HttpResponse:
             "thumbnail_url": source.get("fulltext", {}).get("thumbnail_url", "").replace(
                 "https://blobs.fatcat.wiki/", "https://scholar.archive.org/_s3/"
             ),
+            "highlights": snippets,
         })
 
     mode = request.GET.get("mode", "list")

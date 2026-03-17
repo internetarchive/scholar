@@ -264,6 +264,14 @@ def search(request: HttpRequest) -> HttpResponse:
             mark_safe(escape(s).replace("&lt;em&gt;", "<strong>").replace("&lt;/em&gt;", "</strong>"))
             for s in raw_snippets
         ]
+        ext_ids = []
+        for label, key in [("doi", "doi"), ("pmid", "pmid"), ("pmcid", "pmcid"),
+                           ("arxiv", "arxiv_id"), ("dblp", "dblp_id"),
+                           ("doaj", "doaj_id"), ("jstor", "jstor_id")]:
+            val = biblio.get(key)
+            if val:
+                ext_ids.append(f"{label}:{val}")
+
         results.append({
             "title": biblio.get("title", "(untitled)"),
             "authors": biblio.get("contrib_names", []),
@@ -274,6 +282,7 @@ def search(request: HttpRequest) -> HttpResponse:
             ),
             "access_url": source.get("fulltext", {}).get("access_url", ""),
             "highlights": snippets,
+            "ext_ids": ext_ids,
         })
 
     mode = request.GET.get("mode", "list")

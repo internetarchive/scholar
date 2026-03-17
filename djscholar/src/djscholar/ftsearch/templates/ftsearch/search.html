@@ -97,6 +97,12 @@
       margin-top: 0.15rem;
     }
 
+    .result-ext-ids {
+      color: #2a7a2a;
+      font-size: 0.75rem;
+      margin-top: 0.2rem;
+    }
+
     .result-highlights {
       color: #555;
       font-size: 0.85rem;
@@ -278,6 +284,7 @@
                 <div class="result-meta">{% if result.year %}{{ result.year }}{% endif %}{% if result.year and result.journal %} &middot; {% endif %}{% if result.journal %}{{ result.journal }}{% endif %}</div>
               {% endif %}
               {% if result.highlights %}<div class="result-highlights">{{ result.highlights|join:" ... " }}</div>{% endif %}
+              {% if result.ext_ids %}<div class="result-ext-ids">{{ result.ext_ids|join:" &nbsp; " }}</div>{% endif %}
             </li>
           {% endfor %}
         </ul>

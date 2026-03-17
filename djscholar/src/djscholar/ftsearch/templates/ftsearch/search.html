@@ -130,6 +130,8 @@
     .mode-toggle {
       margin-bottom: 1rem;
       font-size: 0.875rem;
+      border-bottom: 1px solid grey;
+      padding: 0.25rem;
     }
 
     .mode-toggle a {
@@ -185,13 +187,13 @@
         <div class="result-count"><strong>{{ total|intcomma }}</strong> hits</div>
         <div class="query-time">in {{ took_secs }}s</div>
       </div>
-    </aside>
-    <section class="results">
-    {% if results %}
       <div class="mode-toggle">
         <a href="?q={{ query }}&mode=list" class="{% if mode == 'list' %}active{% endif %}">List</a>
         <a href="?q={{ query }}&mode=grid" class="{% if mode == 'grid' %}active{% endif %}">Grid</a>
       </div>
+    </aside>
+    <section class="results">
+    {% if results %}
       {% if mode == "grid" %}
         <ul class="results-grid">
           {% for result in results %}

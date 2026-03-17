@@ -51,6 +51,11 @@
       color: #333;
     }
 
+    .sidebar-top {
+      border-bottom: 1px solid grey;
+      padding-bottom: 0.25rem;
+    }
+
     .sidebar .query-time {
       font-size: 0.8rem;
       color: #999;
@@ -176,8 +181,10 @@
   </header>
   <div class="search-layout">
     <aside class="sidebar">
-      <div class="result-count"><strong>{{ total|intcomma }}</strong> hits</div>
-      <div class="query-time">in {{ took_secs }}s</div>
+      <div class="sidebar-top">
+        <div class="result-count"><strong>{{ total|intcomma }}</strong> hits</div>
+        <div class="query-time">in {{ took_secs }}s</div>
+      </div>
     </aside>
     <section class="results">
     {% if results %}

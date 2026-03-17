@@ -220,6 +220,16 @@ class TestPaginationAndHighlight:
         assert "fulltext.acknowledgement" in fields
         assert "fulltext.annex" in fields
 
+    def test_highlight_does_not_require_field_match(self):
+        body = build_es_body(**_defaults())
+        assert body["highlight"]["require_field_match"] is False
+
+    def test_highlight_uses_simplified_query(self):
+        body = build_es_body(**_defaults(q="bovine tuberculosis"))
+        hq = body["highlight"]["highlight_query"]["query_string"]
+        assert hq["query"] == "bovine tuberculosis"
+        assert "fields" not in hq
+
 
 class TestNoFiltersEverything:
     def test_no_filter_clause_when_all_everything(self):

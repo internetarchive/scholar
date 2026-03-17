@@ -92,24 +92,22 @@ ACCESS_FILTER_LABELS = [
     ("everything", "All Records"),
 ]
 
-HIGHLIGHT_CONFIG = {
-    "fields": {
-        "abstracts.body": {
-            "number_of_fragments": 2,
-            "fragment_size": 150,
-        },
-        "fulltext.body": {
-            "number_of_fragments": 3,
-            "fragment_size": 150,
-        },
-        "fulltext.acknowledgement": {
-            "number_of_fragments": 2,
-            "fragment_size": 150,
-        },
-        "fulltext.annex": {
-            "number_of_fragments": 2,
-            "fragment_size": 150,
-        },
+HIGHLIGHT_FIELDS = {
+    "abstracts.body": {
+        "number_of_fragments": 2,
+        "fragment_size": 150,
+    },
+    "fulltext.body": {
+        "number_of_fragments": 3,
+        "fragment_size": 150,
+    },
+    "fulltext.acknowledgement": {
+        "number_of_fragments": 2,
+        "fragment_size": 150,
+    },
+    "fulltext.annex": {
+        "number_of_fragments": 2,
+        "fragment_size": 150,
     },
 }
 
@@ -190,6 +188,7 @@ def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter)
 
     return {
         "query": query,
+        "track_total_hits": True,
         "from": offset,
         "size": page_size,
         "collapse": {
@@ -199,7 +198,17 @@ def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter)
                 "size": 0,
             },
         },
-        "highlight": HIGHLIGHT_CONFIG,
+        "highlight": {
+            "fields": HIGHLIGHT_FIELDS,
+            "require_field_match": False,
+            "highlight_query": {
+                "query_string": {
+                    "query": q,
+                    "default_operator": "AND",
+                    "lenient": True,
+                }
+            },
+        },
     }
 
 

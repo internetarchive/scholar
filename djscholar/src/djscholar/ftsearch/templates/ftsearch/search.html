@@ -311,6 +311,7 @@
               </div>
               <div class="result-actions">
                 {% if result.access_url %}<a href="{{ result.access_url }}">Archived PDF{% if result.access_size or result.capture_year %} ({% if result.access_size %}{{ result.access_size }}{% endif %}{% if result.access_size and result.capture_year %}, {% endif %}{% if result.capture_year %}captured {{ result.capture_year }}{% endif %}){% endif %}</a>{% endif %}
+                {% if result.doi %}<a href="https://doi.org/{{ result.doi }}">Original URL</a>{% elif result.arxiv_id %}<a href="https://arxiv.org/abs/{{ result.arxiv_id }}">Original URL</a>{% elif result.pmcid %}<a href="https://www.ncbi.nlm.nih.gov/pmc/articles/{{ result.pmcid }}/">Original URL</a>{% elif result.pmid %}<a href="https://pubmed.ncbi.nlm.nih.gov/{{ result.pmid }}/">Original URL</a>{% elif result.doaj_id %}<a href="https://doaj.org/article/{{ result.doaj_id }}">Original URL</a>{% endif %}
                 {% if result.fatcat_url %}<a href="{{ result.fatcat_url }}">More Info</a>{% endif %}
               </div>
             </li>

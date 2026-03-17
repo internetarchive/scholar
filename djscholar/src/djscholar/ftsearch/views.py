@@ -303,6 +303,11 @@ def search(request: HttpRequest) -> HttpResponse:
             "capture_year": capture_year,
             "highlights": snippets,
             "ext_ids": ext_ids,
+            "doi": biblio.get("doi", ""),
+            "arxiv_id": biblio.get("arxiv_id", ""),
+            "pmcid": biblio.get("pmcid", ""),
+            "pmid": biblio.get("pmid", ""),
+            "doaj_id": biblio.get("doaj_id", ""),
             "fatcat_url": f"https://scholar.archive.org/fatcat/release/{biblio['release_ident']}" if biblio.get("release_ident") else "",
         })
 

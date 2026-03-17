@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
@@ -272,15 +274,33 @@ def search(request: HttpRequest) -> HttpResponse:
             if val:
                 ext_ids.append(f"{label}:{val}")
 
+        fulltext = source.get("fulltext", {})
+        access_url = fulltext.get("access_url", "")
+
+        # Format file size for display
+        size_bytes = fulltext.get("size_bytes")
+        if size_bytes and size_bytes >= 1_000_000:
+            size_label = f"{size_bytes / 1_000_000:.1f} MB"
+        elif size_bytes and size_bytes >= 1_000:
+            size_label = f"{size_bytes // 1_000} kB"
+        else:
+            size_label = ""
+
+        # Extract capture year from wayback URL (/web/YYYYMMDD.../)
+        capture_match = re.search(r"/web/(\d{4})", access_url)
+        capture_year = capture_match.group(1) if capture_match else ""
+
         results.append({
             "title": biblio.get("title", "(untitled)"),
             "authors": biblio.get("contrib_names", []),
             "year": biblio.get("release_year"),
             "journal": biblio.get("container_name", ""),
-            "thumbnail_url": source.get("fulltext", {}).get("thumbnail_url", "").replace(
+            "thumbnail_url": fulltext.get("thumbnail_url", "").replace(
                 "https://blobs.fatcat.wiki/", "https://scholar.archive.org/_s3/"
             ),
-            "access_url": source.get("fulltext", {}).get("access_url", ""),
+            "access_url": access_url,
+            "access_size": size_label,
+            "capture_year": capture_year,
             "highlights": snippets,
             "ext_ids": ext_ids,
             "fatcat_url": f"https://scholar.archive.org/fatcat/release/{biblio['release_ident']}" if biblio.get("release_ident") else "",

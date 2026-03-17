@@ -64,6 +64,138 @@ DATE_FILTER_LABELS = [
     ("before_1931", "Before 1931"),
 ]
 
+TYPE_FILTERS = {
+    "papers": ["article-journal", "paper-conference", "chapter", "article"],
+    "reports": ["report", "standard"],
+    "datasets": ["dataset", "software"],
+    "everything": None,
+}
+
+TYPE_FILTER_LABELS = [
+    ("papers", "Papers"),
+    ("reports", "Reports"),
+    ("datasets", "Datasets"),
+    ("everything", "Everything"),
+]
+
+ACCESS_FILTERS = {
+    "fulltext": {"terms": {"access.access_type": ["wayback", "ia_file", "ia_sim"]}},
+    "microfilm": {"term": {"access.access_type": "ia_sim"}},
+    "oa": {"term": {"tags": "oa"}},
+    "everything": None,
+}
+
+ACCESS_FILTER_LABELS = [
+    ("fulltext", "Fulltext"),
+    ("microfilm", "Microfilm"),
+    ("oa", "Open Access"),
+    ("everything", "All Records"),
+]
+
+HIGHLIGHT_CONFIG = {
+    "fields": {
+        "abstracts.body": {
+            "number_of_fragments": 2,
+            "fragment_size": 150,
+        },
+        "fulltext.body": {
+            "number_of_fragments": 3,
+            "fragment_size": 150,
+        },
+        "fulltext.acknowledgement": {
+            "number_of_fragments": 2,
+            "fragment_size": 150,
+        },
+        "fulltext.annex": {
+            "number_of_fragments": 2,
+            "fragment_size": 150,
+        },
+    },
+}
+
+POOR_METADATA = {
+    "bool": {
+        "should": [
+            {"bool": {"must_not": {"exists": {"field": "year"}}}},
+            {"bool": {"must_not": {"exists": {"field": "type"}}}},
+            {"bool": {"must_not": {"exists": {"field": "stage"}}}},
+            {"bool": {"must_not": {"exists": {"field": "biblio.container_name"}}}},
+        ],
+    }
+}
+
+
+def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter):
+    qs = {
+        "query_string": {
+            "query": q,
+            "default_operator": "AND",
+            "analyze_wildcard": True,
+            "allow_leading_wildcard": False,
+            "lenient": True,
+            "quote_field_suffix": ".exact",
+            "fields": ["title^4", "biblio_all^3", "everything"],
+        }
+    }
+
+    # When not filtering to fulltext, boost results that have fulltext access
+    if access_filter != "fulltext":
+        positive = {
+            "bool": {
+                "must": qs,
+                "should": [
+                    {"terms": {"access_type": ["ia_sim", "ia_file", "wayback"]}},
+                ],
+            }
+        }
+    else:
+        positive = qs
+
+    query = {
+        "boosting": {
+            "positive": positive,
+            "negative": POOR_METADATA,
+            "negative_boost": 0.5,
+        }
+    }
+
+    # Build filter clauses
+    filters = []
+
+    date_range = DATE_FILTERS[date_filter]
+    if date_range:
+        filters.append({"range": {"biblio.release_date": date_range}})
+
+    type_values = TYPE_FILTERS[type_filter]
+    if type_values:
+        filters.append({"terms": {"biblio.release_type": type_values}})
+
+    access_clause = ACCESS_FILTERS[access_filter]
+    if access_clause:
+        filters.append(access_clause)
+
+    if filters:
+        query = {
+            "bool": {
+                "must": query,
+                "filter": filters,
+            }
+        }
+
+    return {
+        "query": query,
+        "from": offset,
+        "size": page_size,
+        "collapse": {
+            "field": "collapse_key",
+            "inner_hits": {
+                "name": "more_pages",
+                "size": 0,
+            },
+        },
+        "highlight": HIGHLIGHT_CONFIG,
+    }
+
 
 def search(request: HttpRequest) -> HttpResponse:
     q = request.POST.get("q", "").strip() or request.GET.get("q", "").strip()
@@ -81,61 +213,30 @@ def search(request: HttpRequest) -> HttpResponse:
     if date_filter not in DATE_FILTERS:
         date_filter = "all_time"
 
-    qs = {
-        "query_string": {
-            "query": q,
-            "default_operator": "AND",
-            "analyze_wildcard": True,
-            "allow_leading_wildcard": False,
-            "lenient": True,
-        }
-    }
+    type_filter = request.GET.get("type", "papers")
+    if type_filter not in TYPE_FILTERS:
+        type_filter = "papers"
 
-    date_range = DATE_FILTERS[date_filter]
-    if date_range:
-        query = {
-            "bool": {
-                "must": qs,
-                "filter": {"range": {"biblio.release_date": date_range}},
-            }
-        }
-    else:
-        query = qs
+    access_filter = request.GET.get("access", "fulltext")
+    if access_filter not in ACCESS_FILTERS:
+        access_filter = "fulltext"
 
     # TODO handler for get_es failing that can render a nice outage page
+    body = build_es_body(q, offset, page_size, date_filter, type_filter, access_filter)
     data = get_es().search(
         index=settings.ES_INDEX,
-        body={
-            "query": query,
-            "from": offset,
-            "size": page_size,
-            "highlight": {
-                "fields": {
-                    "abstracts.body": {
-                        "number_of_fragments": 2,
-                        "fragment_size": 150,
-                    },
-                    "fulltext.body": {
-                        "number_of_fragments": 3,
-                        "fragment_size": 150,
-                    },
-                    "fulltext.acknowledgement": {
-                        "number_of_fragments": 2,
-                        "fragment_size": 150,
-                    },
-                    "fulltext.annex": {
-                        "number_of_fragments": 2,
-                        "fragment_size": 150,
-                    },
-                },
-            },
-        },
+        body=body,
         request_timeout=20,
     )
 
     took_secs = round(data.get("took", 0) / 1000, 2)
     total = data.get("hits", {}).get("total", {}).get("value", 0)
     hits = data.get("hits", {}).get("hits", [])
+
+    # Adjust total when collapse returns fewer than a full page on first page
+    if offset == 0 and len(hits) < page_size:
+        total = len(hits)
+
     results = []
     for h in hits:
         source = h["_source"]
@@ -178,6 +279,10 @@ def search(request: HttpRequest) -> HttpResponse:
         "took_secs": took_secs,
         "date_filter": date_filter,
         "date_filter_labels": DATE_FILTER_LABELS,
+        "type_filter": type_filter,
+        "type_filter_labels": TYPE_FILTER_LABELS,
+        "access_filter": access_filter,
+        "access_filter_labels": ACCESS_FILTER_LABELS,
     })
 
 

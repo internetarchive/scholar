@@ -122,6 +122,7 @@ def search(request: HttpRequest) -> HttpResponse:
             "thumbnail_url": source.get("fulltext", {}).get("thumbnail_url", "").replace(
                 "https://blobs.fatcat.wiki/", "https://scholar.archive.org/_s3/"
             ),
+            "access_url": source.get("fulltext", {}).get("access_url", ""),
             "highlights": snippets,
         })
 

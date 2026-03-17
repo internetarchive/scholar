@@ -283,6 +283,7 @@ def search(request: HttpRequest) -> HttpResponse:
             "access_url": source.get("fulltext", {}).get("access_url", ""),
             "highlights": snippets,
             "ext_ids": ext_ids,
+            "fatcat_url": f"https://scholar.archive.org/fatcat/release/{biblio['release_ident']}" if biblio.get("release_ident") else "",
         })
 
     mode = request.GET.get("mode", "list")

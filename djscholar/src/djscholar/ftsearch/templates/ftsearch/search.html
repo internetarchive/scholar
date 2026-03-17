@@ -73,6 +73,28 @@
     .results-list li {
       padding: 0.75rem 0;
       border-bottom: 1px solid #eee;
+      display: flex;
+      gap: 1rem;
+    }
+
+    .result-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .result-actions {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      font-size: 0.8rem;
+      padding-top: 0.2rem;
+    }
+
+    .result-actions a {
+      color: #555;
+      text-decoration: none;
+      white-space: nowrap;
     }
 
     .result-title {
@@ -278,13 +300,18 @@
         <ul class="results-list">
           {% for result in results %}
             <li>
-              <div class="result-title">{% if result.access_url %}<a href="{{ result.access_url }}">{{ result.title }}</a>{% else %}{{ result.title }}{% endif %}</div>
-              {% if result.authors %}<div class="result-authors">{{ result.authors|join:", " }}</div>{% endif %}
-              {% if result.year or result.journal %}
-                <div class="result-meta">{% if result.year %}{{ result.year }}{% endif %}{% if result.year and result.journal %} &middot; {% endif %}{% if result.journal %}{{ result.journal }}{% endif %}</div>
-              {% endif %}
-              {% if result.highlights %}<div class="result-highlights">{{ result.highlights|join:" ... " }}</div>{% endif %}
-              {% if result.ext_ids %}<div class="result-ext-ids">{{ result.ext_ids|join:" &nbsp; " }}</div>{% endif %}
+              <div class="result-content">
+                <div class="result-title">{% if result.access_url %}<a href="{{ result.access_url }}">{{ result.title }}</a>{% else %}{{ result.title }}{% endif %}</div>
+                {% if result.authors %}<div class="result-authors">{{ result.authors|join:", " }}</div>{% endif %}
+                {% if result.year or result.journal %}
+                  <div class="result-meta">{% if result.year %}{{ result.year }}{% endif %}{% if result.year and result.journal %} &middot; {% endif %}{% if result.journal %}{{ result.journal }}{% endif %}</div>
+                {% endif %}
+                {% if result.highlights %}<div class="result-highlights">{{ result.highlights|join:" ... " }}</div>{% endif %}
+                {% if result.ext_ids %}<div class="result-ext-ids">{{ result.ext_ids|join:" &nbsp; " }}</div>{% endif %}
+              </div>
+              <div class="result-actions">
+                {% if result.fatcat_url %}<a href="{{ result.fatcat_url }}">More Info</a>{% endif %}
+              </div>
             </li>
           {% endfor %}
         </ul>

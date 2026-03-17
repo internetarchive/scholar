@@ -125,6 +125,12 @@ POOR_METADATA = {
 }
 
 
+DEFAULT_PAGE_SIZE = 25
+DEFAULT_DATE_FILTER = "all_time"
+DEFAULT_TYPE_FILTER = "papers"
+DEFAULT_ACCESS_FILTER = "fulltext"
+
+
 def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter):
     qs = {
         "query_string": {
@@ -202,24 +208,24 @@ def search(request: HttpRequest) -> HttpResponse:
     if not q:
         return render(request, "ftsearch/home.html")
 
-    page_size = 25
+    page_size = DEFAULT_PAGE_SIZE
     try:
         page = max(1, int(request.GET.get("page", 1)))
     except (ValueError, TypeError):
         page = 1
     offset = (page - 1) * page_size
 
-    date_filter = request.GET.get("date", "all_time")
+    date_filter = request.GET.get("date", DEFAULT_DATE_FILTER)
     if date_filter not in DATE_FILTERS:
-        date_filter = "all_time"
+        date_filter = DEFAULT_DATE_FILTER
 
-    type_filter = request.GET.get("type", "papers")
+    type_filter = request.GET.get("type", DEFAULT_TYPE_FILTER)
     if type_filter not in TYPE_FILTERS:
-        type_filter = "papers"
+        type_filter = DEFAULT_TYPE_FILTER
 
-    access_filter = request.GET.get("access", "fulltext")
+    access_filter = request.GET.get("access", DEFAULT_ACCESS_FILTER)
     if access_filter not in ACCESS_FILTERS:
-        access_filter = "fulltext"
+        access_filter = DEFAULT_ACCESS_FILTER
 
     # TODO handler for get_es failing that can render a nice outage page
     body = build_es_body(q, offset, page_size, date_filter, type_filter, access_filter)

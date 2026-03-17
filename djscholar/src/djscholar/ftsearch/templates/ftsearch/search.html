@@ -149,6 +149,38 @@
       color: #777;
     }
 
+    .sidebar-section {
+      padding: 0.5rem 0.25rem;
+      border-bottom: 1px solid grey;
+    }
+
+    .sidebar-section h3 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #999;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+
+    .sidebar-section ul {
+      list-style: none;
+    }
+
+    .sidebar-section li {
+      margin-bottom: 0.15rem;
+    }
+
+    .sidebar-section a {
+      color: #555;
+      text-decoration: none;
+      font-size: 0.8rem;
+    }
+
+    .sidebar-section a.active {
+      color: #333;
+      font-weight: bold;
+    }
+
     .pagination {
       display: flex;
       align-items: center;
@@ -191,6 +223,14 @@
         <a href="?q={{ query }}&mode=list" class="{% if mode == 'list' %}active{% endif %}">List</a>
         <a href="?q={{ query }}&mode=grid" class="{% if mode == 'grid' %}active{% endif %}">Grid</a>
       </div>
+      <div class="sidebar-section">
+        <h3>Date</h3>
+        <ul>
+          {% for key, label in date_filter_labels %}
+            <li><a href="?q={{ query }}&mode={{ mode }}&date={{ key }}" class="{% if date_filter == key %}active{% endif %}">{{ label }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
     </aside>
     <section class="results">
     {% if results %}
@@ -223,13 +263,13 @@
       {% endif %}
       <nav class="pagination">
         {% if has_prev %}
-          <a href="?q={{ query }}&mode={{ mode }}&page={{ page|add:"-1" }}">&larr; Previous</a>
+          <a href="?q={{ query }}&mode={{ mode }}&date={{ date_filter }}&page={{ page|add:"-1" }}">&larr; Previous</a>
         {% else %}
           <span class="disabled">&larr; Previous</span>
         {% endif %}
         <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
         {% if has_next %}
-          <a href="?q={{ query }}&mode={{ mode }}&page={{ page|add:"1" }}"">Next &rarr;</a>
+          <a href="?q={{ query }}&mode={{ mode }}&date={{ date_filter }}&page={{ page|add:"1" }}">Next &rarr;</a>
         {% else %}
           <span class="disabled">Next &rarr;</span>
         {% endif %}

@@ -125,13 +125,26 @@ POOR_METADATA = {
 }
 
 
+SORT_OPTIONS = {
+    "relevancy": None,
+    "newest": [{"biblio.release_date": {"order": "desc", "missing": "_last"}}],
+    "oldest": [{"biblio.release_date": {"order": "asc", "missing": "_last"}}],
+}
+
+SORT_LABELS = [
+    ("relevancy", "Relevancy"),
+    ("newest", "Newest"),
+    ("oldest", "Oldest"),
+]
+
 DEFAULT_PAGE_SIZE = 25
 DEFAULT_DATE_FILTER = "all_time"
 DEFAULT_TYPE_FILTER = "papers"
 DEFAULT_ACCESS_FILTER = "fulltext"
+DEFAULT_SORT = "relevancy"
 
 
-def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter):
+def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort):
     qs = {
         "query_string": {
             "query": q,
@@ -188,7 +201,7 @@ def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter)
             }
         }
 
-    return {
+    body = {
         "query": query,
         "track_total_hits": True,
         "from": offset,
@@ -212,6 +225,12 @@ def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter)
             },
         },
     }
+
+    sort_clause = SORT_OPTIONS[sort]
+    if sort_clause:
+        body["sort"] = sort_clause
+
+    return body
 
 
 def _build_result(hit):
@@ -296,8 +315,12 @@ def search(request: HttpRequest) -> HttpResponse:
     if access_filter not in ACCESS_FILTERS:
         access_filter = DEFAULT_ACCESS_FILTER
 
+    sort = request.GET.get("sort", DEFAULT_SORT)
+    if sort not in SORT_OPTIONS:
+        sort = DEFAULT_SORT
+
     # TODO handler for get_es failing that can render a nice outage page
-    body = build_es_body(q, offset, page_size, date_filter, type_filter, access_filter)
+    body = build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort)
     data = get_es().search(
         index=settings.ES_INDEX,
         body=body,
@@ -336,6 +359,8 @@ def search(request: HttpRequest) -> HttpResponse:
         "type_filter_labels": TYPE_FILTER_LABELS,
         "access_filter": access_filter,
         "access_filter_labels": ACCESS_FILTER_LABELS,
+        "sort": sort,
+        "sort_labels": SORT_LABELS,
     })
 
 

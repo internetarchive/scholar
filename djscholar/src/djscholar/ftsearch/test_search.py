@@ -2,7 +2,9 @@ from djscholar.ftsearch.views import (
     DEFAULT_ACCESS_FILTER,
     DEFAULT_DATE_FILTER,
     DEFAULT_PAGE_SIZE,
+    DEFAULT_SORT,
     DEFAULT_TYPE_FILTER,
+    SORT_OPTIONS,
     build_es_body,
 )
 
@@ -15,6 +17,7 @@ def _defaults(**overrides):
         "date_filter": DEFAULT_DATE_FILTER,
         "type_filter": DEFAULT_TYPE_FILTER,
         "access_filter": DEFAULT_ACCESS_FILTER,
+        "sort": DEFAULT_SORT,
     }
     kwargs.update(overrides)
     return kwargs
@@ -229,6 +232,30 @@ class TestPaginationAndHighlight:
         hq = body["highlight"]["highlight_query"]["query_string"]
         assert hq["query"] == "bovine tuberculosis"
         assert "fields" not in hq
+
+
+class TestSort:
+    def test_default_is_relevancy(self):
+        assert DEFAULT_SORT == "relevancy"
+
+    def test_relevancy_no_sort_clause(self):
+        body = build_es_body(**_defaults())
+        assert "sort" not in body
+
+    def test_newest(self):
+        body = build_es_body(**_defaults(sort="newest"))
+        assert body["sort"] == [{"biblio.release_date": {"order": "desc", "missing": "_last"}}]
+
+    def test_oldest(self):
+        body = build_es_body(**_defaults(sort="oldest"))
+        assert body["sort"] == [{"biblio.release_date": {"order": "asc", "missing": "_last"}}]
+
+    def test_relevancy_explicit(self):
+        body = build_es_body(**_defaults(sort="relevancy"))
+        assert "sort" not in body
+
+    def test_sort_options_match_defaults(self):
+        assert SORT_OPTIONS["relevancy"] is None
 
 
 class TestNoFiltersEverything:

@@ -164,7 +164,7 @@
     </form>
   </header>
   <div class="search-layout">
-    <aside class="sidebar">
+    <div class="sidebar">
       <div class="sidebar-top">
         <div class="result-count"><strong>{{ total|intcomma }}</strong> hits</div>
         <div class="query-time">in {{ took_secs }}s</div>
@@ -205,7 +205,8 @@
           {% endfor %}
         </ul>
       </div>
-    </aside>
+      {% if has_filters %}<div class="sidebar-section"><a href="?q={{ query }}" style="color: #c20303">Clear Filters</a></div>{% endif %}
+    </div>
     <section class="results">
     {% if results %}
       {% if mode == "grid" %}

@@ -361,6 +361,12 @@ def search(request: HttpRequest) -> HttpResponse:
         "access_filter_labels": ACCESS_FILTER_LABELS,
         "sort": sort,
         "sort_labels": SORT_LABELS,
+        "has_filters": (
+            date_filter != DEFAULT_DATE_FILTER
+            or type_filter != DEFAULT_TYPE_FILTER
+            or access_filter != DEFAULT_ACCESS_FILTER
+            or sort != DEFAULT_SORT
+        ),
     })
 
 

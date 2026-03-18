@@ -12,15 +12,11 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
-// TODO expose in config?
-const (
-	batchSize = 1000
-	chunkSize = 1024 * 100
-)
-
 type FindLineBatchInput struct {
-	S3Key  string
-	Offset int64
+	S3Key     string
+	Offset    int64
+	BatchSize int
+	ChunkSize int
 }
 
 type FindLineBatchOutput struct {
@@ -47,8 +43,8 @@ func FindLineBatch(ctx context.Context, in FindLineBatchInput) (FindLineBatchOut
 
 	cc := chunkCfg{
 		Offset:    in.Offset,
-		BatchSize: batchSize,
-		ChunkSize: chunkSize,
+		BatchSize: in.BatchSize,
+		ChunkSize: in.ChunkSize,
 	}
 
 	out, err := chunk(cc, f)

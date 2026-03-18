@@ -4,6 +4,10 @@
 # - /etc/trawler/config
 # - $HOME/.config/trawler/config
 # - .
+[harvesting]
+batch_size = 10000
+chunk_size = 102400
+
 [s3]
 endpoint = "wbgrp-svc314.us.archive.org:8333"
 access_id = ""

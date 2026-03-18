@@ -92,7 +92,9 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		Upstream: in.Upstream,
 	}
 	findInput := harvesting.FindLineBatchInput{
-		S3Key: scrapeOut.S3Key,
+		S3Key:     scrapeOut.S3Key,
+		BatchSize: viper.GetInt("harvesting.batch_size"),
+		ChunkSize: viper.GetInt("harvesting.chunk_size"),
 	}
 	findOutput := harvesting.FindLineBatchOutput{}
 	childSelector := workflow.NewSelector(ctx)

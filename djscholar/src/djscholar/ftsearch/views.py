@@ -50,7 +50,7 @@ def home(request: HttpRequest) -> HttpResponse:
 
 
 def about(request: HttpRequest) -> HttpResponse:
-    raise NotImplementedError
+    return render(request, "ftsearch/about.html")
 
 
 def help(request: HttpRequest) -> HttpResponse:

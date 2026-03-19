@@ -1,0 +1,99 @@
+{% extends "ftsearch/base.html" %}
+
+{% block title %}About Internet Archive Scholar{% endblock %}
+
+{% block styles %}
+    .about-content {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+      flex: 1;
+      line-height: 1.6;
+    }
+
+    .about-content h1 {
+      margin-bottom: 1.5rem;
+    }
+
+    .about-content h3 {
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .about-content p {
+      margin-bottom: 0.75rem;
+    }
+
+    .about-content ul {
+      margin-bottom: 0.75rem;
+      padding-left: 1.5rem;
+    }
+
+    .about-content li {
+      margin-bottom: 0.3rem;
+    }
+
+    .about-content a {
+      color: #555;
+    }
+{% endblock %}
+
+{% block content %}
+  <header class="top-bar">
+    <h1><a href="{% url 'ftsearch:home' %}">IA Scholar</a></h1>
+    <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
+      <input type="text" name="q" placeholder="Search open access papers..." aria-label="Search">
+      <button type="submit">Search</button>
+    </form>
+  </header>
+  <div class="about-content">
+    <h1>About Internet Archive Scholar</h1>
+
+    <a name="howitworks"></a>
+    <h3>How It Works</h3>
+
+    <p>Content in this search index comes in one of three forms:</p>
+
+    <ul>
+      <li><b>public web content</b> as preserved in <a href="https://web.archive.org">The Wayback Machine</a> and <a href="https://archive-it.org">Archive-It</a> partner collections</li>
+      <li><b>digitized print materials</b> from paper and microform collections</li>
+      <li><b>general materials</b> from <a href="https://archive.org">archive.org collections</a>, including collaborations with partners</li>
+    </ul>
+
+    <p>This <a href="https://www.youtube.com/watch?v=PARqfbYIdXQ">2019 FORCE11 conference presentation</a> gives an overview of the technical infrastructure and goals of the project overall.</p>
+
+    <a name="sources"></a>
+    <h3>Content Sources</h3>
+
+    <p>Metadata comes from <a href="https://scholar.archive.org/fatcat">fatcat</a>, a public bibliographic database of scholarly work.</p>
+
+    <a name="tdm"></a>
+    <h3>Text and Data Mining</h3>
+
+    <p>We intend to provide researcher access to the full corpus for text and data
+    mining purposes. Derived datasets may also be posted publicly for analysis, for
+    example a citation graph or N-gram frequencies by year. If you are interested
+    or would like to see specific datasets made available, please contact us at <a href="mailto:scholar@archive.org">scholar@archive.org</a>.</p>
+
+    <p>Currently snapshots of the full fatcat metadata corpus and upstream metadata sources are uploaded periodically to the <a href="https://archive.org/details/ia_biblio_metadata">Bulk Bibliographic Metadata</a> collection on archive.org.</p>
+
+    <p>Read more in <a href="https://scholar.archive.org/fatcat/guide#bulk-exports">the Fatcat Guide</a>.</p>
+
+    <a name="authors_publishers"></a>
+    <h3>Authors and Publishers</h3>
+
+    <p>In alignment with its mission, Internet Archive makes automated attempts to capture and preserve all open access research publications on the public web. If your open access journal articles aren't currently included in Internet Archive Scholar, you can fill out the <a href="https://form.jotform.com/232483341499059">Internet Archive Scholar inclusion form</a> to share journal URLs for crawling. Please note that it will take at least 3 months from the time you submit this form until your content starts to appear in Internet Archive Scholar. Emails about the status of your content sent less than 3 months after submitting this form will not be answered. Additional information specifically for publishers can be found in <a href="https://scholar.archive.org/fatcat/guide#for-publishers">the Fatcat guide</a>. This includes guidelines for having content indexed and preserved.</p>
+
+    <a name="contact"></a>
+    <h3>Contact Information</h3>
+
+    <p>Queries about this search service and the fatcat catalog can be directed to <a href="mailto:scholar@archive.org">scholar@archive.org</a>.</p>
+
+    <a name="acknowledgements"></a>
+    <h3>Support and Acknowledgements</h3>
+
+    <p>Work on Internet Archive Scholar has received support from the Andrew W. Mellon Foundation through multiple phases of the <a href="https://mellon.org/grants/grants-database/advanced-search/?amount-low=&amount-high=&year-start=&year-end=&city=&state=&country=&q=%22Ensuring+the+Persistent+Access%22&per_page=25">"Ensuring the Persistent Access of Open Access Journal Literature"</a> project (see <a href="http://blog.archive.org/2018/03/05/andrew-w-mellon-foundation-awards-grant-to-the-internet-archive-for-long-tail-journal-preservation/">original announcement</a>).</p>
+
+    <p>See additional acknowledgements on <a href="https://scholar.archive.org/fatcat/about">fatcat</a>.</p>
+  </div>
+{% endblock %}

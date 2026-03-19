@@ -193,7 +193,7 @@ type SPNError struct {
 	Body       string
 }
 
-func (e SPNError) Error() string {
+func (e *SPNError) Error() string {
 	return fmt.Sprintf("SPN API returned %d: %s", e.StatusCode, e.Body)
 }
 
@@ -234,7 +234,7 @@ func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) erro
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return SPNError{
+		return &SPNError{
 			StatusCode: resp.StatusCode,
 			Body:       string(rbody),
 		}

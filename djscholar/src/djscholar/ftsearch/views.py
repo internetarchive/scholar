@@ -57,10 +57,6 @@ def help(request: HttpRequest) -> HttpResponse:
     raise NotImplementedError
 
 
-def permalink(request: HttpRequest) -> HttpResponse:
-    raise NotImplementedError
-
-
 DATE_FILTERS = {
     "all_time": None,
     "past_week": {"gte": "now-1w"},

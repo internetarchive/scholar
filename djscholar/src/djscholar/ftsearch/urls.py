@@ -28,7 +28,6 @@ urlpatterns = [
     path("help", views.help, name="help"),
 
     # Search
-    path("permalink", views.permalink, name="permalink"),
     path("search", views.search, name="search"),
 
     # Work detail and access redirects

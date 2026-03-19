@@ -284,6 +284,7 @@ def _build_result(hit):
             "https://blobs.fatcat.wiki/", "https://scholar.archive.org/_s3/"
         ),
         "access_url": access_url,
+        "access_type": fulltext.get("access_type", ""),
         "access_size": size_label,
         "capture_year": capture_year,
         "highlights": snippets,

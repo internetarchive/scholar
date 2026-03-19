@@ -19,7 +19,7 @@ app_name = "ftsearch"
 urlpatterns = [
     # Health checks
     path("_health/web", views.webhealth, name="webhealth"),
-    path("_health", views.health, name="health"),
+    path("_health", views.webhealth, name="health"),
     path("_health/search", views.searchhealth, name="searchhealth"),
 
     # Scholar web pages

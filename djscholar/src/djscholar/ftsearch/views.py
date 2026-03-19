@@ -23,15 +23,26 @@ def get_es() -> Elasticsearch:
 
 
 def webhealth(request: HttpRequest) -> HttpResponse:
-    raise NotImplementedError
-
-
-def health(request: HttpRequest) -> HttpResponse:
-    raise NotImplementedError
+    try:
+        if get_es().ping():
+            return HttpResponse("ok")
+    except Exception:
+        pass
+    return HttpResponse("es ping failed", status=503)
 
 
 def searchhealth(request: HttpRequest) -> HttpResponse:
-    raise NotImplementedError
+    try:
+        data = get_es().search(
+            index=settings.ES_INDEX,
+            body={"query": {"match_all": {}}, "size": 1},
+            request_timeout=20,
+        )
+        if data.get("hits", {}).get("hits"):
+            return HttpResponse("ok")
+    except Exception:
+        pass
+    return HttpResponse("search failed", status=503)
 
 
 def home(request: HttpRequest) -> HttpResponse:

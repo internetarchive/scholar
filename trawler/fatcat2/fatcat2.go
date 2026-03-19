@@ -352,6 +352,11 @@ func CreateContainer(client *http.Client, c *Container) (*uuid.UUID, error) {
 		return nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
 	}
 
+	if resp.StatusCode == 422 {
+		// container already exists, likely a retry; treat as success
+		return &c.ID, nil
+	}
+
 	if resp.StatusCode != 201 {
 		b, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", c, resp.StatusCode, b)

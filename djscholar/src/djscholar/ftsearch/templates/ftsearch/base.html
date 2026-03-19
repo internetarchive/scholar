@@ -224,6 +224,15 @@
   </style>
 </head>
 <body>
+  {% block top_bar %}
+  <header class="top-bar">
+    <h1><a href="{% url 'ftsearch:home' %}">IA Scholar</a></h1>
+    <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
+      <input type="text" name="q" value="{{ query }}" placeholder="Search open access papers..." aria-label="Search">
+      <button type="submit">Search</button>
+    </form>
+  </header>
+  {% endblock %}
   {% block content %}{% endblock %}
   <footer>
     <div class="footer-grid">

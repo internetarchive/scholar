@@ -31,7 +31,7 @@ build-backend = "hatchling.build"
 packages = ["src/djscholar"]
 
 [[tool.uv.index]]
-url = "http://nexus.us.archive.org/repository/pypi-group/simple"
+url = "https://nexus.us.archive.org/repository/pypi-group/simple"
 default = true
 
 [tool.mypy]

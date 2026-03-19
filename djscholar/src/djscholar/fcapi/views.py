@@ -444,7 +444,7 @@ def get_release_work(request, ident: UUID) -> WorkSchema:
 def get_release_files(request, ident: UUID) -> list[FileSchema]:
     return [FileSchema.from_orm(e)
             for e
-            in m.File.objects.filter(releasefile__release_id=ident)]
+            in m.File.objects.filter(releasefile__release_id=ident).prefetch_related("releases", "urls")]
 
 
 @v2api.get("/release/{ident}/contribs", response=list[ReleaseContribSchema])

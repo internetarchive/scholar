@@ -61,8 +61,8 @@
       <button type="submit">Search</button>
     </form>
     <nav class="home-links">
-      <a href="#">Random Paper</a>
-      <a href="https://fatcat.wiki">Fatcat Bibliographic Database</a>
+      <a href="{% url 'ftsearch:random_paper' %}">Random Paper</a>
+      <a href="https://scholar.archive.org/fatcat">Fatcat Bibliographic Database</a>
     </nav>
   </main>
 {% endblock %}

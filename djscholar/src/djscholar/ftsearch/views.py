@@ -2,7 +2,7 @@ import re
 
 from django.conf import settings
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from elasticsearch import Elasticsearch
@@ -55,6 +55,44 @@ def about(request: HttpRequest) -> HttpResponse:
 
 def help(request: HttpRequest) -> HttpResponse:
     return render(request, "ftsearch/help.html")
+
+
+def random_paper(request: HttpRequest) -> HttpResponse:
+    filters = [{"exists": {"field": "work_ident"}}]
+    type_values = TYPE_FILTERS[DEFAULT_TYPE_FILTER]
+    if type_values:
+        filters.append({"terms": {"biblio.release_type": type_values}})
+    access_clause = ACCESS_FILTERS[DEFAULT_ACCESS_FILTER]
+    if access_clause:
+        filters.append(access_clause)
+
+    query: dict = {
+        "function_score": {
+            "query": {"match_all": {}},
+            "random_score": {},
+            "boost_mode": "replace",
+        }
+    }
+    if filters:
+        query = {
+            "bool": {
+                "must": query,
+                "filter": filters,
+            }
+        }
+
+    data = get_es().search(
+        index=settings.ES_INDEX,
+        body={"query": query, "size": 1},
+        request_timeout=10,
+    )
+    hits = data.get("hits", {}).get("hits", [])
+    if not hits:
+        return redirect("ftsearch:home")
+    work_ident = hits[0]["_source"].get("work_ident", "")
+    if not work_ident:
+        return redirect("ftsearch:home")
+    return redirect("ftsearch:work", work_ident=work_ident)
 
 
 DATE_FILTERS = {

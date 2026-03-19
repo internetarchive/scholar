@@ -28,6 +28,7 @@ urlpatterns = [
     path("help", views.help, name="help"),
 
     # Search
+    path("random", views.random_paper, name="random_paper"),
     path("search", views.search, name="search"),
 
     # Work detail and access redirects

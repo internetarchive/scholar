@@ -154,6 +154,20 @@
     .pagination .page-info {
       color: #777;
     }
+
+    @media (max-width: 640px) {
+      .search-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: none;
+      }
+
+      .results-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
 {% endblock %}
 
 {% block content %}

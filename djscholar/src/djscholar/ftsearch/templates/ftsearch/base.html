@@ -218,6 +218,19 @@
       gap: 1rem;
     }
 
+    @media (max-width: 640px) {
+      .result-item {
+        display: block;
+      }
+
+      .result-actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 0.2rem 0.75rem;
+        padding-top: 0.3rem;
+      }
+    }
+
     {% block styles %}{% endblock %}
   </style>
 </head>

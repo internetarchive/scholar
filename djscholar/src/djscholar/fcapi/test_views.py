@@ -390,7 +390,7 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         self.assertEqual(len(es), 1)
 
         response = client.post("/release", data=data, headers=self.auth_headers)
-        self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
 
     def test_create_without_work(self):
         entity = ReleaseFactory.build()

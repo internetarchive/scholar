@@ -390,17 +390,17 @@ def get_release(request, ident: UUID) -> ReleaseSchema:
 @v2api.post("/release", auth=api_auth)
 def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """Create a new release."""
-    rs = m.Release.objects.filter(id=release_in.id)
-    if len(rs) != 0:
-        return v2api.create_response(request,
-                                     f"release with id {release_in.id} already exists",
-                                     status=HTTPStatus.BAD_REQUEST)
     data = release_in.dict()
     extids = data.pop("extids")
     contribs = data.pop("contribs")
     abstracts = data.pop("abstracts")
     citations = data.pop("citations")
     with transaction.atomic():
+        rs = m.Release.objects.select_for_update().filter(id=release_in.id)
+        if len(rs) != 0:
+            return v2api.create_response(request,
+                                         f"release with id {release_in.id} already exists",
+                                         status=HTTPStatus.UNPROCESSABLE_ENTITY)
         work_id = release_in.work_id
         if work_id is None:
             work = m.Work()

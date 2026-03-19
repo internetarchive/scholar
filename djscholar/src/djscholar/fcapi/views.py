@@ -272,12 +272,13 @@ def get_container_releases(request, ident: UUID) -> list[ReleaseSchema]:
 @v2api.post("/container", auth=api_auth)
 def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     """Create a new container."""
-    cs = m.Container.objects.filter(id=container_in.id)
-    if len(cs) != 0:
-        return v2api.create_response(request,
-                                     f"container with id {container_in.id} already exists",
-                                     status=HTTPStatus.BAD_REQUEST)
-    m.Container(**container_in.dict()).save()
+    with transaction.atomic():
+        cs = m.Container.objects.select_for_update().filter(id=container_in.id)
+        if len(cs) != 0:
+            return v2api.create_response(request,
+                                         f"container with id {container_in.id} already exists",
+                                         status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        m.Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=HTTPStatus.CREATED)
 
 

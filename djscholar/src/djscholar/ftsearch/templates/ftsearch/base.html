@@ -161,7 +161,6 @@
     }
 
     .result-actions {
-      flex-shrink: 0;
       display: flex;
       flex-direction: column;
       gap: 0.3rem;
@@ -172,12 +171,10 @@
     .result-actions a {
       color: #555;
       text-decoration: none;
-      white-space: nowrap;
     }
 
     .result-actions .action-unavailable {
       color: #bbb;
-      white-space: nowrap;
     }
 
     .result-title {
@@ -216,7 +213,8 @@
     }
 
     .result-item {
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr 180px;
       gap: 1rem;
     }
 

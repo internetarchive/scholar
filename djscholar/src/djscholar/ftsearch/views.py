@@ -54,7 +54,7 @@ def about(request: HttpRequest) -> HttpResponse:
 
 
 def help(request: HttpRequest) -> HttpResponse:
-    raise NotImplementedError
+    return render(request, "ftsearch/help.html")
 
 
 DATE_FILTERS = {

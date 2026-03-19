@@ -1,0 +1,199 @@
+{% extends "ftsearch/base.html" %}
+
+{% block title %}IA Scholar Help{% endblock %}
+
+{% block styles %}
+    .help-content {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+      flex: 1;
+      line-height: 1.6;
+    }
+
+    .help-content h1 {
+      margin-bottom: 1.5rem;
+    }
+
+    .help-content h2 {
+      margin-top: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .help-content h3 {
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .help-content p {
+      margin-bottom: 0.75rem;
+    }
+
+    .help-content ul {
+      margin-bottom: 0.75rem;
+      padding-left: 1.5rem;
+    }
+
+    .help-content li {
+      margin-bottom: 0.3rem;
+    }
+
+    .help-content a {
+      color: #555;
+    }
+
+    .help-content code {
+      background: #f0f0f0;
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+
+    .help-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .help-content td {
+      padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid #eee;
+      vertical-align: top;
+    }
+
+    .help-content td:first-child {
+      font-family: monospace;
+      white-space: nowrap;
+    }
+
+    .example-search {
+      margin-bottom: 1rem;
+    }
+{% endblock %}
+
+{% block content %}
+  <div class="help-content">
+    <h1>Scholar User Guide</h1>
+
+    <p><i>See also: <a href="{% url 'ftsearch:about' %}">About Scholarly Search</a></i></p>
+
+    <p>This service provides <a href="https://en.wikipedia.org/wiki/Full-text_search">fulltext searching</a> for research publications archived in Internet Archive's various collections. It includes content from the natural sciences, humanities, biomedicine, art, history, industrial research, government reports, and more.</p>
+
+    <p>Reader access to the content is provided when possible. Sometimes this access is to a preprint or other version of the work, and this is indicated in the search results. In other cases, depending on search filters, results are included for which there is only a bibliographic catalog entry. It may still be possible to obtain access through a public library or from the publisher directly.</p>
+
+    <a name="syntax"></a>
+    <h2>Query Syntax</h2>
+
+    <p>In addition to the basic filtering and sorting options, this search interface also allows the use of Lucene query syntax in the search box. You can restrict term queries on multiple metadata fields using colon statements like <code>journal:Science</code>, set filters like <code>lang:de</code>, and apply range queries like <code>year:&gt;1989 year:&lt;2000</code>.</p>
+
+    <p>While this syntax allows for relatively complex and powerful queries, at some point advanced users may run into limits on the size or complexity of queries. For the time being we recommend systems like <a href="https://lens.org">lens.org</a> for a more powerful interface.</p>
+
+    <a name="examples"></a>
+    <h3>Example Queries</h3>
+
+    <p>Search for digitized pages about a topic from specific years:</p>
+    <div class="example-search">
+      <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
+        <input type="text" name="q" value='"egyptian pyramid" access_type:ia_sim year:<2000'>
+        <button type="submit">Try It</button>
+      </form>
+    </div>
+
+    <p>Search for papers in Chinese matching a term:</p>
+    <div class="example-search">
+      <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
+        <input type="text" name="q" value="lang:zh 临床表现多样">
+        <button type="submit">Try It</button>
+      </form>
+    </div>
+
+    <p>Conference papers with an author name query:</p>
+    <div class="example-search">
+      <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
+        <input type="text" name="q" value='type:paper-conference author:"brenda laurel"'>
+        <button type="submit">Try It</button>
+      </form>
+    </div>
+
+    <!-- TODO decide on porting this over
+    <a name="citations"></a>
+    <h3>Citation Queries</h3>
+
+    <p>As an experimental feature, if the search query "looks like" a formal citation, as found in the bibliography of a research paper, the service will attempt to parse the citation and do a match against our catalog of known works. When this happens, any filters are ignored.</p>
+
+    <div class="example-search">
+      <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
+        <input type="text" name="q" value='Spertus, Ellen. "ParaSite: Mining structural information on the Web." Computer Networks and ISDN Systems 29.8-13 (1997): 1205-1215.'>
+        <button type="submit">Try It</button>
+      </form>
+    </div>
+    -->
+
+    <a name="fields"></a>
+    <h3>Metadata Fields</h3>
+
+    <p>You can restrict to records where the field exists with an asterisk like <code>doi:*</code>, and negate any term like <code>!type:article-journal</code>.</p>
+
+    <p>In-depth documentation of the query syntax is available <a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-query-string-query.html#query-string-query-notes">from the Elasticsearch project</a>.</p>
+
+    <p>The complete current search document schema is available (as JSON) <a href="https://github.com/internetarchive/fatcat-scholar/blob/master/schema/scholar_fulltext.v01.json">in the source code</a>.</p>
+
+    <table>
+      <tbody>
+        <tr><td>title:</td><td></td></tr>
+        <tr><td>author:</td><td></td></tr>
+        <tr><td>journal:</td><td></td></tr>
+        <tr><td>year:</td><td></td></tr>
+        <tr><td>issue:</td><td></td></tr>
+        <tr><td>volume:</td><td></td></tr>
+        <tr><td>doi:</td><td></td></tr>
+        <tr><td>tag:</td><td>eg, "tag:oa"</td></tr>
+        <tr><td>type:</td><td>eg, "article-journal", "dataset", "book"</td></tr>
+        <tr><td>stage:</td><td>eg, "published", "submitted", "accepted", "draft"</td></tr>
+        <tr><td>lang:</td><td>value is a 2-character lower-case ISO language code</td></tr>
+        <tr><td>country:</td><td>value is a 2-character lower-case ISO country code</td></tr>
+        <tr><td>access_type:</td><td>"wayback", "ia_file", "ia_sim"</td></tr>
+      </tbody>
+    </table>
+
+    <a name="results"></a>
+    <h2>Search Results</h2>
+
+    <a name="access"></a>
+    <h3>Access Links</h3>
+    <p>If we are able to provide access to full-text for a given search result
+    it will have a link like "Archived PDF" or "Microfilm Scan". If possible,
+    we also link to a "live" URL for a given release ("Original URL").</p>
+
+    <a name="pids"></a>
+    <h3>Persistent Identifiers</h3>
+
+    <p>Underneath search results, and alternate version listings, are any known "persistent identifiers" that uniquely identify the specific version of the work. These are usually hyperlinks.</p>
+
+    <table>
+      <tbody>
+        <tr><td style="color: green;">doi:</td><td><a href="https://en.wikipedia.org/wiki/Digital_object_identifier">Digital Object Identifier (DOI)</a>, provides a redirect to the publisher's landing page</td></tr>
+        <tr><td style="color: green;">pmid:</td><td>PubMed/MEDLINE</td></tr>
+        <tr><td style="color: green;">pmcid:</td><td>PubMed Central</td></tr>
+        <tr><td style="color: green;">arxiv:</td><td>arXiv pre-print service</td></tr>
+        <tr><td style="color: green;">dblp:</td><td>The DBLP Computer Science Bibliography</td></tr>
+        <tr><td style="color: green;">doaj:</td><td>Article-level identifier for works in DOAJ, particularly those with no DOI</td></tr>
+        <!-- <tr><td style="color: green;">fatcat:</td><td><a href="https://scholar.archive.org/fatcat">fatcat</a> "release" identifier. Scholar is built on top of the fatcat catalog</td></tr> -->
+      </tbody>
+    </table>
+
+    <a name="bugs"></a>
+    <h2>Work In Progress</h2>
+
+    <p>Metadata is continually being improved and some features have not been finalized.</p>
+
+    <p>Some known bugs and issues:</p>
+
+    <ul>
+      <li>Poor metadata quality for conference proceedings. Many are labeled "unpublished" and are not associated with the conference.</li>
+      <li>Duplicate versions of same work. For example, different versions of the same paper or dataset. We are working on basic entity-deduplication in the fatcat catalog.</li>
+      <li>Mis-matching of file content or version with work metadata. For example, sometimes pre-prints or author manuscripts are incorrectly associated with version-of-record metadata, or vice-versa.</li>
+    </ul>
+  </div>
+{% endblock %}

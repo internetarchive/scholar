@@ -31,6 +31,10 @@ type FindLineBatchOutput struct {
 // This is intended to be run in parallel so a very large file can have line
 // offsets extracted from different regions of the file at the same time.
 func FindLineBatch(ctx context.Context, in FindLineBatchInput) (FindLineBatchOutput, error) {
+	if in.BatchSize == 0 || in.ChunkSize == 0 {
+		panic("bad batch or chunk size config")
+	}
+
 	l := activity.GetLogger(ctx)
 
 	l.Info(fmt.Sprintf("doing a range read from '%s'", in.S3Key))

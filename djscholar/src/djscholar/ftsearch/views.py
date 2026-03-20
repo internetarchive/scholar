@@ -182,7 +182,7 @@ SORT_LABELS = [
     ("oldest", "Oldest"),
 ]
 
-DEFAULT_PAGE_SIZE = 25
+DEFAULT_PAGE_SIZE = 20
 DEFAULT_DATE_FILTER = "all_time"
 DEFAULT_TYPE_FILTER = "papers"
 DEFAULT_ACCESS_FILTER = "fulltext"

@@ -18,7 +18,7 @@ from djscholar.fcapi.fcid import fcid2uuid
 _es = None
 
 
-def get_es() -> Elasticsearch:
+def _get_es() -> Elasticsearch:
     global _es
     if _es is None:
         _es = Elasticsearch(
@@ -32,7 +32,7 @@ def get_es() -> Elasticsearch:
 
 def webhealth(request: HttpRequest) -> HttpResponse:
     try:
-        if get_es().ping():
+        if _get_es().ping():
             return HttpResponse("ok")
     except Exception:
         pass
@@ -41,7 +41,7 @@ def webhealth(request: HttpRequest) -> HttpResponse:
 
 def searchhealth(request: HttpRequest) -> HttpResponse:
     try:
-        data = get_es().search(
+        data = _get_es().search(
             index=settings.ES_INDEX,
             body={"query": {"match_all": {}}, "size": 1},
             request_timeout=20,
@@ -89,7 +89,7 @@ def random_paper(request: HttpRequest) -> HttpResponse:
             }
         }
 
-    data = get_es().search(
+    data = _get_es().search(
         index=settings.ES_INDEX,
         body={"query": query, "size": 1},
         request_timeout=10,
@@ -215,7 +215,7 @@ def _rewrite_id_query(q: str) -> str:
     return q
 
 
-def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort):
+def _build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort):
     qs = {
         "query_string": {
             "query": q,
@@ -399,9 +399,9 @@ def search(request: HttpRequest) -> HttpResponse:
 
     search_error = None
     status_code = 200
-    body = build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort)
+    body = _build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort)
     try:
-        data = get_es().search(
+        data = _get_es().search(
             index=settings.ES_INDEX,
             body=body,
             request_timeout=20,
@@ -472,7 +472,7 @@ def search(request: HttpRequest) -> HttpResponse:
 
 
 def work(request: HttpRequest, work_ident: str) -> HttpResponse:
-    data = get_es().search(
+    data = _get_es().search(
         index=settings.ES_INDEX,
         body={
             "query": {"term": {"work_ident": work_ident}},
@@ -490,7 +490,7 @@ def work(request: HttpRequest, work_ident: str) -> HttpResponse:
 def _get_es_doc(work_ident: str):
     """Fetch raw ES _source for a work by doc ID. Returns None if not found."""
     try:
-        resp = get_es().get(settings.ES_INDEX, f"work_{work_ident}")
+        resp = _get_es().get(settings.ES_INDEX, f"work_{work_ident}")
         return resp["_source"]
     except Exception:
         return None

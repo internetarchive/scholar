@@ -5,6 +5,7 @@ from djscholar.ftsearch.views import (
     DEFAULT_SORT,
     DEFAULT_TYPE_FILTER,
     SORT_OPTIONS,
+    _build_result,
     _get_access_options,
     _rewrite_id_query,
     build_es_body,
@@ -395,3 +396,148 @@ class TestRewriteIdQuery:
 
     def test_existing_field_query(self):
         assert _rewrite_id_query('doi:"10.1234/foo"') == 'doi:"10.1234/foo"'
+
+
+def _make_hit(biblio=None, fulltext=None, access=None, highlight=None, work_ident="abc123"):
+    """Build a minimal ES hit dict for _build_result tests."""
+    source = {"work_ident": work_ident, "biblio": biblio or {}}
+    if fulltext is not None:
+        source["fulltext"] = fulltext
+    if access is not None:
+        source["access"] = access
+    hit = {"_source": source}
+    if highlight is not None:
+        hit["highlight"] = highlight
+    return hit
+
+
+class TestBuildResultBasic:
+    def test_minimal_hit(self):
+        result = _build_result(_make_hit())
+        assert result["title"] == "(untitled)"
+        assert result["authors"] == []
+        assert result["year"] is None
+        assert result["journal"] == ""
+        assert result["work_ident"] == "abc123"
+        assert result["ext_ids"] == []
+        assert result["highlights"] == []
+
+    def test_title_and_authors(self):
+        result = _build_result(_make_hit(biblio={
+            "title": "On Foo",
+            "contrib_names": ["Alice", "Bob"],
+            "release_year": 2023,
+            "container_name": "Nature",
+        }))
+        assert result["title"] == "On Foo"
+        assert result["authors"] == ["Alice", "Bob"]
+        assert result["year"] == 2023
+        assert result["journal"] == "Nature"
+
+    def test_ext_ids_collected(self):
+        result = _build_result(_make_hit(biblio={
+            "doi": "10.1234/x",
+            "pmid": "99",
+            "arxiv_id": "2301.00001",
+        }))
+        assert "doi:10.1234/x" in result["ext_ids"]
+        assert "pmid:99" in result["ext_ids"]
+        assert "arxiv:2301.00001" in result["ext_ids"]
+
+    def test_ext_ids_skip_missing(self):
+        result = _build_result(_make_hit(biblio={"doi": "10.1234/x"}))
+        assert len(result["ext_ids"]) == 1
+
+    def test_release_stage(self):
+        result = _build_result(_make_hit(biblio={"release_stage": "submitted"}))
+        assert result["release_stage"] == "submitted"
+
+    def test_fatcat_url(self):
+        result = _build_result(_make_hit(biblio={"release_ident": "r1234"}))
+        assert result["fatcat_url"] == "https://scholar.archive.org/fatcat/release/r1234"
+
+    def test_fatcat_url_missing_ident(self):
+        result = _build_result(_make_hit(biblio={}))
+        assert result["fatcat_url"] == ""
+
+
+class TestBuildResultSizeFormatting:
+    def test_megabytes(self):
+        result = _build_result(_make_hit(fulltext={"size_bytes": 2_500_000}))
+        assert result["access_size"] == "2.5 MB"
+
+    def test_kilobytes(self):
+        result = _build_result(_make_hit(fulltext={"size_bytes": 45_000}))
+        assert result["access_size"] == "45 kB"
+
+    def test_small_bytes(self):
+        result = _build_result(_make_hit(fulltext={"size_bytes": 500}))
+        assert result["access_size"] == ""
+
+    def test_no_size(self):
+        result = _build_result(_make_hit(fulltext={}))
+        assert result["access_size"] == ""
+
+    def test_exactly_one_mb(self):
+        result = _build_result(_make_hit(fulltext={"size_bytes": 1_000_000}))
+        assert result["access_size"] == "1.0 MB"
+
+
+class TestBuildResultCaptureYear:
+    def test_wayback_url(self):
+        result = _build_result(_make_hit(fulltext={
+            "access_url": "https://web.archive.org/web/20210315120000/https://example.com/paper.pdf",
+        }))
+        assert result["capture_year"] == "2021"
+
+    def test_non_wayback_url(self):
+        result = _build_result(_make_hit(fulltext={
+            "access_url": "https://archive.org/download/item/file.pdf",
+        }))
+        assert result["capture_year"] == ""
+
+    def test_no_access_url(self):
+        result = _build_result(_make_hit(fulltext={}))
+        assert result["capture_year"] == ""
+
+
+class TestBuildResultThumbnail:
+    def test_thumbnail_rewrite(self):
+        result = _build_result(_make_hit(fulltext={
+            "thumbnail_url": "https://blobs.fatcat.wiki/thumb/abc.png",
+        }))
+        assert result["thumbnail_url"] == "https://scholar.archive.org/_s3/thumb/abc.png"
+
+    def test_non_fatcat_thumbnail_unchanged(self):
+        result = _build_result(_make_hit(fulltext={
+            "thumbnail_url": "https://other.example.com/thumb.png",
+        }))
+        assert result["thumbnail_url"] == "https://other.example.com/thumb.png"
+
+    def test_no_thumbnail(self):
+        result = _build_result(_make_hit(fulltext={}))
+        assert result["thumbnail_url"] == ""
+
+
+class TestBuildResultHighlights:
+    def test_snippets_collected(self):
+        result = _build_result(_make_hit(highlight={
+            "abstracts.body": ["fragment <em>one</em>"],
+            "fulltext.body": ["fragment <em>two</em>"],
+        }))
+        assert len(result["highlights"]) == 2
+        assert "<strong>one</strong>" in str(result["highlights"][0])
+        assert "<strong>two</strong>" in str(result["highlights"][1])
+
+    def test_html_in_snippet_escaped(self):
+        result = _build_result(_make_hit(highlight={
+            "fulltext.body": ["<script>alert(1)</script> <em>match</em>"],
+        }))
+        snippet = str(result["highlights"][0])
+        assert "<script>" not in snippet
+        assert "&lt;script&gt;" in snippet
+        assert "<strong>match</strong>" in snippet
+
+    def test_no_highlights(self):
+        result = _build_result(_make_hit())
+        assert result["highlights"] == []

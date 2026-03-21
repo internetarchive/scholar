@@ -55,8 +55,7 @@
   <main>
     <img class="logo" src="{% static 'ftsearch/images/ia.svg' %}" alt="Internet Archive">
     <h1>Internet Archive Scholar</h1>
-    <form class="search-form" action="{% url 'ftsearch:search' %}" method="post">
-      {% csrf_token %}
+    <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
       <input type="text" name="q" placeholder="Search open access papers..." aria-label="Search">
       <button type="submit">Search</button>
     </form>

@@ -6,6 +6,7 @@ from djscholar.ftsearch.views import (
     DEFAULT_TYPE_FILTER,
     SORT_OPTIONS,
     _get_access_options,
+    _rewrite_id_query,
     build_es_body,
 )
 
@@ -345,3 +346,52 @@ class TestGetAccessOptions:
     def test_null_access(self):
         source = {"fulltext": {}, "access": None}
         assert _get_access_options(source) == []
+
+
+class TestRewriteIdQuery:
+    # DOI
+    def test_doi(self):
+        assert _rewrite_id_query("10.1234/foo.bar") == 'doi:"10.1234/foo.bar"'
+
+    def test_doi_long_prefix(self):
+        assert _rewrite_id_query("10.12345/some/path") == 'doi:"10.12345/some/path"'
+
+    def test_doi_url_https(self):
+        assert _rewrite_id_query("https://doi.org/10.1234/foo") == 'doi:"10.1234/foo"'
+
+    def test_doi_url_dx(self):
+        assert _rewrite_id_query("https://dx.doi.org/10.1234/foo") == 'doi:"10.1234/foo"'
+
+    def test_doi_url_http(self):
+        assert _rewrite_id_query("http://doi.org/10.1234/foo") == 'doi:"10.1234/foo"'
+
+    # PMCID
+    def test_pmcid(self):
+        assert _rewrite_id_query("PMC12345") == 'pmcid:"PMC12345"'
+
+    def test_pmcid_lowercase(self):
+        assert _rewrite_id_query("pmc12345") == 'pmcid:"pmc12345"'
+
+    # arXiv new format
+    def test_arxiv_new(self):
+        assert _rewrite_id_query("2301.12345") == 'arxiv_id:"2301.12345"'
+
+    def test_arxiv_new_with_version(self):
+        assert _rewrite_id_query("2301.12345v2") == 'arxiv_id:"2301.12345v2"'
+
+    def test_arxiv_short_id(self):
+        assert _rewrite_id_query("0712.0473") == 'arxiv_id:"0712.0473"'
+
+    # arXiv old format
+    def test_arxiv_old(self):
+        assert _rewrite_id_query("hep-ph/0301001") == 'arxiv_id:"hep-ph/0301001"'
+
+    # Passthrough — regular queries should not be rewritten
+    def test_plain_query(self):
+        assert _rewrite_id_query("machine learning") == "machine learning"
+
+    def test_number_not_rewritten(self):
+        assert _rewrite_id_query("12345678") == "12345678"
+
+    def test_existing_field_query(self):
+        assert _rewrite_id_query('doi:"10.1234/foo"') == 'doi:"10.1234/foo"'

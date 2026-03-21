@@ -197,6 +197,23 @@ DEFAULT_TYPE_FILTER = "papers"
 DEFAULT_ACCESS_FILTER = "fulltext"
 DEFAULT_SORT = "relevancy"
 
+_DOI_URL_RE = re.compile(r'^https?://(?:dx\.)?doi\.org/', re.I)
+_RAW_ID_PATTERNS = [
+    (re.compile(r'^10\.\d{4,}/\S+$'), "doi"),
+    (re.compile(r'^PMC\d+$', re.I), "pmcid"),
+    (re.compile(r'^\d{4}\.\d{4,5}(?:v\d+)?$'), "arxiv_id"),
+    (re.compile(r'^[a-z-]+(?:\.[A-Z]{2})?/\d{7}$'), "arxiv_id"),
+]
+
+
+def _rewrite_id_query(q: str) -> str:
+    """If q looks like a raw identifier, rewrite it as a field-specific query."""
+    q = _DOI_URL_RE.sub("", q)
+    for pattern, field in _RAW_ID_PATTERNS:
+        if pattern.match(q):
+            return f'{field}:"{q}"'
+    return q
+
 
 def build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort):
     qs = {
@@ -351,6 +368,7 @@ def search(request: HttpRequest) -> HttpResponse:
     q = request.POST.get("q", "").strip() or request.GET.get("q", "").strip()
     if not q:
         return render(request, "ftsearch/home.html")
+    q = _rewrite_id_query(q)
 
     page_size = DEFAULT_PAGE_SIZE
     try:

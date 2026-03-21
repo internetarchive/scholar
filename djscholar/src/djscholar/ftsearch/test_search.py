@@ -5,6 +5,7 @@ from djscholar.ftsearch.views import (
     DEFAULT_SORT,
     DEFAULT_TYPE_FILTER,
     SORT_OPTIONS,
+    _get_access_options,
     build_es_body,
 )
 
@@ -268,3 +269,79 @@ class TestNoFiltersEverything:
         # No bool wrapper with filters — just the boosting query directly
         assert "boosting" in body["query"]
         assert "filter" not in body["query"].get("bool", {})
+
+
+class TestGetAccessOptions:
+    def test_empty_source(self):
+        assert _get_access_options({}) == []
+
+    def test_fulltext_only(self):
+        source = {
+            "fulltext": {
+                "access_type": "wayback",
+                "access_url": "https://web.archive.org/web/20200101000000/https://example.com/paper.pdf",
+            },
+        }
+        opts = _get_access_options(source)
+        assert len(opts) == 1
+        assert opts[0]["access_type"] == "wayback"
+
+    def test_access_list_only(self):
+        source = {
+            "access": [
+                {"access_type": "ia_file", "access_url": "https://archive.org/download/item/file.pdf"},
+                {"access_type": "wayback", "access_url": "https://web.archive.org/web/20200101000000/https://example.com/a.pdf"},
+            ],
+        }
+        opts = _get_access_options(source)
+        assert len(opts) == 2
+        assert opts[0]["access_type"] == "ia_file"
+        assert opts[1]["access_type"] == "wayback"
+
+    def test_fulltext_and_access_combined(self):
+        source = {
+            "fulltext": {
+                "access_type": "wayback",
+                "access_url": "https://web.archive.org/web/20200101000000/https://example.com/paper.pdf",
+            },
+            "access": [
+                {"access_type": "ia_file", "access_url": "https://archive.org/download/item/file.pdf"},
+            ],
+        }
+        opts = _get_access_options(source)
+        assert len(opts) == 2
+        # fulltext comes first
+        assert opts[0]["access_type"] == "wayback"
+        assert opts[1]["access_type"] == "ia_file"
+
+    def test_fulltext_missing_access_type_skipped(self):
+        source = {
+            "fulltext": {"access_url": "https://example.com/paper.pdf"},
+        }
+        assert _get_access_options(source) == []
+
+    def test_fulltext_missing_access_url_skipped(self):
+        source = {
+            "fulltext": {"access_type": "wayback"},
+        }
+        assert _get_access_options(source) == []
+
+    def test_access_entry_missing_fields_skipped(self):
+        source = {
+            "access": [
+                {"access_type": "wayback"},
+                {"access_url": "https://example.com"},
+                {"access_type": "ia_file", "access_url": "https://archive.org/download/item/file.pdf"},
+            ],
+        }
+        opts = _get_access_options(source)
+        assert len(opts) == 1
+        assert opts[0]["access_type"] == "ia_file"
+
+    def test_null_fulltext(self):
+        source = {"fulltext": None, "access": []}
+        assert _get_access_options(source) == []
+
+    def test_null_access(self):
+        source = {"fulltext": {}, "access": None}
+        assert _get_access_options(source) == []

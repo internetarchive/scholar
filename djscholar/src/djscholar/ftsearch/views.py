@@ -1,4 +1,5 @@
 import re
+import urllib.parse
 
 from django.conf import settings
 from django.http import Http404, HttpRequest, HttpResponse
@@ -6,6 +7,9 @@ from django.shortcuts import redirect, render
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from elasticsearch import Elasticsearch
+
+from djscholar.fcapi import models as fcm
+from djscholar.fcapi.fcid import fcid2uuid
 
 _es = None
 
@@ -432,9 +436,130 @@ def work(request: HttpRequest, work_ident: str) -> HttpResponse:
     return render(request, "ftsearch/work.html", {"result": result})
 
 
+def _get_es_doc(work_ident: str):
+    """Fetch raw ES _source for a work by doc ID. Returns None if not found."""
+    try:
+        resp = get_es().get(settings.ES_INDEX, f"work_{work_ident}")
+        return resp["_source"]
+    except Exception:
+        return None
+
+
+def _get_access_options(source: dict) -> list:
+    """Combine fulltext and access entries from an ES doc source."""
+    options = []
+    fulltext = source.get("fulltext") or {}
+    if fulltext.get("access_type") and fulltext.get("access_url"):
+        options.append(fulltext)
+    for entry in source.get("access") or []:
+        if entry.get("access_type") and entry.get("access_url"):
+            options.append(entry)
+    return options
+
+
+def _access_redirect_fallback(request, work_ident, *, original_url=None, archiveorg_path=None):
+    """Fall back to the fatcat DB when ES doesn't have a match."""
+    try:
+        work_uuid = fcid2uuid(work_ident)
+        work = fcm.Work.objects.get(id=work_uuid)
+    except Exception:
+        return render(request, "ftsearch/access_404.html", {
+            "work_ident": work_ident,
+            "original_url": original_url,
+            "archiveorg_path": archiveorg_path,
+        }, status=404)
+
+    releases = fcm.Release.objects.filter(work=work)
+    for rel in releases:
+        files = fcm.File.objects.filter(releasefile__release_id=rel.id)
+        for f in files:
+            for url_obj in f.urls.all():
+                access_url = url_obj.url
+                if (
+                    original_url
+                    and "://web.archive.org/web/" in access_url
+                    and access_url.endswith(original_url)
+                ):
+                    timestamp = access_url.split("/")[4]
+                    return redirect(
+                        f"https://web.archive.org/web/{timestamp}id_/{original_url}"
+                    )
+                elif (
+                    archiveorg_path
+                    and "://archive.org/" in access_url
+                    and archiveorg_path in access_url
+                ):
+                    return redirect(access_url)
+
+    return render(request, "ftsearch/access_404.html", {
+        "work_ident": work_ident,
+        "original_url": original_url,
+        "archiveorg_path": archiveorg_path,
+    }, status=404)
+
+
 def access_redirect_wayback(request: HttpRequest, work_ident: str, url: str) -> HttpResponse:
-    raise NotImplementedError
+    # Reconstruct the original URL from the raw request path, since Django
+    # decodes the path parameter. Split after ".../access/wayback/".
+    raw_path = request.get_full_path()
+    marker = f"/work/{work_ident}/access/wayback/"
+    idx = raw_path.find(marker)
+    if idx >= 0:
+        raw_original_url = raw_path[idx + len(marker):]
+    else:
+        raw_original_url = url
+    original_url = urllib.parse.quote(
+        raw_original_url,
+        safe=":/%#?=@[]!$&'()*+,;",
+    )
+
+    source = _get_es_doc(work_ident)
+    if not source:
+        return _access_redirect_fallback(
+            request, work_ident, original_url=original_url
+        )
+
+    for opt in _get_access_options(source):
+        if (
+            opt.get("access_type") == "wayback"
+            and opt.get("access_url", "")
+            and "://web.archive.org/web/" in opt["access_url"]
+            and opt["access_url"].endswith(original_url)
+        ):
+            timestamp = opt["access_url"].split("/")[4]
+            if len(timestamp) == 14 and timestamp.isdigit():
+                return redirect(
+                    f"https://web.archive.org/web/{timestamp}id_/{original_url}"
+                )
+
+    return _access_redirect_fallback(
+        request, work_ident, original_url=original_url
+    )
 
 
 def access_redirect_ia_file(request: HttpRequest, work_ident: str, item: str, file_path: str) -> HttpResponse:
-    raise NotImplementedError
+    # Reconstruct the file path from the raw request path, since Django
+    # decodes the path parameter. Split after ".../ia_file/{item}/".
+    raw_path = request.get_full_path()
+    marker = f"/access/ia_file/{item}/"
+    idx = raw_path.find(marker)
+    if idx >= 0:
+        raw_file_path = raw_path[idx + len(marker):]
+    else:
+        raw_file_path = file_path
+    original_path = urllib.parse.quote(raw_file_path)
+    access_url = f"https://archive.org/download/{item}/{original_path}"
+
+    source = _get_es_doc(work_ident)
+    if not source:
+        return _access_redirect_fallback(
+            request, work_ident, archiveorg_path=f"/{item}/{original_path}"
+        )
+
+    for opt in _get_access_options(source):
+        if opt.get("access_type") == "ia_file" and opt.get("access_url") == access_url:
+            return redirect(access_url)
+
+    return _access_redirect_fallback(
+        request, work_ident, archiveorg_path=f"/{item}/{original_path}"
+    )

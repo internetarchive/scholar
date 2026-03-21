@@ -1,0 +1,67 @@
+{% extends "ftsearch/base.html" %}
+
+{% block title %}404 - IA Scholar{% endblock %}
+
+{% block styles %}
+    .access-404 {
+      max-width: 700px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+      flex: 1;
+    }
+
+    .access-404 h2 {
+      margin-bottom: 1rem;
+    }
+
+    .access-404 p {
+      margin-bottom: 0.75rem;
+      color: #555;
+    }
+
+    .access-404 ul {
+      margin-top: 0.75rem;
+      padding-left: 1.5rem;
+    }
+
+    .access-404 li {
+      margin-bottom: 0.5rem;
+    }
+
+    .access-404 a {
+      color: #333;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .access-404 code {
+      word-break: break-all;
+      font-size: 0.85rem;
+    }
+{% endblock %}
+
+{% block content %}
+  <div class="access-404">
+    <h2>404: Access Location Not Found</h2>
+    <p>We could not find a valid redirect for the URL you tried.</p>
+    <p>There may be a typo, truncation, or encoding error. Or, the resource may have been removed from our catalog.</p>
+    <p>Some places you can try to hunt down this resource (or a replacement):</p>
+    <ul>
+      {% if original_url %}
+        <li>Original web URL:<br>
+          <code><a href="{{ original_url }}">{{ original_url }}</a></code>
+        </li>
+        <li><a href="https://web.archive.org/web/*/{{ original_url }}">Wayback Machine calendar page (all captures)</a></li>
+      {% endif %}
+      {% if archiveorg_path %}
+        <li>archive.org download link:
+          <code><a href="https://archive.org/download{{ archiveorg_path }}">https://archive.org/download{{ archiveorg_path }}</a></code>
+        </li>
+      {% endif %}
+      {% if work_ident %}
+        <li><a href="{% url 'ftsearch:work' work_ident %}">Scholar landing page</a></li>
+        <li><a href="https://scholar.archive.org/fatcat/work/{{ work_ident }}">Fatcat work page</a></li>
+      {% endif %}
+    </ul>
+  </div>
+{% endblock %}

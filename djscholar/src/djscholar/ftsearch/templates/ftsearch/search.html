@@ -100,6 +100,23 @@
       color: #777;
     }
 
+    .search-error {
+      background: #fef2f2;
+      border: 1px solid #dc2626;
+      border-radius: 4px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    .search-error code {
+      background: #fee2e2;
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      font-size: 0.85em;
+      word-break: break-word;
+    }
+
     .sidebar-section {
       padding: 0.5rem 0.25rem;
       border-bottom: 1px solid grey;
@@ -216,7 +233,15 @@
       {% if has_filters %}<div class="sidebar-section"><a href="?q={{ query }}" style="color: #c20303">Clear Filters</a></div>{% endif %}
     </div>
     <section class="results">
-    {% if results %}
+    {% if search_error %}
+      <div class="search-error">
+        <p><strong>
+          {% if search_error.type == "query" %}Search Query Error{% else %}Backend Search Engine Error{% endif %}
+        </strong></p>
+        <p>Computer said: <code>{{ search_error.message }}</code></p>
+        <p>Query parsing is currently very naive. Sometimes you can fix this problem by adding quotes around terms or entire phrases.</p>
+      </div>
+    {% elif results %}
       {% if mode == "grid" %}
         <ul class="results-grid">
           {% for result in results %}

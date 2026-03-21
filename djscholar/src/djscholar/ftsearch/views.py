@@ -1,3 +1,4 @@
+import logging
 import re
 import urllib.parse
 
@@ -7,6 +8,9 @@ from django.shortcuts import redirect, render
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import RequestError, TransportError
+
+logger = logging.getLogger(__name__)
 
 from djscholar.fcapi import models as fcm
 from djscholar.fcapi.fcid import fcid2uuid
@@ -187,6 +191,7 @@ SORT_LABELS = [
 ]
 
 DEFAULT_PAGE_SIZE = 20
+DEEP_PAGE_LIMIT = 2000
 DEFAULT_DATE_FILTER = "all_time"
 DEFAULT_TYPE_FILTER = "papers"
 DEFAULT_ACCESS_FILTER = "fulltext"
@@ -353,6 +358,10 @@ def search(request: HttpRequest) -> HttpResponse:
     except (ValueError, TypeError):
         page = 1
     offset = (page - 1) * page_size
+    clamped = offset > DEEP_PAGE_LIMIT
+    if clamped:
+        offset = DEEP_PAGE_LIMIT
+        page = offset // page_size + 1
 
     date_filter = request.GET.get("date", DEFAULT_DATE_FILTER)
     if date_filter not in DATE_FILTERS:
@@ -370,23 +379,45 @@ def search(request: HttpRequest) -> HttpResponse:
     if sort not in SORT_OPTIONS:
         sort = DEFAULT_SORT
 
-    # TODO handler for get_es failing that can render a nice outage page
+    search_error = None
+    status_code = 200
     body = build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort)
-    data = get_es().search(
-        index=settings.ES_INDEX,
-        body=body,
-        request_timeout=20,
-    )
+    try:
+        data = get_es().search(
+            index=settings.ES_INDEX,
+            body=body,
+            request_timeout=20,
+        )
+    except RequestError as e:
+        logger.warning("elasticsearch RequestError: %s", e.info)
+        root_causes = e.info.get("error", {}).get("root_cause", [])
+        if root_causes:
+            message = root_causes[0].get("reason", str(e.info))
+        else:
+            message = str(e.info)
+        search_error = {"type": "query", "message": message}
+        status_code = 400
+        data = None
+    except (TransportError, Exception) as e:
+        logger.warning("elasticsearch error: %s", e)
+        search_error = {"type": "backend", "message": str(e)}
+        status_code = 500
+        data = None
 
-    took_secs = round(data.get("took", 0) / 1000, 2)
-    total = data.get("hits", {}).get("total", {}).get("value", 0)
-    hits = data.get("hits", {}).get("hits", [])
+    if data is not None:
+        took_secs = round(data.get("took", 0) / 1000, 2)
+        total = data.get("hits", {}).get("total", {}).get("value", 0)
+        hits = data.get("hits", {}).get("hits", [])
 
-    # Adjust total when collapse returns fewer than a full page on first page
-    if offset == 0 and len(hits) < page_size:
-        total = len(hits)
+        # Adjust total when collapse returns fewer than a full page on first page
+        if offset == 0 and len(hits) < page_size:
+            total = len(hits)
 
-    results = [_build_result(h) for h in hits]
+        results = [_build_result(h) for h in hits]
+    else:
+        took_secs = 0
+        total = 0
+        results = []
 
     mode = request.GET.get("mode", "list")
     if mode not in ("list", "grid"):
@@ -397,11 +428,12 @@ def search(request: HttpRequest) -> HttpResponse:
     return render(request, "ftsearch/search.html", {
         "query": q,
         "results": results,
+        "search_error": search_error,
         "mode": mode,
         "page": page,
         "total_pages": total_pages,
         "has_prev": page > 1,
-        "has_next": page < total_pages,
+        "has_next": page < total_pages and not clamped,
         "total": total,
         "took_secs": took_secs,
         "date_filter": date_filter,
@@ -418,7 +450,7 @@ def search(request: HttpRequest) -> HttpResponse:
             or access_filter != DEFAULT_ACCESS_FILTER
             or sort != DEFAULT_SORT
         ),
-    })
+    }, status=status_code)
 
 
 def work(request: HttpRequest, work_ident: str) -> HttpResponse:

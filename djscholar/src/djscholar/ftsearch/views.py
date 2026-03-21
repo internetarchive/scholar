@@ -337,6 +337,7 @@ def _build_result(hit):
         "pmid": biblio.get("pmid", ""),
         "doaj_id": biblio.get("doaj_id", ""),
         "work_ident": source.get("work_ident", ""),
+        "release_stage": biblio.get("release_stage", ""),
         "fatcat_url": f"https://scholar.archive.org/fatcat/release/{biblio['release_ident']}" if biblio.get("release_ident") else "",
     }
 

@@ -138,6 +138,11 @@
       border-bottom: 1px solid #eee;
     }
 
+    .top-bar-logo {
+      height: 1.5rem;
+      width: 1.5rem;
+    }
+
     .top-bar h1 {
       font-family: "Jacquard", serif;
       font-size: 1.5rem;
@@ -244,6 +249,7 @@
 <body>
   {% block top_bar %}
   <header class="top-bar">
+    <a href="{% url 'ftsearch:home' %}"><img class="top-bar-logo" src="{% static 'ftsearch/images/ia.svg' %}" alt=""></a>
     <h1><a href="{% url 'ftsearch:home' %}">IA Scholar</a></h1>
     <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
       <input type="text" name="q" value="{{ query }}" placeholder="Search open access papers..." aria-label="Search">

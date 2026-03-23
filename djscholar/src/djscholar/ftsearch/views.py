@@ -10,10 +10,11 @@ from django.utils.safestring import mark_safe
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import RequestError, TransportError
 
-logger = logging.getLogger(__name__)
-
 from djscholar.fcapi import models as fcm
 from djscholar.fcapi.fcid import fcid2uuid
+
+logger = logging.getLogger(__name__)
+
 
 _es = None
 

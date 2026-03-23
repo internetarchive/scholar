@@ -23,4 +23,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path("api/fatcat/v2/", v2api.urls),
     path("_sd/", include("djscholar.ftsearch.urls")),
+    path("_sd/fatcat/", include("djscholar.fcweb.urls")),
 ]

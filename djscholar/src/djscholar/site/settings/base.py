@@ -33,6 +33,7 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'djscholar.fcapi',
+    'djscholar.fcweb',
     'djscholar.ftsearch',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -57,6 +58,14 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'djscholar.site.urls'
 
 TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.jinja2.Jinja2',
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'environment': 'djscholar.fcweb.jinja2_env.environment',
+            'extensions': ['jinja2.ext.do'],
+        },
+    },
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         'DIRS': [],

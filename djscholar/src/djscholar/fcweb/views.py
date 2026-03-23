@@ -5,6 +5,18 @@ They will be implemented incrementally.
 """
 
 from django.http import HttpRequest, HttpResponse
+from django.template import engines
+
+
+def _get_jinja_env():
+    return engines["jinja2"]
+
+
+def _render(request: HttpRequest, template_name: str, context: dict | None = None, status: int = 200) -> HttpResponse:
+    env = _get_jinja_env()
+    template = env.get_template(template_name)
+    html = template.render(context or {})
+    return HttpResponse(html, status=status)
 
 
 def _stub(request: HttpRequest) -> HttpResponse:

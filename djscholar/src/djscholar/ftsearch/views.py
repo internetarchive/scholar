@@ -7,33 +7,18 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
-from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import RequestError, TransportError
 
+import djscholar.es as es
 from djscholar.fcapi import models as fcm
 from djscholar.fcapi.fcid import fcid2uuid
 
 logger = logging.getLogger(__name__)
 
 
-_es = None
-
-
-def _get_es() -> Elasticsearch:
-    global _es
-    if _es is None:
-        _es = Elasticsearch(
-            settings.ES_HOSTS,
-            sniff_on_start=settings.ES_SNIFF,
-            sniff_on_connection_fail=settings.ES_SNIFF,
-            sniffer_timeout=60,
-        )
-    return _es
-
-
 def webhealth(request: HttpRequest) -> HttpResponse:
     try:
-        if _get_es().ping():
+        if es.client().ping():
             return HttpResponse("ok")
     except Exception:
         pass
@@ -42,7 +27,7 @@ def webhealth(request: HttpRequest) -> HttpResponse:
 
 def searchhealth(request: HttpRequest) -> HttpResponse:
     try:
-        data = _get_es().search(
+        data = es.client().search(
             index=settings.ES_INDEX,
             body={"query": {"match_all": {}}, "size": 1},
             request_timeout=20,
@@ -90,7 +75,7 @@ def random_paper(request: HttpRequest) -> HttpResponse:
             }
         }
 
-    data = _get_es().search(
+    data = es.client().search(
         index=settings.ES_INDEX,
         body={"query": query, "size": 1},
         request_timeout=10,
@@ -402,7 +387,7 @@ def search(request: HttpRequest) -> HttpResponse:
     status_code = 200
     body = _build_es_body(q, offset, page_size, date_filter, type_filter, access_filter, sort)
     try:
-        data = _get_es().search(
+        data = es.client().search(
             index=settings.ES_INDEX,
             body=body,
             request_timeout=20,
@@ -473,7 +458,7 @@ def search(request: HttpRequest) -> HttpResponse:
 
 
 def work(request: HttpRequest, work_ident: str) -> HttpResponse:
-    data = _get_es().search(
+    data = es.client().search(
         index=settings.ES_INDEX,
         body={
             "query": {"term": {"work_ident": work_ident}},
@@ -491,7 +476,7 @@ def work(request: HttpRequest, work_ident: str) -> HttpResponse:
 def _get_es_doc(work_ident: str):
     """Fetch raw ES _source for a work by doc ID. Returns None if not found."""
     try:
-        resp = _get_es().get(settings.ES_INDEX, f"work_{work_ident}")
+        resp = es.client().get(settings.ES_INDEX, f"work_{work_ident}")
         return resp["_source"]
     except Exception:
         return None

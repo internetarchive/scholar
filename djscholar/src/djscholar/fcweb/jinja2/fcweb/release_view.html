@@ -80,6 +80,7 @@
     font-weight: bold;
     color: #fff;
     border-radius: 4px 4px 0 0;
+    border: 1px solid transparent;
   }
 
   .preservation-bright { background-color: #2ca048; }
@@ -264,6 +265,22 @@ accessible version.
 
 {# == Right column (sidebar) =============================================== #}
 <div class="release-sidebar">
+
+{# -- Preservation status badge -------------------------------------------- #}
+{% if preservation == 'bright' %}
+  <div class="preservation-badge preservation-bright">Preserved and Accessible</div>
+{% elif preservation == 'dark' %}
+  <div class="preservation-badge preservation-dark">"Dark" Preservation Only</div>
+{% else %}
+  <div class="preservation-badge preservation-none">Not Preserved</div>
+{% endif %}
+
+{% if preservation != 'bright' %}
+  <div class="segment segment-attached">
+    <a href="{{ url('fcweb:release_save', ident=ident) }}"><b>Save Paper Now!</b></a>
+    <br>Know of a fulltext copy on the public web? Submit a URL and we will archive it
+  </div>
+{% endif %}
 
 {# -- Type / Stage / Date -------------------------------------------------- #}
 {% if release.release_type or release.release_stage or release.release_year %}

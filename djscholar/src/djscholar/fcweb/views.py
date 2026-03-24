@@ -44,6 +44,39 @@ file_lookup = _stub
 container_lookup = _stub
 release_lookup = _stub
 
+# -- Helpers -----------------------------------------------------------------
+
+
+def _release_preservation(files, extids):
+    """Compute preservation status for a release.
+
+    Returns 'bright' (in IA/Wayback), 'dark' (preserved elsewhere), or 'none'.
+    Logic mirrors fatcat-scholar's release_to_elasticsearch().
+    """
+    in_ia = False
+    is_preserved = False
+
+    for f in files:
+        for u in f.urls.all():
+            if "archive.org" in u.url:
+                in_ia = True
+            if u.rel in ("webarchive", "repository", "archive", "repo"):
+                is_preserved = True
+
+    if not in_ia and not is_preserved:
+        # check external IDs that imply preservation
+        is_preserved = bool(
+            extids.get("pmcid")
+            or extids.get("arxiv")
+        )
+
+    if in_ia:
+        return "bright"
+    elif is_preserved:
+        return "dark"
+    return "none"
+
+
 # -- Entity views ------------------------------------------------------------
 
 
@@ -64,6 +97,8 @@ def release_view(request: HttpRequest, ident: str) -> HttpResponse:
     webcaptures = list(release_svc.get_webcaptures(release_uuid))
     container = release.container
 
+    preservation = _release_preservation(files, extids)
+
     return _render(request, "fcweb/release_view.html", {
         "release": release,
         "authors": authors,
@@ -74,6 +109,7 @@ def release_view(request: HttpRequest, ident: str) -> HttpResponse:
         "webcaptures": webcaptures,
         "container": container,
         "ident": ident,
+        "preservation": preservation,
     })
 
 

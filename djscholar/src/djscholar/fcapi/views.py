@@ -16,6 +16,13 @@ from ninja_apikey.security import APIKeyAuth
 
 import djscholar.fcapi.models as m
 from djscholar.fcapi.fcid import fcid2uuid
+from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import containers as container_svc
+from djscholar.fcapi.services import creators as creator_svc
+from djscholar.fcapi.services import files as file_svc
+from djscholar.fcapi.services import releases as release_svc
+from djscholar.fcapi.services import webcaptures as webcapture_svc
+from djscholar.fcapi.services import works as work_svc
 
 COMMON_ENTITY_FIELDS = ["id", "created", "updated", "extra", "source",
                         "hidden_reason", "hidden_when"]
@@ -246,27 +253,20 @@ def status(request) -> HttpResponse:
 def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema:
     """Look up a container using an external ID. If multiple containers match
     the ID, an arbitrary one is returned."""
-    if lookup.id_type == "legacy_ident":
-        ident = fcid2uuid(lookup.id_value)
-        return ContainerSchema.from_orm(get_object_or_404(m.Container, id=ident))
-
-    cs = m.Container.objects.filter(**{lookup.id_type: lookup.id_value})
-    if len(cs) == 0:
-        raise Http404(f"no container found with {lookup.id_type} of {lookup.id_value}")
-    return ContainerSchema.from_orm(cs[0])
+    return ContainerSchema.from_orm(container_svc.lookup(lookup.id_type, lookup.id_value))
 
 
 @v2api.get("/container/{ident}")
 def get_container(request, ident: UUID) -> ContainerSchema:
     """Get a single container by its ID."""
-    return ContainerSchema.from_orm(get_object_or_404(m.Container, id=ident))
+    return ContainerSchema.from_orm(container_svc.get(ident))
 
 
 @v2api.get("/container/{ident}/releases", response=list[ReleaseSchema])
 @paginate
 def get_container_releases(request, ident: UUID) -> list[ReleaseSchema]:
     """Get all releases for a given container ID."""
-    return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(container__id=ident)]
+    return [ReleaseSchema.from_orm(r) for r in container_svc.get_releases(ident)]
 
 
 @v2api.post("/container", auth=api_auth)
@@ -329,63 +329,22 @@ def delete_container(request, ident: UUID) -> ContainerSchema:
 def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
     """Look up a release using an external ID. If multiple releases match the
     ID, an arbitrary one is returned."""
-    if lookup.id_type == "legacy_ident":
-        ident = fcid2uuid(lookup.id_value)
-        return ReleaseSchema.from_orm(get_object_or_404(m.Release, id=ident))
-
-    rs = m.Release.objects.filter(**{
-        "extids__id_type": lookup.id_type,
-        "extids__id_value": lookup.id_value})
-    if len(rs) == 0:
-        raise Http404(
-                f"no release found with {lookup.id_type} of {lookup.id_value}")
-    return ReleaseSchema.from_orm(rs[0])
+    return ReleaseSchema.from_orm(release_svc.lookup(lookup.id_type, lookup.id_value))
 
 
 @v2api.get("/release/lookup/fulltext")
 def fulltext(request, lookup: Query[ReleaseLookup]) -> HttpResponse:
-    if lookup.id_type == "legacy_ident":
-        ident = fcid2uuid(lookup.id_value)
-        return ReleaseSchema.from_orm(get_object_or_404(m.Release, id=ident))
-
-    rs = m.Release.objects.filter(**{
-        "extids__id_type": lookup.id_type,
-        "extids__id_value": lookup.id_value})
-    if len(rs) == 0:
-        raise Http404(
-                f"no release found with {lookup.id_type} of {lookup.id_value}")
-
-    files = m.File.objects.filter(releasefile__release_id=rs[0].id)
-    wayback_url = ""
-    webarchive_url = ""
-    other_url = ""
-    for f in files:
-        for u in f.urls.all():
-            if "web.archive.org" in u.url:
-                wayback_url = u.url
-            elif u.rel == "webarchive":
-                webarchive_url = u.url
-            else:
-                other_url = u.url
-
-    url = ""
-    if wayback_url != "":
-        url = wayback_url
-    elif webarchive_url != "":
-        url = webarchive_url
-    elif other_url != "":
-        url = other_url
-
-    if url == "":
+    release = release_svc.lookup(lookup.id_type, lookup.id_value)
+    url = file_svc.find_access_url(release.work_id)
+    if not url:
         raise Http404(f"no fulltext for {lookup.id_type}:{lookup.id_value}")
-
     return HttpResponseRedirect(url)
 
 
 @v2api.get("/release/{ident}")
 def get_release(request, ident: UUID) -> ReleaseSchema:
     """Get a single release by its ID."""
-    return ReleaseSchema.from_orm(get_object_or_404(m.Release, id=ident))
+    return ReleaseSchema.from_orm(release_svc.get(ident))
 
 
 @v2api.post("/release", auth=api_auth)
@@ -425,26 +384,19 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
 @v2api.get("/release/{ident}/container")
 def get_release_container(request, ident: UUID) -> ContainerSchema:
     """Get a release's container (ie, journal)"""
-    cs = m.Container.objects.filter(release__id=ident)
-    if len(cs) == 0:
-        raise Http404(f"release {ident} has no associated container")
-    return ContainerSchema.from_orm(cs[0])
+    return ContainerSchema.from_orm(release_svc.get_container(ident))
 
 
 @v2api.get("/release/{ident}/work")
 def get_release_work(request, ident: UUID) -> WorkSchema:
     """Get a the work that represents the platonic version of this release."""
-    ws = m.Container.objects.filter(release__id=ident)
-    # do not need to check length; work_id is required in schema
-    return WorkSchema.from_orm(ws[0])
+    return WorkSchema.from_orm(release_svc.get_work(ident))
 
 
 @v2api.get("/release/{ident}/files", response=list[FileSchema])
 @paginate
 def get_release_files(request, ident: UUID) -> list[FileSchema]:
-    return [FileSchema.from_orm(e)
-            for e
-            in m.File.objects.filter(releasefile__release_id=ident).prefetch_related("releases", "urls")]
+    return [FileSchema.from_orm(e) for e in release_svc.get_files(ident)]
 
 
 @v2api.get("/release/{ident}/contribs", response=list[ReleaseContribSchema])
@@ -454,16 +406,13 @@ def get_release_contribs(request, ident: UUID) -> list[ReleaseContribSchema]:
     Some contributions will feature a creator_id that can be used to select
     richer information about a contribution (eg, orcid); many contributions
     will just be raw names pulled from a paper's author list, however."""
-    return [ReleaseContribSchema.from_orm(rc)
-            for rc in m.ReleaseContrib.objects.filter(release_id=ident)]
+    return [ReleaseContribSchema.from_orm(rc) for rc in release_svc.get_contribs(ident)]
 
 
 @v2api.get("/release/{ident}/webcaptures", response=list[WebcaptureSchema])
 @paginate
 def get_release_webcaptures(request, ident: UUID) -> list[WebcaptureSchema]:
-    return [WebcaptureSchema.from_orm(wc)
-            for wc
-            in m.Webcapture.objects.filter(release_id=ident)]
+    return [WebcaptureSchema.from_orm(wc) for wc in release_svc.get_webcaptures(ident)]
 
 
 @v2api.delete("/release/{ident}", auth=api_auth)
@@ -562,24 +511,20 @@ def bulk_create_releases(request, releases_in: list[ReleaseSchema]) -> HttpRespo
 @v2api.get("/work/lookup")
 def lookup_work(request, lookup: Query[LegacyLookup]) -> WorkSchema:
     """Lookup a work by metadata other than its UUID"""
-    if lookup.id_type == "legacy_ident":
-        ident = fcid2uuid(lookup.id_value)
-        return WorkSchema.from_orm(get_object_or_404(m.Work, id=ident))
-    else:
-        raise NotImplementedError()
+    return WorkSchema.from_orm(work_svc.lookup(lookup.id_type, lookup.id_value))
 
 
 @v2api.get("/work/{ident}")
 def get_work(request, ident: UUID) -> WorkSchema:
     """Get a work (collection of releases) by its ID"""
-    return WorkSchema.from_orm(get_object_or_404(m.Work, id=ident))
+    return WorkSchema.from_orm(work_svc.get(ident))
 
 
 @v2api.get("/work/{ident}/releases", response=list[ReleaseSchema])
 @paginate
 def get_work_releases(request, ident: UUID) -> list[ReleaseSchema]:
     """Get all releases associated with a work's ID"""
-    return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(work_id=ident)]
+    return [ReleaseSchema.from_orm(r) for r in work_svc.get_releases(ident)]
 
 @v2api.post("/work", auth=api_auth, include_in_schema=False)
 def create_work(request) -> HttpResponse:
@@ -626,14 +571,7 @@ def update_work(request, work_in: WorkSchema) -> HttpResponse:
 def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
     """Look up a creator using an external ID. If multiple
     creators match the ID, an arbitrary one is returned."""
-    if lookup.id_type == "legacy_ident":
-        ident = fcid2uuid(lookup.id_value)
-        return CreatorSchema.from_orm(get_object_or_404(m.Creator, id=ident))
-
-    es = m.Creator.objects.filter(**{lookup.id_type: lookup.id_value})
-    if len(es) == 0:
-        raise Http404(f"no creator found with {lookup.id_type} of {lookup.id_value}")
-    return CreatorSchema.from_orm(es[0])
+    return CreatorSchema.from_orm(creator_svc.lookup(lookup.id_type, lookup.id_value))
 
 
 @v2api.get("/creator/{ident}/releases", response=list[ReleaseSchema])
@@ -642,13 +580,12 @@ def get_creator_releases(request, ident: UUID) -> list[ReleaseSchema]:
     """Get all the releases associated with a given creator. Note that for many
     releases, their authors exist only as raw contribs and do not have creator
     records."""
-    return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
-            contribs__creator_id=ident)]
+    return [ReleaseSchema.from_orm(r) for r in creator_svc.get_releases(ident)]
 
 
 @v2api.get("/creator/{ident}")
 def get_creator(request, ident: UUID) -> CreatorSchema:
-    return CreatorSchema.from_orm(get_object_or_404(m.Creator, id=ident))
+    return CreatorSchema.from_orm(creator_svc.get(ident))
 
 
 @v2api.post("/creator", auth=api_auth)
@@ -704,27 +641,19 @@ def delete_creator(request, ident: UUID) -> HttpResponse:
 @v2api.get("/file/lookup")
 def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
     """Look up a file by checksum."""
-    if lookup.id_type == "legacy_ident":
-        ident = fcid2uuid(lookup.id_value)
-        return FileSchema.from_orm(get_object_or_404(m.File, id=ident))
-
-    es = m.File.objects.filter(**{lookup.id_type: lookup.id_value})
-    if len(es) == 0:
-        raise Http404(f"no file found with {lookup.id_type} of {lookup.id_value}")
-    return FileSchema.from_orm(es[0])
+    return FileSchema.from_orm(file_svc.lookup(lookup.id_type, lookup.id_value))
 
 
 @v2api.get("/file/{ident}/releases", response=list[ReleaseSchema])
 @paginate
 def get_file_releases(request, ident: UUID) -> list[ReleaseSchema]:
     """Get all the releases associated with a given file."""
-    return [ReleaseSchema.from_orm(r) for r in m.Release.objects.filter(
-        releasefile__file_id=ident)]
+    return [ReleaseSchema.from_orm(r) for r in file_svc.get_releases(ident)]
 
 
 @v2api.get("/file/{ident}")
 def get_file(request, ident: UUID) -> FileSchema:
-    return FileSchema.from_orm(get_object_or_404(m.File, id=ident))
+    return FileSchema.from_orm(file_svc.get(ident))
 
 
 @v2api.post("/file", auth=api_auth)
@@ -815,21 +744,17 @@ def delete_file(request, ident: UUID) -> HttpResponse:
 @v2api.get("/webcapture/lookup")
 def lookup_webcapture(request, lookup: Query[LegacyLookup]) -> WebcaptureSchema:
     """Look up a webcapture by its legacy ID."""
-    if lookup.id_type == "legacy_ident":
-        ident = fcid2uuid(lookup.id_value)
-        return WebcaptureSchema.from_orm(get_object_or_404(m.Webcapture, id=ident))
-    else:
-        raise NotImplementedError()
+    return WebcaptureSchema.from_orm(webcapture_svc.lookup(lookup.id_type, lookup.id_value))
 
 
 @v2api.get("/webcapture/{ident}/release")
 def get_webcapture_release(request, ident: UUID) -> ReleaseSchema:
-    return ReleaseSchema.from_orm(get_object_or_404(m.Webcapture, id=ident).release)
+    return ReleaseSchema.from_orm(webcapture_svc.get_release(ident))
 
 
 @v2api.get("/webcapture/{ident}")
 def get_webcapture(request, ident: UUID) -> WebcaptureSchema:
-    return WebcaptureSchema.from_orm(get_object_or_404(m.Webcapture, id=ident))
+    return WebcaptureSchema.from_orm(webcapture_svc.get(ident))
 
 
 @v2api.post("/webcapture", auth=api_auth)
@@ -1053,6 +978,14 @@ def not_found(request, exc):
     return v2api.create_response(
             request,
             {"message": str(exc)},
+            status=404)
+
+
+@v2api.exception_handler(EntityNotFound)
+def entity_not_found(request, exc):
+    return v2api.create_response(
+            request,
+            {"message": exc.message},
             status=404)
 
 # Fileset routes

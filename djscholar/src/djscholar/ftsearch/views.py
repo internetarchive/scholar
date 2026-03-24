@@ -10,8 +10,10 @@ from django.utils.safestring import mark_safe
 from elasticsearch.exceptions import RequestError, TransportError
 
 import djscholar.es as es
-from djscholar.fcapi import models as fcm
 from djscholar.fcapi.fcid import fcid2uuid
+from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import files as file_svc
+from djscholar.fcapi.services import works as work_svc
 
 logger = logging.getLogger(__name__)
 
@@ -496,43 +498,38 @@ def _get_access_options(source: dict) -> list:
 
 def _access_redirect_fallback(request, work_ident, *, original_url=None, archiveorg_path=None):
     """Fall back to the fatcat DB when ES doesn't have a match."""
-    try:
-        work_uuid = fcid2uuid(work_ident)
-        work = fcm.Work.objects.get(id=work_uuid)
-    except Exception:
+    def _404():
         return render(request, "ftsearch/access_404.html", {
             "work_ident": work_ident,
             "original_url": original_url,
             "archiveorg_path": archiveorg_path,
         }, status=404)
 
-    releases = fcm.Release.objects.filter(work=work)
-    for rel in releases:
-        files = fcm.File.objects.filter(releasefile__release_id=rel.id)
-        for f in files:
-            for url_obj in f.urls.all():
-                access_url = url_obj.url
-                if (
-                    original_url
-                    and "://web.archive.org/web/" in access_url
-                    and access_url.endswith(original_url)
-                ):
-                    timestamp = access_url.split("/")[4]
-                    return redirect(
-                        f"https://web.archive.org/web/{timestamp}id_/{original_url}"
-                    )
-                elif (
-                    archiveorg_path
-                    and "://archive.org/" in access_url
-                    and archiveorg_path in access_url
-                ):
-                    return redirect(access_url)
+    try:
+        work_uuid = fcid2uuid(work_ident)
+        work_svc.get(work_uuid)
+    except (EntityNotFound, Exception):
+        return _404()
 
-    return render(request, "ftsearch/access_404.html", {
-        "work_ident": work_ident,
-        "original_url": original_url,
-        "archiveorg_path": archiveorg_path,
-    }, status=404)
+    access_urls = file_svc.get_work_access_urls(work_uuid)
+    for access_url in access_urls:
+        if (
+            original_url
+            and "://web.archive.org/web/" in access_url
+            and access_url.endswith(original_url)
+        ):
+            timestamp = access_url.split("/")[4]
+            return redirect(
+                f"https://web.archive.org/web/{timestamp}id_/{original_url}"
+            )
+        elif (
+            archiveorg_path
+            and "://archive.org/" in access_url
+            and archiveorg_path in access_url
+        ):
+            return redirect(access_url)
+
+    return _404()
 
 
 def access_redirect_wayback(request: HttpRequest, work_ident: str, url: str) -> HttpResponse:

@@ -115,7 +115,26 @@ def release_view(request: HttpRequest, ident: str) -> HttpResponse:
 
 
 release_view_metadata = _stub
-release_view_contribs = _stub
+
+
+def release_view_contribs(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        release_uuid = resolve_ident(ident)
+        release = release_svc.get(release_uuid)
+    except EntityNotFound:
+        raise Http404(f"release not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    authors = release_svc.get_authors(release_uuid)
+    contribs = list(release_svc.get_contribs(release_uuid))
+
+    return _render(request, "fcweb/release_view_contribs.html", {
+        "release": release,
+        "authors": authors,
+        "contribs": contribs,
+        "ident": ident,
+    })
 release_view_references = _stub
 release_save = _stub
 

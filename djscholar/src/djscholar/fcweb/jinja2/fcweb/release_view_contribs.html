@@ -1,0 +1,82 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}Authors - {{ release.title or "Release" }}{% endblock %}
+
+{% block main_extra_attr %}itemscope itemtype="http://schema.org/ScholarlyArticle" itemid="#release"{% endblock %}
+
+{% block entity_header %}
+    <h1>
+      <span itemprop="headline"><span itemprop="name">{{ release.title }}</span></span>
+      {% if release.subtitle %}
+        <br><span class="subtitle">{{ release.subtitle }}</span>
+      {% endif %}
+    </h1>
+
+    {% if authors %}
+      <p class="entity-byline">
+      by
+        {% for contrib in authors[:12] %}
+          {% if contrib.creator and contrib.creator.display_name %}
+            <b><a href="{{ url('fcweb:creator_view', ident=contrib.creator.id) }}">{{ contrib.creator.display_name }}</a></b>
+          {% else %}
+            {{ contrib.raw_name or "Unknown" }}
+          {% endif %}
+          {%- if not loop.last %}, {% endif %}
+        {% endfor %}
+        {% if authors|length > 12 %}
+          <b>(+{{ authors|length - 12 }} others)</b>
+        {% endif %}
+      </p>
+    {% endif %}
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:release_view', ident=ident) }}">Overview</a>
+      <a href="{{ url('fcweb:release_view_contribs', ident=ident) }}" class="active">Authors ({{ contribs|length }})</a>
+      <a href="{{ url('fcweb:release_view_refs_outbound', ident=ident) }}">References</a>
+      <a href="{{ url('fcweb:release_view_refs_inbound', ident=ident) }}">Cited By</a>
+      <a href="{{ url('fcweb:release_view_metadata', ident=ident) }}">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+{% if contribs %}
+<table>
+  <thead>
+    <tr>
+      <th style="width: 3em;">#</th>
+      <th>Name</th>
+      <th>Role</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for contrib in contribs %}
+    <tr>
+      <td>{% if contrib.position is not none %}{{ contrib.position + 1 }}{% endif %}</td>
+      <td>
+        <span itemprop="author">
+        {% if contrib.creator and contrib.creator.display_name %}
+          <a href="{{ url('fcweb:creator_view', ident=contrib.creator.id) }}">{{ contrib.creator.display_name }}</a>
+        {% else %}
+          {{ contrib.raw_name or '' }}
+        {% endif %}
+        {% if contrib.creator and contrib.creator.surname %}
+          <code>&nbsp;({{ contrib.creator.surname }}{% if contrib.creator.given_name %}, {{ contrib.creator.given_name }}{% endif %})</code>
+        {% elif contrib.surname %}
+          <code>&nbsp;({{ contrib.surname }}{% if contrib.given_name %}, {{ contrib.given_name }}{% endif %})</code>
+        {% endif %}
+        </span>
+        {% if contrib.raw_affiliation %}
+          <br><small style="color: #555;">{{ contrib.raw_affiliation }}</small>
+        {% endif %}
+      </td>
+      <td><i>{{ contrib.role or 'unknown' }}</i></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No known contributors (authors, translators, etc).
+{% endif %}
+
+{% endblock %}

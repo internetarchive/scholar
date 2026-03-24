@@ -7,10 +7,9 @@ They will be implemented incrementally.
 from django.http import HttpRequest, HttpResponse, Http404
 from django.template import engines
 
-from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid, resolve_ident
+from djscholar.fcapi.fcid import resolve_ident
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import releases as release_svc
-from djscholar.fcapi.services import files as file_svc
 
 
 def _get_jinja_env():
@@ -75,7 +74,6 @@ def release_view(request: HttpRequest, ident: str) -> HttpResponse:
         "webcaptures": webcaptures,
         "container": container,
         "ident": ident,
-        "uuid2fcid": uuid2fcid,
     })
 
 

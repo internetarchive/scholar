@@ -121,7 +121,7 @@
       by
         {% for contrib in authors[:12] %}
           {% if contrib.creator and contrib.creator.display_name %}
-            <b><a href="{{ url('fcweb:creator_view', ident=uuid2fcid(contrib.creator.id)) }}">{{ contrib.creator.display_name }}</a></b>
+            <b><a href="{{ url('fcweb:creator_view', ident=contrib.creator.id) }}">{{ contrib.creator.display_name }}</a></b>
           {% else %}
             {{ contrib.raw_name or "Unknown" }}
           {% endif %}
@@ -156,7 +156,7 @@
   {% if release.release_stage == 'published' %}
     Published
     {% if container %}
-      in <a href="{{ url('fcweb:container_view', ident=uuid2fcid(container.id)) }}"><span itemprop="name">{{ container.name }}</span></a>
+      in <a href="{{ url('fcweb:container_view', ident=container.id) }}"><span itemprop="name">{{ container.name }}</span></a>
     {% endif %}
   {% else %}
     Released
@@ -164,7 +164,7 @@
       as a <i>{{ release.release_type }}</i>
     {% endif %}
     {% if container %}
-      in <a href="{{ url('fcweb:container_view', ident=uuid2fcid(container.id)) }}"><span itemprop="name">{{ container.name }}</span></a>
+      in <a href="{{ url('fcweb:container_view', ident=container.id) }}"><span itemprop="name">{{ container.name }}</span></a>
     {% endif %}
   {% endif %}
   {% if release.publisher %}
@@ -211,8 +211,8 @@
     <td>
       {% if file.mimetype %}<code>{{ file.mimetype }}</code>&nbsp;&nbsp;{% endif %}
       {% if file.size_bytes %}{{ file.size_bytes|filesizeformat }}{% endif %}
-      <br><small><code><a href="{{ url('fcweb:file_view', ident=uuid2fcid(file.id)) }}">
-            file_{{ uuid2fcid(file.id) }}
+      <br><small><code><a href="{{ url('fcweb:file_view', ident=file.id) }}">
+            {{ file.id }}
         </a></code></small>
     </td>
     <td>
@@ -220,7 +220,7 @@
         <a href="{{ u.url }}">{{ u.url.split('/')[2] }}</a> ({{ u.rel }})<br>
       {% endfor %}
       {% if file.urls.count() > 5 %}
-        <a href="{{ url('fcweb:file_view', ident=uuid2fcid(file.id)) }}">+ {{ file.urls.count() - 5 }} more URLs</a>
+        <a href="{{ url('fcweb:file_view', ident=file.id) }}">+ {{ file.urls.count() - 5 }} more URLs</a>
       {% endif %}
     </td>
   </tr>
@@ -239,7 +239,7 @@
     <td>
       <b><a href="{{ wc.original_url }}" style="color: #333;">{{ wc.original_url }}</a></b>
       <br>{{ wc.captured.strftime("%Y-%m-%d %H:%M:%S") }} | {{ wc.cdx_lines.count() }} resources
-      <br><small><code><a href="{{ url('fcweb:webcapture_view', ident=uuid2fcid(wc.id)) }}">webcapture_{{ uuid2fcid(wc.id) }}</a></code></small>
+      <br><small><code><a href="{{ url('fcweb:webcapture_view', ident=wc.id) }}">webcapture_{{ wc.id }}</a></code></small>
     </td>
     <td>
       {% for u in wc.urls.all()[:5] %}
@@ -256,7 +256,7 @@
 {% if not files and not webcaptures %}
 <h3>Archived Content</h3>
 <p>There are no accessible files associated with this release. You could check
-<a href="{{ url('fcweb:work_view', ident=uuid2fcid(release.work_id)) }}">other releases for this work</a> for an
+<a href="{{ url('fcweb:work_view', ident=release.work_id) }}">other releases for this work</a> for an
 accessible version.
 {% endif %}
 
@@ -336,7 +336,7 @@ accessible version.
 {# -- Container / Journal metadata ----------------------------------------- #}
 {% if container %}
 <div class="segment segment-attached">
-  <b><a href="{{ url('fcweb:container_view', ident=uuid2fcid(container.id)) }}">
+  <b><a href="{{ url('fcweb:container_view', ident=container.id) }}">
   {% if container.container_type == "journal" %}
     Journal Metadata
   {% elif container.container_type == "proceedings" %}
@@ -357,7 +357,7 @@ accessible version.
 
 {# -- Work entity link ----------------------------------------------------- #}
 <div class="segment segment-attached">
-  <b><a href="{{ url('fcweb:work_view', ident=uuid2fcid(release.work_id)) }}">Work Entity</a></b>
+  <b><a href="{{ url('fcweb:work_view', ident=release.work_id) }}">Work Entity</a></b>
   <br>access all versions, variants, and formats of this work (eg, pre-prints)
 </div>
 

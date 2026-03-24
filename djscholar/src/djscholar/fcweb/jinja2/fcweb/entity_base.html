@@ -1,0 +1,54 @@
+{% extends "fcweb/base.html" %}
+
+{# =========================================================================
+   Entity base template
+   =========================================================================
+   Provides the common structure shared by all entity detail pages:
+
+     entity-header  (grey banner)
+       ├── entity_header block  (title, byline, etc.)
+       └── tab-nav
+             └── entity_tabs block
+
+     entity-grid    (two columns)
+       ├── entity-main-col
+       │     └── entity_main block
+       └── entity-sidebar
+             └── entity_sidebar block
+
+   Child templates override the blocks to fill in entity-specific content.
+   The `main_extra_attr` block from base.html is available for things like
+   schema.org attributes on the <main> element.
+   ========================================================================= #}
+
+{% block fullmain %}
+<main {% block main_extra_attr %}{% endblock %}>
+
+{# -- Entity header (grey banner) ------------------------------------------ #}
+<div class="entity-header">
+  <div class="container">
+    {% block entity_header %}{% endblock %}
+
+    <div class="tab-nav">
+      {% block entity_tabs %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+{# -- Main content --------------------------------------------------------- #}
+<div class="container" style="padding-top: 2rem;">
+<div class="entity-grid">
+
+<div class="entity-main-col">
+  {% block entity_main %}{% endblock %}
+</div>
+
+<div class="entity-sidebar">
+  {% block entity_sidebar %}{% endblock %}
+</div>
+
+</div>
+</div>
+
+</main>
+{% endblock %}

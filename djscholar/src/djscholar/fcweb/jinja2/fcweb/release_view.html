@@ -1,4 +1,4 @@
-{% extends "fcweb/base.html" %}
+{% extends "fcweb/entity_base.html" %}
 
 {% block title %}{{ release.title or "Release" }}{% endblock %}
 
@@ -61,19 +61,6 @@
 {% endblock %}
 
 {% block styles %}
-  .release-main-col {
-    font-size: 1rem;
-    min-width: 0;
-  }
-
-  .release-sidebar {
-    min-width: 0;
-  }
-
-  .release-sidebar .segment {
-    word-wrap: break-word;
-  }
-
   .preservation-badge {
     text-align: center;
     padding: 0.5em 1em;
@@ -101,12 +88,9 @@
   }
 {% endblock %}
 
-{% block fullmain %}
-<main itemscope itemtype="http://schema.org/ScholarlyArticle" itemid="#release">
+{% block main_extra_attr %}itemscope itemtype="http://schema.org/ScholarlyArticle" itemid="#release"{% endblock %}
 
-{# -- Entity header (grey banner) ------------------------------------------ #}
-<div class="entity-header">
-  <div class="container">
+{% block entity_header %}
     <h1>
       <span itemprop="headline"><span itemprop="name">{{ release.title }}</span></span>
       {% if release.subtitle %}
@@ -133,24 +117,17 @@
         {% endif %}
       </p>
     {% endif %}
+{% endblock %}
 
-    {# -- Tab navigation ---------------------------------------------------- #}
-    <div class="tab-nav">
+{% block entity_tabs %}
       <a href="{{ url('fcweb:release_view', ident=ident) }}" class="active">Overview</a>
       <a href="{{ url('fcweb:release_view_contribs', ident=ident) }}">Authors ({{ contribs|length }})</a>
       <a href="{{ url('fcweb:release_view_refs_outbound', ident=ident) }}">References</a>
       <a href="{{ url('fcweb:release_view_refs_inbound', ident=ident) }}">Cited By</a>
       <a href="{{ url('fcweb:release_view_metadata', ident=ident) }}">Metadata</a>
-    </div>
-  </div>
-</div>
+{% endblock %}
 
-{# -- Main content --------------------------------------------------------- #}
-<div class="container" style="padding-top: 2rem;">
-<div class="entity-grid">
-
-{# == Left column ========================================================== #}
-<div class="release-main-col">
+{% block entity_main %}
 
 {# -- Publication info ----------------------------------------------------- #}
 <div class="title" itemprop="isPartOf" itemscope itemtype="http://schema.org/Periodical" itemid="#container">
@@ -261,10 +238,9 @@
 accessible version.
 {% endif %}
 
-</div>
+{% endblock %}
 
-{# == Right column (sidebar) =============================================== #}
-<div class="release-sidebar">
+{% block entity_sidebar %}
 
 {# -- Preservation status badge -------------------------------------------- #}
 {% if preservation == 'bright' %}
@@ -423,9 +399,4 @@ accessible version.
   <br>See the raw JSON for this record from fatcat's API
 </div>
 
-</div>
-</div>
-</div>
-
-</main>
 {% endblock %}

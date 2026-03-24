@@ -1,0 +1,104 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}{{ container.name or "Container" }}{% endblock %}
+
+{% block entity_header %}
+    <h1>{{ container.name }}</h1>
+    {% if container.publisher %}
+      <p class="entity-byline">{{ container.publisher }}</p>
+    {% endif %}
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:container_view', ident=ident) }}" class="active">Overview</a>
+      <a href="{{ url('fcweb:container_view_browse', ident=ident) }}">Browse</a>
+      <a href="{{ url('fcweb:container_view_coverage', ident=ident) }}">Preservation</a>
+      <a href="{{ url('fcweb:container_view_search', ident=ident) }}">Search</a>
+      <a href="{{ url('fcweb:container_view_metadata', ident=ident) }}">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+{# -- Search within container ---------------------------------------------- #}
+<form class="search-form" role="search" action="{{ url('fcweb:container_view_search', ident=ident) }}" method="get">
+  <input type="text" placeholder="Search Articles..." name="q" aria-label="search release metadata">
+  <button type="submit">Search</button>
+</form>
+
+{# -- Homepage URLs -------------------------------------------------------- #}
+{% if container.extra and (container.extra.urls or container.extra.webarchive_urls) %}
+  <h3>Homepage URLs</h3>
+  <table>
+    <tbody>
+      {% for u in container.extra.urls or [] %}
+        <tr><td><a href="{{ u }}" rel="nofollow"><code>{{ u }}</code></a></td></tr>
+      {% endfor %}
+      {% for u in container.extra.webarchive_urls or [] %}
+        <tr><td><a href="{{ u }}" rel="nofollow"><code>{{ u }}</code></a></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+
+{% endblock %}
+
+{% block entity_sidebar %}
+
+{# -- Release count -------------------------------------------------------- #}
+{% if release_count is not none %}
+<div class="segment segment-attached" style="text-align: center;">
+  <div style="font-size: 1.8rem; font-weight: bold;">{{ "{:,}".format(release_count) }}</div>
+  <div style="color: #555;">Known Releases</div>
+</div>
+{% endif %}
+
+{# -- Publication type ----------------------------------------------------- #}
+{% if container.container_type %}
+<div class="segment segment-attached">
+  <b>Publication Type</b> &nbsp;<code>{{ container.container_type }}</code>
+</div>
+{% endif %}
+
+{# -- Identifiers ---------------------------------------------------------- #}
+{% if container.issnl or container.issne or container.issnp or container.wikidata_qid %}
+<div class="segment segment-attached">
+  {% if container.issnl %}
+    <b>ISSN-L<sup><a href="https://en.wikipedia.org/wiki/International_Standard_Serial_Number#Linking_ISSN">?</a></sup></b>
+    &nbsp;<code><a href="https://portal.issn.org/resource/issn/{{ container.issnl }}">{{ container.issnl }}</a></code><br>
+  {% endif %}
+  {% if container.issnp %}
+    &nbsp; &nbsp; <b>Print:</b> &nbsp;<code>{{ container.issnp }}</code><br>
+  {% endif %}
+  {% if container.issne %}
+    &nbsp; &nbsp; <b>Electronic:</b> &nbsp;<code>{{ container.issne }}</code><br>
+  {% endif %}
+  {% if container.wikidata_qid %}
+    <b>Wikidata</b> &nbsp;<a href="https://wikidata.org/wiki/{{ container.wikidata_qid }}"><code>{{ container.wikidata_qid }}</code></a><br>
+  {% endif %}
+</div>
+{% endif %}
+
+{# -- Lookup Links --------------------------------------------------------- #}
+<div class="segment segment-attached">
+  <details class="accordion">
+    <summary>Lookup Links</summary>
+    <div>
+      {% if container.issnl %}
+        <a href="https://portal.issn.org/resource/issn/{{ container.issnl }}">ISSN Portal</a><br>
+        <a href="https://keepers.issn.org/?q=api/search&search[]=MUST=allissn={{ container.issnl }}&search[]=MUST_EXIST=keepers">The Keepers Registry</a> (preservation)<br>
+        <a href="http://www.sherpa.ac.uk/romeo/issn/{{ container.issnl }}/">SHERPA/RoMEO</a> (access policies)<br>
+      {% endif %}
+      {% if not container.wikidata_qid %}
+        <a href="https://www.wikidata.org/w/index.php?search={{ container.name|urlencode }}">wikidata.org</a><br>
+      {% endif %}
+    </div>
+  </details>
+</div>
+
+{# -- Catalog record ------------------------------------------------------- #}
+<div class="segment attached" style="font-size: 0.85rem;">
+  <b><a href="/api/fatcat/v2/container/{{ ident }}">API JSON</a></b>
+  <br>See the raw JSON for this record from fatcat's API
+</div>
+
+{% endblock %}

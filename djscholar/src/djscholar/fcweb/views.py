@@ -9,6 +9,7 @@ from django.template import engines
 
 from djscholar.fcapi.fcid import resolve_ident
 from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import containers as container_svc
 from djscholar.fcapi.services import releases as release_svc
 
 
@@ -118,7 +119,23 @@ release_view_contribs = _stub
 release_view_references = _stub
 release_save = _stub
 
-container_view = _stub
+def container_view(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        container_uuid = resolve_ident(ident)
+        container = container_svc.get(container_uuid)
+    except EntityNotFound:
+        raise Http404(f"container not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    release_count = container_svc.get_releases(container_uuid).count()
+
+    return _render(request, "fcweb/container_view.html", {
+        "container": container,
+        "release_count": release_count,
+        "ident": ident,
+    })
+
 container_view_metadata = _stub
 container_view_browse = _stub
 container_view_search = _stub

@@ -86,6 +86,11 @@
   .preservation-dark { background-color: #6e7b71; }
   .preservation-none { background-color: #b71818; }
 
+  .files-table {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+
   .files-table td {
     vertical-align: top;
   }
@@ -111,12 +116,9 @@
       {% endif %}
     </h1>
 
-    <div class="entity-ident">
-      <code>release_{{ ident }}</code>
-    </div>
-
     {% if authors %}
       <p class="entity-byline">
+      by
         {% for contrib in authors[:12] %}
           {% if contrib.creator and contrib.creator.display_name %}
             <b><a href="{{ url('fcweb:creator_view', ident=uuid2fcid(contrib.creator.id)) }}">{{ contrib.creator.display_name }}</a></b>
@@ -206,7 +208,7 @@
   {% for file in files %}
   <tr>
     <td>
-      {% if file.mimetype %}{{ file.mimetype }}&nbsp;&nbsp;{% endif %}
+      {% if file.mimetype %}<code>{{ file.mimetype }}</code>&nbsp;&nbsp;{% endif %}
       {% if file.size_bytes %}{{ file.size_bytes|filesizeformat }}{% endif %}
       <br><small><code><a href="{{ url('fcweb:file_view', ident=uuid2fcid(file.id)) }}">
             file_{{ uuid2fcid(file.id) }}
@@ -264,7 +266,7 @@ accessible version.
 
 {# -- Type / Stage / Date -------------------------------------------------- #}
 {% if release.release_type or release.release_stage or release.release_year %}
-  <div class="segment">
+  <div class="segment segment-attached">
     <b>Type</b> <code>{{ release.release_type or 'unknown' }}</code><br>
     <b>Stage</b> <code>{{ release.release_stage or 'unknown' }}
       {% if release.withdrawn_status %}
@@ -290,7 +292,7 @@ accessible version.
 
 {# -- External identifiers ------------------------------------------------- #}
 {% if extids %}
-<div class="segment">
+<div class="segment segment-attached">
 {% if release.number %}
   <b>Number</b> <code>{{ release.number }}</code><br>
 {% endif %}
@@ -332,7 +334,7 @@ accessible version.
 
 {# -- Container / Journal metadata ----------------------------------------- #}
 {% if container %}
-<div class="segment">
+<div class="segment segment-attached">
   <b><a href="{{ url('fcweb:container_view', ident=uuid2fcid(container.id)) }}">
   {% if container.container_type == "journal" %}
     Journal Metadata
@@ -353,7 +355,7 @@ accessible version.
 {% endif %}
 
 {# -- Work entity link ----------------------------------------------------- #}
-<div class="segment">
+<div class="segment segment-attached">
   <b><a href="{{ url('fcweb:work_view', ident=uuid2fcid(release.work_id)) }}">Work Entity</a></b>
   <br>access all versions, variants, and formats of this work (eg, pre-prints)
 </div>
@@ -394,9 +396,9 @@ accessible version.
 </details>
 
 {# -- Catalog record ------------------------------------------------------- #}
-<div class="segment" style="font-size: 0.85rem;">
-  <b>Catalog Record</b>
-  API URL: <a href="/api/fatcat/v2/release/{{ ident }}">JSON</a>
+<div class="segment attached" style="font-size: 0.85rem;">
+  <b><a href="/api/fatcat/v2/release/{{ ident }}">API JSON</a></b>
+  <br>See the raw JSON for this record from fatcat's API
 </div>
 
 </div>

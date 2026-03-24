@@ -1,0 +1,319 @@
+{% extends "fcweb/base.html" %}
+
+{% block styles %}
+main.index-main {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.hero {
+  background: #1b1c1d;
+  color: #fff;
+  text-align: center;
+  padding: 9rem 1rem 5rem;
+}
+
+.hero h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  max-width: 700px;
+  margin: 0 auto 2rem;
+  line-height: 1.3;
+}
+
+.hero .search-form {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.hero .search-form input[type="text"] {
+  border-color: #555;
+  background: #fff;
+}
+
+.hero .search-form button {
+  background: #21ba45;
+}
+
+.hero .search-form button:hover {
+  background: #16ab39;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  border-bottom: 1px solid #eee;
+}
+
+.stats-row a {
+  color: #333;
+  text-decoration: none;
+}
+
+.stats-row h4 {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .stats-row { gap: 1.5rem; }
+  .stats-row h4 { font-size: 0.875rem; }
+}
+
+.about-section {
+  padding: 2rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.about-section:last-of-type {
+  border-bottom: none;
+}
+
+.about-section.shaded {
+  background: #f5f5f5;
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2rem;
+  align-items: center;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.about-grid-reverse {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2rem;
+  align-items: center;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .about-grid, .about-grid-reverse {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+}
+
+.about-grid p, .about-grid-reverse p {
+  margin-bottom: 0.75rem;
+}
+
+.explore-section {
+  padding: 2rem 0;
+  text-align: center;
+}
+
+.explore-section h2 {
+  margin-bottom: 1.5rem;
+}
+
+.explore-table {
+  max-width: 800px;
+  margin: 0 auto;
+  text-align: left;
+  font-size: 1rem;
+  border-collapse: collapse;
+}
+
+.explore-table th,
+.explore-table td {
+  border: 1px solid #ddd;
+}
+
+.explore-table td {
+  vertical-align: top;
+}
+
+.explore-table .lookup-input {
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  width: 10em;
+}
+{% endblock %}
+
+{% block fullmain %}
+<main class="index-main">
+
+<div class="hero" itemscope itemtype="https://schema.org/WebSite">
+  <h1>Perpetual Access to Millions of Open Research Publications From Around The World</h1>
+  <form class="search-form" action="{{ url('fcweb:search') }}" method="get" role="search" aria-label="papers" itemprop="potentialAction" itemscope itemtype="https://schema.org/SearchAction">
+    <input type="text" placeholder="by title, authors, identifiers..." name="q" aria-label="search metadata" required itemprop="query-input">
+    <button type="submit">Search</button>
+  </form>
+</div>
+
+<div class="stats-row">
+  <a href="{{ url('fcweb:stats_page') }}"><h4>140,000,000<br>Papers</h4></a>
+  <a href="{{ url('fcweb:stats_page') }}"><h4>40,000,000<br>Fulltext Accessible</h4></a>
+  <a href="{{ url('fcweb:stats_page') }}"><h4>214,000<br>Journals</h4></a>
+</div>
+
+<div class="about-section">
+  <div class="container-text about-grid">
+    <img src="{{ static('fcweb/paper_man_confused.gif') }}" width="130" alt="confused paper man">
+    <div>
+      <p>Fatcat is a catalog of research publications including journal articles, conference proceedings, and datasets.</p>
+      <p>
+        Features include archival file-level metadata (verified digests and
+        long-term copies), a <b><a href="{{ url('fcweb:coverage_search') }}">preservation coverage visualizer</a></b>, work/edition grouping,
+        and <a href="https://archive.org/details/ia_biblio_metadata">public metadata dumps</a>.
+        &nbsp;<a href="{{ url('fcweb:page_about') }}">Read more...</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="about-section">
+  <div class="container-wide" style="text-align: center;">
+    <div class="about-grid-reverse" style="max-width: 960px; margin: 0 auto;">
+      <p style="font-size: 1.3rem;">Our goal is to ensure long-term access to research content on the
+      "scholarly web" by tracking holes in preservation coverage across
+      digital preservation efforts</p>
+      <a href="{{ url('fcweb:coverage_search') }}" style="display: block; width: 360px;">
+        <img alt="coverage visualization tool" src="{{ static('fcweb/fatcat_oa_preservation_feb2022.svg') }}" style="width: 100%;">
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="about-section shaded">
+  <div class="container-text about-grid-reverse">
+    <div>
+      <p>This service is hosted at the <b><a href="https://archive.org">Internet Archive</a></b>, a US
+      non-profit digital library dedicated to providing Universal Access to All Knowledge.
+      <a href="https://archive.org/donate/">Donations welcome!</a></p>
+      <p>Development for this project funding comes from
+      <b><a href="https://blog.archive.org/2018/03/05/andrew-w-mellon-foundation-awards-grant-to-the-internet-archive-for-long-tail-journal-preservation/">The Andrew W. Mellon Foundation</a></b>,
+      specifically to capture "long-tail" open access works on
+      the public web which might otherwise be lost.</p>
+    </div>
+    <a href="https://archive.org"><img src="{{ static('fcweb/ia.svg') }}" width="140" alt="IA logo"></a>
+  </div>
+</div>
+
+<div class="about-section">
+  <div class="container-text about-grid">
+    <a href="{{ url('ftsearch:home') }}" style="font-family: 'Jacquard', serif; font-size: 3rem; color: #333; text-decoration: none; white-space: nowrap;">IA Scholar</a>
+    <p><b><a href="{{ url('ftsearch:home') }}">Internet Archive Scholar</a></b>
+    is a sibling service, built on the Fatcat catalog, providing end-user
+    access to and full-text search over research content across the
+    Internet Archive's various holdings.</p>
+  </div>
+</div>
+
+<div class="explore-section">
+  <h2>Explore Works In The Catalog So Far</h2>
+  <div style="max-width: 100%; overflow-x: auto;">
+  <table class="explore-table">
+  <thead>
+  <tr>
+    <th>Entity Type</th>
+    <th>Actions</th>
+    <th>Examples</th>
+    <th>Lookup</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr>
+    <td>
+      <b>Release</b><br>
+      journal article, pre-print, book<br>
+      published version of a Work
+    </td>
+    <td><a href="{{ url('fcweb:release_search') }}">Search</a></td>
+    <td><a href="{{ url('fcweb:release_view', ident='hsmo6p4smrganpb3fndaj2lon4') }}">Paper</a></td>
+    <td>
+      <form action="{{ url('fcweb:release_lookup') }}" method="get">
+        <input class="lookup-input" type="text" placeholder="DOI" name="doi" aria-label="lookup paper by DOI">
+      </form>
+      <a href="{{ url('fcweb:release_lookup') }}">Other Identifiers</a>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <b>Container</b><br>
+      journal or serial
+    </td>
+    <td><a href="{{ url('fcweb:container_search') }}">Search</a></td>
+    <td><a href="{{ url('fcweb:container_view', ident='iznnn644szdwva7khyxqzc73bi') }}">Journal</a></td>
+    <td>
+      <form action="{{ url('fcweb:container_lookup') }}" method="get">
+        <input class="lookup-input" type="text" placeholder="ISSN-L" name="issnl" aria-label="lookup journal by ISSN-L">
+      </form>
+      <a href="{{ url('fcweb:container_lookup') }}">Other Identifiers</a>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <b>Creator</b><br>
+      authors, editors, translators
+    </td>
+    <td></td>
+    <td><a href="{{ url('fcweb:creator_view', ident='iimvc523xbhqlav6j3sbthuehu') }}">Author</a></td>
+    <td>
+      <form action="{{ url('fcweb:creator_lookup') }}" method="get">
+        <input class="lookup-input" type="text" placeholder="ORCID" name="orcid" aria-label="lookup author by ORCID">
+      </form>
+      <a href="{{ url('fcweb:creator_lookup') }}">Other Identifiers</a>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <b>File</b><br>
+      specific digital blobs (immutable)
+    </td>
+    <td></td>
+    <td><a href="{{ url('fcweb:file_view', ident='wklqsb5apzfhbbxxc7rgu2yw6m') }}">PDF</a></td>
+    <td>
+      <form action="{{ url('fcweb:file_lookup') }}" method="get">
+        <input class="lookup-input" type="text" placeholder="SHA-1" name="sha1" aria-label="lookup file by SHA1">
+      </form>
+      <a href="{{ url('fcweb:file_lookup') }}">Other Hashes</a>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <b>File Set</b><br>
+      datasets, supplementary materials
+    </td>
+    <td></td>
+    <td><a href="{{ url('fcweb:fileset_view', ident='ho376wmdanckpp66iwfs7g22ne') }}">Dataset</a></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>
+      <b>Web Capture</b><br>
+      HTML and interactive articles, blog posts
+    </td>
+    <td></td>
+    <td>
+      <a href="{{ url('fcweb:webcapture_view', ident='z7uaeatyvfgwdpuxtrdu4okqii') }}">D-Lib</a><br>
+      <a href="{{ url('fcweb:webcapture_view', ident='5l2pubtfefbmdnqws2izccqlpm') }}">Blog Post</a>
+    </td>
+    <td></td>
+  </tr>
+  <tr>
+    <td>
+      <b>Work</b><br>
+      for grouping Releases
+    </td>
+    <td></td>
+    <td><a href="{{ url('fcweb:work_view', ident='ftl6xv267vb6xfech3khri3nwa') }}">Paper</a></td>
+    <td></td>
+  </tr>
+  </tbody>
+  </table>
+  </div>
+</div>
+
+</main>
+{% endblock %}

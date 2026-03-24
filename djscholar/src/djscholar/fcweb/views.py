@@ -25,7 +25,8 @@ def _stub(request: HttpRequest) -> HttpResponse:
 
 # -- Index & search ----------------------------------------------------------
 
-index = _stub
+def index(request: HttpRequest) -> HttpResponse:
+    return _render(request, "fcweb/index.html")
 search = _stub
 release_search = _stub
 container_search = _stub

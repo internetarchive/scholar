@@ -6,12 +6,19 @@
   <meta name="referrer" content="origin-when-cross-origin">
 
   <title>{%- block title -%}
-    Perpetual Access To The Scholarly Record
-  {%- endblock %} | fatcat!</title>
+    Home
+  {%- endblock %} | Fatcat Bibliographic Database</title>
 
   <link rel="icon" href="data:,">
 
   <style>
+    @font-face {
+      font-family: "Jacquard";
+      src: url("{{ static('fcweb/Jacquard12-Regular.ttf') }}") format("truetype");
+      font-weight: normal;
+      font-style: normal;
+    }
+
     /* -- Reset & base -------------------------------------------------------- */
 
     *, *::before, *::after {
@@ -26,11 +33,10 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      padding-top: 3rem;
     }
 
-    a { color: #1a5276; }
-    a:hover { color: #0b3954; }
+    a { color: #2980b9; text-decoration: none; }
+    a:hover { color: #1a5276; }
 
     code {
       font-size: 0.9em;
@@ -408,6 +414,7 @@
     main {
       flex: 1;
       padding: 2rem 0;
+      margin-top: 3rem;
     }
 
     /* -- Footer -------------------------------------------------------------- */
@@ -455,7 +462,7 @@
 
 <nav class="top-nav">
   <div class="top-nav-inner">
-    <a href="{{ url('fcweb:index') }}" class="nav-brand">Fatcat</a>
+    <a href="{{ url('fcweb:index') }}" class="nav-brand">Fatcat Bibliographic Database</a>
     <a href="{{ url('fcweb:page_about') }}" class="mobile-hide">About</a>
     <a href="{{ url('fcweb:page_guide') }}" class="mobile-hide">Guide</a>
     <a href="{{ url('fcweb:changelog_view') }}" class="mobile-hide">Changelog</a>
@@ -478,7 +485,7 @@
 
 <footer>
   <ul class="footer-links">
-    <li><a href="{{ url('fcweb:index') }}">fatcat!</a></li>
+    <li><a href="{{ url('fcweb:index') }}">Home</a></li>
     <li><a href="{{ url('fcweb:page_about') }}">About</a></li>
     <li><a href="https://github.com/internetarchive/scholar/">Code</a></li>
   </ul>

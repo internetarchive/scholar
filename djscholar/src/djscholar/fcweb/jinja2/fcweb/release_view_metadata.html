@@ -1,0 +1,78 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}Metadata - {{ release.title or "Release" }}{% endblock %}
+
+{% block styles %}
+  .metadata-table {
+    font-size: 0.85rem;
+  }
+  .metadata-table td:first-child {
+    width: 14em;
+    text-align: right;
+    white-space: nowrap;
+    color: #555;
+  }
+  .metadata-table code {
+    word-break: break-all;
+  }
+{% endblock %}
+
+{% block main_extra_attr %}itemscope itemtype="http://schema.org/ScholarlyArticle" itemid="#release"{% endblock %}
+
+{% block entity_header %}
+    <h1>
+      <span itemprop="headline"><span itemprop="name">{{ release.title }}</span></span>
+      {% if release.subtitle %}
+        <br><span class="subtitle">{{ release.subtitle }}</span>
+      {% endif %}
+    </h1>
+
+    {% if authors %}
+      <p class="entity-byline">
+      by
+        {% for contrib in authors[:12] %}
+          {% if contrib.creator and contrib.creator.display_name %}
+            <b><a href="{{ url('fcweb:creator_view', ident=contrib.creator.id) }}">{{ contrib.creator.display_name }}</a></b>
+          {% else %}
+            {{ contrib.raw_name or "Unknown" }}
+          {% endif %}
+          {%- if not loop.last %}, {% endif %}
+        {% endfor %}
+        {% if authors|length > 12 %}
+          <b>(+{{ authors|length - 12 }} others)</b>
+        {% endif %}
+      </p>
+    {% endif %}
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:release_view', ident=ident) }}">Overview</a>
+      <a href="{{ url('fcweb:release_view_contribs', ident=ident) }}">Authors ({{ contribs|length }})</a>
+      <a href="{{ url('fcweb:release_view_refs_outbound', ident=ident) }}">References</a>
+      <a href="{{ url('fcweb:release_view_refs_inbound', ident=ident) }}">Cited By</a>
+      <a href="{{ url('fcweb:release_view_metadata', ident=ident) }}" class="active">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+<h3>Entity Metadata (schema)</h3>
+{% if metadata %}
+  {% with metadata = metadata %}
+    {% include "fcweb/_metadata_table.html" %}
+  {% endwith %}
+{% else %}
+  <p><i>No specific metadata for this entity.</i>
+{% endif %}
+
+<div style="margin-top: 1rem;">
+  <a href="/api/fatcat/v2/release/{{ ident }}">View as JSON via API</a>
+</div>
+
+{% if extra %}
+  <h3>Extra Metadata (raw JSON)</h3>
+  {% with metadata = extra %}
+    {% include "fcweb/_metadata_table.html" %}
+  {% endwith %}
+{% endif %}
+
+{% endblock %}

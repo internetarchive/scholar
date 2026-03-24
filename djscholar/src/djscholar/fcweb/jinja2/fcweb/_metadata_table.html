@@ -1,0 +1,37 @@
+{# Renders a dict as a key/value metadata table.
+   Expects `metadata` to be a dict in the calling scope. #}
+<table class="metadata-table">
+<tbody>
+{% for key, value in metadata.items()|sort %}
+  {% if value is mapping and value %}
+    {# Nested dict: flatten one level as "key.inner_key" #}
+    {% for inner_key, inner_value in value.items()|sort %}
+      <tr>
+        <td><code>{{ key }}.{{ inner_key }}</code></td>
+        <td><code>{% if inner_value is not none %}{{ inner_value }}{% endif %}</code></td>
+      </tr>
+    {% endfor %}
+  {% elif value is iterable and value is not string and value is not mapping %}
+    {# List: check if it's a list of strings (URLs) vs objects #}
+    <tr>
+      <td><code>{{ key }}{% if value %}[]{% endif %}</code></td>
+      <td><code>
+        {% for item in value %}
+          {% if item is string and item.startswith('http') %}
+            <a href="{{ item }}">{{ item }}</a>
+          {% elif item is not none %}
+            {{ item }}
+          {% endif %}
+          {% if not loop.last %}<br>{% endif %}
+        {% endfor %}
+      </code></td>
+    </tr>
+  {% else %}
+    <tr>
+      <td><code>{{ key }}</code></td>
+      <td><code>{% if value is not none %}{{ value }}{% endif %}</code></td>
+    </tr>
+  {% endif %}
+{% endfor %}
+</tbody>
+</table>

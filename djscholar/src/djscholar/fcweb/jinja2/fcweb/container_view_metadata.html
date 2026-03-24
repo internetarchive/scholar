@@ -1,0 +1,57 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}Metadata - {{ container.name or "Container" }}{% endblock %}
+
+{% block styles %}
+  .metadata-table {
+    font-size: 0.85rem;
+  }
+  .metadata-table td:first-child {
+    width: 14em;
+    text-align: right;
+    white-space: nowrap;
+    color: #555;
+  }
+  .metadata-table code {
+    word-break: break-all;
+  }
+{% endblock %}
+
+{% block entity_header %}
+    <h1>{{ container.name }}</h1>
+    {% if container.publisher %}
+      <p class="entity-byline">{{ container.publisher }}</p>
+    {% endif %}
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:container_view', ident=ident) }}">Overview</a>
+      <a href="{{ url('fcweb:container_view_browse', ident=ident) }}">Browse</a>
+      <a href="{{ url('fcweb:container_view_coverage', ident=ident) }}">Preservation</a>
+      <a href="{{ url('fcweb:container_view_search', ident=ident) }}">Search</a>
+      <a href="{{ url('fcweb:container_view_metadata', ident=ident) }}" class="active">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+<h3>Entity Metadata (schema)</h3>
+{% if metadata %}
+  {% with metadata = metadata %}
+    {% include "fcweb/_metadata_table.html" %}
+  {% endwith %}
+{% else %}
+  <p><i>No specific metadata for this entity.</i>
+{% endif %}
+
+<div style="margin-top: 1rem;">
+  <a href="/api/fatcat/v2/container/{{ ident }}">View as JSON via API</a>
+</div>
+
+{% if extra %}
+  <h3>Extra Metadata (raw JSON)</h3>
+  {% with metadata = extra %}
+    {% include "fcweb/_metadata_table.html" %}
+  {% endwith %}
+{% endif %}
+
+{% endblock %}

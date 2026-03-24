@@ -4,6 +4,7 @@ Each view corresponds to a route from fatcat-scholar's src/scholar/fatcat/web.py
 They will be implemented incrementally.
 """
 
+from django.db import models
 from django.http import HttpRequest, HttpResponse, Http404
 from django.template import engines
 
@@ -46,6 +47,29 @@ container_lookup = _stub
 release_lookup = _stub
 
 # -- Helpers -----------------------------------------------------------------
+
+
+METADATA_SKIP_FIELDS = {"id", "extra", "legacy_rev", "source", "hidden_reason", "hidden_when"}
+
+
+def _entity_schema_metadata(entity: models.Model) -> dict:
+    """Extract model field values as an ordered dict for the metadata view.
+
+    Skips internal fields (id, extra, legacy_rev, etc.) and None values.
+    """
+    result = {}
+    for field in entity._meta.get_fields():
+        if not hasattr(field, "attname"):
+            # skip reverse relations, M2M, etc.
+            continue
+        name = field.attname
+        if name in METADATA_SKIP_FIELDS:
+            continue
+        value = getattr(entity, name)
+        if value is None:
+            continue
+        result[name] = value
+    return result
 
 
 def _release_preservation(files, extids):
@@ -114,7 +138,26 @@ def release_view(request: HttpRequest, ident: str) -> HttpResponse:
     })
 
 
-release_view_metadata = _stub
+def release_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        release_uuid = resolve_ident(ident)
+        release = release_svc.get(release_uuid)
+    except EntityNotFound:
+        raise Http404(f"release not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    authors = release_svc.get_authors(release_uuid)
+    contribs = list(release_svc.get_contribs(release_uuid))
+
+    return _render(request, "fcweb/release_view_metadata.html", {
+        "release": release,
+        "authors": authors,
+        "contribs": contribs,
+        "metadata": _entity_schema_metadata(release),
+        "extra": release.extra,
+        "ident": ident,
+    })
 
 
 def release_view_contribs(request: HttpRequest, ident: str) -> HttpResponse:
@@ -135,6 +178,8 @@ def release_view_contribs(request: HttpRequest, ident: str) -> HttpResponse:
         "contribs": contribs,
         "ident": ident,
     })
+
+
 release_view_references = _stub
 release_save = _stub
 
@@ -155,7 +200,21 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": ident,
     })
 
-container_view_metadata = _stub
+def container_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        container_uuid = resolve_ident(ident)
+        container = container_svc.get(container_uuid)
+    except EntityNotFound:
+        raise Http404(f"container not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    return _render(request, "fcweb/container_view_metadata.html", {
+        "container": container,
+        "metadata": _entity_schema_metadata(container),
+        "extra": container.extra,
+        "ident": ident,
+    })
 container_view_browse = _stub
 container_view_search = _stub
 container_view_coverage = _stub

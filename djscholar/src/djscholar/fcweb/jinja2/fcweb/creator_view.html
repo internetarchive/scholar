@@ -1,0 +1,95 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}{{ creator.display_name or "Creator" }}{% endblock %}
+
+{% block entity_header %}
+    <h1>{{ creator.display_name }}</h1>
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:creator_view', ident=ident) }}" class="active">Overview</a>
+      <a href="{{ url('fcweb:creator_view_metadata', ident=ident) }}">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+{% if creator.given_name or creator.surname %}
+<table>
+  <tbody>
+    <tr><td><b>Given name</b></td>
+        <td>{% if creator.given_name %}{{ creator.given_name }}{% else %}<i>None or unknown</i>{% endif %}</td>
+    </tr>
+    <tr><td><b>Surname</b></td>
+        <td>{% if creator.surname %}{{ creator.surname }}{% else %}<i>None or unknown</i>{% endif %}</td>
+    </tr>
+  </tbody>
+</table>
+{% endif %}
+
+<h3>Releases</h3>
+{% if releases %}
+<p>This creator has contributed to:
+<table>
+  <tbody>
+  {% for release in releases %}
+    <tr>
+      <td style="white-space: nowrap;">
+        {% if release.release_date %}{{ release.release_date }}
+        {% elif release.release_year %}{{ release.release_year }}
+        {% else %}<i>unknown</i>
+        {% endif %}
+      </td>
+      <td>
+        <b><a href="{{ url('fcweb:release_view', ident=release.id) }}">{{ release.title }}</a></b>
+        <br><small>{{ release.release_stage or "unknown status" }}
+            | {{ release.release_type or "unknown type" }}
+            {% if release.version %} | {{ release.version }}{% endif %}
+            {% if release.license_slug %} | {{ release.license_slug }}{% endif %}
+        </small>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>This creator has not contributed to any releases.
+{% endif %}
+
+{% endblock %}
+
+{% block entity_sidebar %}
+
+{# -- Identifiers ---------------------------------------------------------- #}
+{% if creator.orcid or creator.wikidata_qid %}
+<div class="segment segment-attached">
+  {% if creator.orcid %}
+    <b>ORCID<sup><a href="https://en.wikipedia.org/wiki/Orcid">?</a></sup></b>
+    &nbsp;<a href="https://orcid.org/{{ creator.orcid }}"><code>{{ creator.orcid }}</code></a><br>
+  {% endif %}
+  {% if creator.wikidata_qid %}
+    <b>Wikidata</b>
+    &nbsp;<a href="https://www.wikidata.org/wiki/{{ creator.wikidata_qid }}"><code>{{ creator.wikidata_qid }}</code></a><br>
+  {% endif %}
+</div>
+{% endif %}
+
+{# -- Lookup Links --------------------------------------------------------- #}
+<div class="segment segment-attached">
+  <details class="accordion">
+    <summary>Lookup Links</summary>
+    <div>
+      <a href="https://www.wikidata.org/w/index.php?search={{ creator.display_name|urlencode }}">wikidata.org</a><br>
+      <a href="https://viaf.org/viaf/search?query=local.personalNames%20all%20%22{{ creator.display_name|urlencode }}">VIAF</a><br>
+      <a href="http://dblp.uni-trier.de/search?q={{ creator.display_name|urlencode }}">dblp</a> (CS)<br>
+      <a href="https://scholar.google.com/scholar?q={{ creator.display_name|urlencode }}">Google Scholar</a><br>
+    </div>
+  </details>
+</div>
+
+{# -- Catalog record ------------------------------------------------------- #}
+<div class="segment attached" style="font-size: 0.85rem;">
+  <b><a href="/api/fatcat/v2/creator/{{ ident }}">API JSON</a></b>
+  <br>See the raw JSON for this record from fatcat's API
+</div>
+
+{% endblock %}

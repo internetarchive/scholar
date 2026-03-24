@@ -11,6 +11,7 @@ from django.template import engines
 from djscholar.fcapi.fcid import resolve_ident
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
+from djscholar.fcapi.services import creators as creator_svc
 from djscholar.fcapi.services import releases as release_svc
 from djscholar.fcapi.services import works as work_svc
 
@@ -220,7 +221,23 @@ container_view_browse = _stub
 container_view_search = _stub
 container_view_coverage = _stub
 
-creator_view = _stub
+def creator_view(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        creator_uuid = resolve_ident(ident)
+        creator = creator_svc.get(creator_uuid)
+    except EntityNotFound:
+        raise Http404(f"creator not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    releases = list(creator_svc.get_releases(creator_uuid))
+
+    return _render(request, "fcweb/creator_view.html", {
+        "creator": creator,
+        "releases": releases,
+        "ident": ident,
+    })
+
 creator_view_metadata = _stub
 
 file_view = _stub

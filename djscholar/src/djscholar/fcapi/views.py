@@ -15,7 +15,6 @@ from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
 import djscholar.fcapi.models as m
-from djscholar.fcapi.fcid import fcid2uuid
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
 from djscholar.fcapi.services import creators as creator_svc

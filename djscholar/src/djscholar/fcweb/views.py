@@ -7,7 +7,7 @@ They will be implemented incrementally.
 from django.http import HttpRequest, HttpResponse, Http404
 from django.template import engines
 
-from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
+from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid, resolve_ident
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import releases as release_svc
 from djscholar.fcapi.services import files as file_svc
@@ -50,11 +50,12 @@ release_lookup = _stub
 
 def release_view(request: HttpRequest, ident: str) -> HttpResponse:
     try:
-        import pdb; pdb.set_trace()
-        release_uuid = fcid2uuid(ident)
+        release_uuid = resolve_ident(ident)
         release = release_svc.get(release_uuid)
-    except (EntityNotFound, Exception):
+    except EntityNotFound:
         raise Http404(f"release not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
 
     authors = release_svc.get_authors(release_uuid)
     contribs = list(release_svc.get_contribs(release_uuid))

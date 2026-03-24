@@ -362,39 +362,43 @@ accessible version.
 </div>
 
 {# -- Cite This ------------------------------------------------------------ #}
-<details class="accordion">
-  <summary>Cite This</summary>
-  <div>
-    <a href="{{ url('fcweb:release_bibtex', ident=ident) }}">BibTeX</a>
-    <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=csl-json">CSL-JSON</a>
-    <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=modern-language-association">MLA</a>
-    <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=elsevier-harvard">Harvard</a>
-  </div>
-</details>
+<div class="segment segment-attached">
+  <details class="accordion">
+    <summary>Cite This</summary>
+    <div>
+      <a href="{{ url('fcweb:release_bibtex', ident=ident) }}">BibTeX</a>
+      <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=csl-json">CSL-JSON</a>
+      <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=modern-language-association">MLA</a>
+      <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=elsevier-harvard">Harvard</a>
+    </div>
+  </details>
+</div>
 
 {# -- Lookup Links --------------------------------------------------------- #}
-<details class="accordion">
-  <summary>Lookup Links</summary>
-  <div>
-    {% if extids.get("doi") %}
-      <a href="https://oadoi.org/{{ extids.doi }}">oaDOI/unpaywall</a> (OA fulltext)<br>
-      <a href="https://api.crossref.org/v1/works/http://dx.doi.org/{{ extids.doi }}">Crossref Metadata</a> (via API)<br>
-    {% endif %}
-    {% if extids.get("isbn13") %}
-      <a href="https://openlibrary.org/search?isbn={{ extids.isbn13 }}">Open Library</a><br>
-      <a href="http://www.worldcat.org/search?q=bn%3A{{ extids.isbn13 }}">Worldcat</a><br>
-    {% else %}
-      <a href="http://www.worldcat.org/search?qt=worldcat_org_art&q={{ release.title|urlencode }}">Worldcat</a><br>
-    {% endif %}
-    {% if container and container.issnl %}
-      <a href="http://www.sherpa.ac.uk/romeo/issn/{{ container.issnl }}/">SHERPA/RoMEO</a> (journal policies)<br>
-    {% endif %}
-    <a href="https://www.wikidata.org/w/index.php?search={{ release.title|urlencode }}">wikidata.org</a><br>
-    <a href="https://core.ac.uk/search?q={{ release.title|urlencode }}">CORE.ac.uk</a><br>
-    <a href="https://www.semanticscholar.org/search?q={{ release.title|urlencode }}">Semantic Scholar</a><br>
-    <a href="https://scholar.google.com/scholar?q={{ release.title|urlencode }}">Google Scholar</a><br>
-  </div>
-</details>
+<div class="segment segment-attached">
+  <details class="accordion">
+    <summary>Lookup Links</summary>
+    <div>
+      {% if extids.get("doi") %}
+        <a href="https://oadoi.org/{{ extids.doi }}">oaDOI/unpaywall</a> (OA fulltext)<br>
+        <a href="https://api.crossref.org/v1/works/http://dx.doi.org/{{ extids.doi }}">Crossref Metadata</a> (via API)<br>
+      {% endif %}
+      {% if extids.get("isbn13") %}
+        <a href="https://openlibrary.org/search?isbn={{ extids.isbn13 }}">Open Library</a><br>
+        <a href="http://www.worldcat.org/search?q=bn%3A{{ extids.isbn13 }}">Worldcat</a><br>
+      {% else %}
+        <a href="http://www.worldcat.org/search?qt=worldcat_org_art&q={{ release.title|urlencode }}">Worldcat</a><br>
+      {% endif %}
+      {% if container and container.issnl %}
+        <a href="http://www.sherpa.ac.uk/romeo/issn/{{ container.issnl }}/">SHERPA/RoMEO</a> (journal policies)<br>
+      {% endif %}
+      <a href="https://www.wikidata.org/w/index.php?search={{ release.title|urlencode }}">wikidata.org</a><br>
+      <a href="https://core.ac.uk/search?q={{ release.title|urlencode }}">CORE.ac.uk</a><br>
+      <a href="https://www.semanticscholar.org/search?q={{ release.title|urlencode }}">Semantic Scholar</a><br>
+      <a href="https://scholar.google.com/scholar?q={{ release.title|urlencode }}">Google Scholar</a><br>
+    </div>
+  </details>
+</div>
 
 {# -- Catalog record ------------------------------------------------------- #}
 <div class="segment attached" style="font-size: 0.85rem;">

@@ -1,0 +1,407 @@
+{% extends "fcweb/base.html" %}
+
+{% block title %}{{ release.title or "Release" }}{% endblock %}
+
+{% block extra_head %}
+  {% if release %}
+    <meta name="title" content="{{ release.title }}">
+    <meta name="DC.title" content="{{ release.title }}">
+    <meta name="citation_title" content="{{ release.title }}">
+    <meta name="DC.type" content="{{ release.release_type }}">
+    {% if abstracts %}
+      <meta name="abstract" content="{{ abstracts[0].content }}">
+      <meta name="DC.description" content="{{ abstracts[0].content }}">
+    {% endif %}
+    {% for author in authors %}
+      <meta name="DC.creator" content="{{ author.raw_name }}">
+      <meta name="citation_author" content="{{ author.raw_name }}">
+    {% endfor %}
+    {% if release.release_date or release.release_year %}
+      <meta name="DC.issued" content="{{ release.release_date or release.release_year }}">
+      <meta name="citation_publication_date" content="{{ release.release_date or release.release_year }}">
+    {% endif %}
+    {% if release.language %}
+      <meta name="DC.language" content="{{ release.language }}">
+      <meta name="citation_language" content="{{ release.language }}">
+    {% endif %}
+    {% if container and container.issnl %}
+      <meta name="DC.relation.ispartof" content="{{ container.name }}">
+      <meta name="citation_journal_title" content="{{ container.name }}">
+      <meta name="DC.publisher" content="{{ container.publisher }}">
+      <meta name="citation_publisher" content="{{ container.publisher }}">
+      <meta name="citation_issn" content="{{ container.issnl }}">
+    {% elif release.publisher %}
+      <meta name="DC.publisher" content="{{ release.publisher }}">
+      <meta name="citation_publisher" content="{{ release.publisher }}">
+    {% endif %}
+    {% if release.volume %}
+      <meta name="citation_volume" content="{{ release.volume }}">
+    {% endif %}
+    {% if release.issue %}
+      <meta name="citation_issue" content="{{ release.issue }}">
+    {% endif %}
+    {% if release.pages %}
+      <meta name="citation_first_page" content="{{ release.pages }}">
+    {% endif %}
+    {% if extids.get("doi") %}
+      <meta name="DC.identifier" content="doi:{{ extids.doi }}">
+      <meta name="citation_doi" content="{{ extids.doi }}">
+    {% endif %}
+    {% if extids.get("isbn13") %}
+      <meta name="DC.identifier" content="isbn:{{ extids.isbn13 }}">
+      <meta name="citation_isbn" content="{{ extids.isbn13 }}">
+    {% endif %}
+    {% for file in files[:10] %}{% for u in file.urls.all()[:10] %}
+      {% if '//web.archive.org/web/' in u.url %}
+        <meta name="DC.identifier" content="{{ u.url }}">
+        <meta name="citation_pdf_url" content="{{ u.url }}">
+      {% endif %}
+    {% endfor %}{% endfor %}
+  {% endif %}
+{% endblock %}
+
+{% block styles %}
+  .release-main-col {
+    font-size: 1rem;
+    min-width: 0;
+  }
+
+  .release-sidebar {
+    min-width: 0;
+  }
+
+  .release-sidebar .segment {
+    word-wrap: break-word;
+  }
+
+  .preservation-badge {
+    text-align: center;
+    padding: 0.5em 1em;
+    font-weight: bold;
+    color: #fff;
+    border-radius: 4px 4px 0 0;
+  }
+
+  .preservation-bright { background-color: #2ca048; }
+  .preservation-dark { background-color: #6e7b71; }
+  .preservation-none { background-color: #b71818; }
+
+  .files-table td {
+    vertical-align: top;
+  }
+
+  .files-table td:last-child {
+    white-space: nowrap;
+  }
+{% endblock %}
+
+{% block fullmain %}
+<main itemscope itemtype="http://schema.org/ScholarlyArticle" itemid="#release">
+
+{# -- Entity header (grey banner) ------------------------------------------ #}
+<div class="entity-header">
+  <div class="container">
+    <h1>
+      <span itemprop="headline"><span itemprop="name">{{ release.title }}</span></span>
+      {% if release.subtitle %}
+        <br><span class="subtitle">{{ release.subtitle }}</span>
+      {% endif %}
+      {% if release.original_title %}
+        <br><span class="subtitle">{{ release.original_title }}</span>
+      {% endif %}
+    </h1>
+
+    <div class="entity-ident">
+      <code>release_{{ ident }}</code>
+    </div>
+
+    {% if authors %}
+      <p class="entity-byline">
+        {% for contrib in authors[:12] %}
+          {% if contrib.creator and contrib.creator.display_name %}
+            <b><a href="{{ url('fcweb:creator_view', ident=uuid2fcid(contrib.creator.id)) }}">{{ contrib.creator.display_name }}</a></b>
+          {% else %}
+            {{ contrib.raw_name or "Unknown" }}
+          {% endif %}
+          {%- if not loop.last %}, {% endif %}
+        {% endfor %}
+        {% if authors|length > 12 %}
+          <b>(+{{ authors|length - 12 }} others)</b>
+        {% endif %}
+      </p>
+    {% endif %}
+
+    {# -- Tab navigation ---------------------------------------------------- #}
+    <div class="tab-nav">
+      <a href="{{ url('fcweb:release_view', ident=ident) }}" class="active">Overview</a>
+      <a href="{{ url('fcweb:release_view_contribs', ident=ident) }}">Authors ({{ contribs|length }})</a>
+      <a href="{{ url('fcweb:release_view_references', ident=ident) }}">References</a>
+      <a href="{{ url('fcweb:release_view_metadata', ident=ident) }}">Metadata</a>
+    </div>
+  </div>
+</div>
+
+{# -- Main content --------------------------------------------------------- #}
+<div class="container" style="padding-top: 2rem;">
+<div class="entity-grid">
+
+{# == Left column ========================================================== #}
+<div class="release-main-col">
+
+{# -- Publication info ----------------------------------------------------- #}
+<div class="title" itemprop="isPartOf" itemscope itemtype="http://schema.org/Periodical" itemid="#container">
+  {% if release.release_stage == 'published' %}
+    Published
+    {% if container %}
+      in <a href="{{ url('fcweb:container_view', ident=uuid2fcid(container.id)) }}"><span itemprop="name">{{ container.name }}</span></a>
+    {% endif %}
+  {% else %}
+    Released
+    {% if release.release_type %}
+      as a <i>{{ release.release_type }}</i>
+    {% endif %}
+    {% if container %}
+      in <a href="{{ url('fcweb:container_view', ident=uuid2fcid(container.id)) }}"><span itemprop="name">{{ container.name }}</span></a>
+    {% endif %}
+  {% endif %}
+  {% if release.publisher %}
+    by <span itemprop="publisher">{{ release.publisher }}</span>
+  {% endif %}.
+
+  <p>
+  {% set comma = joiner(", ") %}
+  {% if release.release_year != None %}
+    {{ release.release_year }} &nbsp;
+  {% endif %}
+  {% if release.volume != None %}
+    {{ comma() }}Volume {{ release.volume }}
+  {% endif %}
+  {% if release.issue != None %}
+    {{ comma() }}Issue {{ release.issue }}
+  {% endif %}
+  {% if release.pages != None %}
+    {{ comma() }}
+    {% if release.pages[0].isdigit() %}p{% endif %}{{ release.pages }}
+  {% endif %}
+</div>
+
+{# -- Abstract ------------------------------------------------------------- #}
+{% if abstracts %}
+  <h3>Abstract</h3>
+  <p><span itemprop="description">{{ abstracts[0].content }}</span>
+  <br><small><i>
+    {% if abstracts[0].mimetype %}
+      In <code>{{ abstracts[0].mimetype }}</code> format
+    {% else %}
+      Unknown format
+    {% endif %}
+  </i></small>
+{% endif %}
+
+{# -- Archived Files ------------------------------------------------------- #}
+{% if files %}
+<h3>Archived Files and Locations</h3>
+<table class="files-table">
+  <tbody>
+  {% for file in files %}
+  <tr>
+    <td>
+      {% if file.mimetype %}{{ file.mimetype }}&nbsp;&nbsp;{% endif %}
+      {% if file.size_bytes %}{{ file.size_bytes|filesizeformat }}{% endif %}
+      <br><small><code><a href="{{ url('fcweb:file_view', ident=uuid2fcid(file.id)) }}">
+            file_{{ uuid2fcid(file.id) }}
+        </a></code></small>
+    </td>
+    <td>
+      {% for u in file.urls.all()[:5] %}
+        <a href="{{ u.url }}">{{ u.url.split('/')[2] }}</a> ({{ u.rel }})<br>
+      {% endfor %}
+      {% if file.urls.count() > 5 %}
+        <a href="{{ url('fcweb:file_view', ident=uuid2fcid(file.id)) }}">+ {{ file.urls.count() - 5 }} more URLs</a>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# -- Webcaptures ---------------------------------------------------------- #}
+{% if webcaptures %}
+<h3>Web Captures</h3>
+<table class="files-table">
+  <tbody>
+  {% for wc in webcaptures %}
+  <tr>
+    <td>
+      <b><a href="{{ wc.original_url }}" style="color: #333;">{{ wc.original_url }}</a></b>
+      <br>{{ wc.captured.strftime("%Y-%m-%d %H:%M:%S") }} | {{ wc.cdx_lines.count() }} resources
+      <br><small><code><a href="{{ url('fcweb:webcapture_view', ident=uuid2fcid(wc.id)) }}">webcapture_{{ uuid2fcid(wc.id) }}</a></code></small>
+    </td>
+    <td>
+      {% for u in wc.urls.all()[:5] %}
+        <a href="{{ u.url }}">{{ u.url.split('/')[2] }}</a> ({{ u.rel }})<br>
+      {% endfor %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# -- No archived content -------------------------------------------------- #}
+{% if not files and not webcaptures %}
+<h3>Archived Content</h3>
+<p>There are no accessible files associated with this release. You could check
+<a href="{{ url('fcweb:work_view', ident=uuid2fcid(release.work_id)) }}">other releases for this work</a> for an
+accessible version.
+{% endif %}
+
+</div>
+
+{# == Right column (sidebar) =============================================== #}
+<div class="release-sidebar">
+
+{# -- Type / Stage / Date -------------------------------------------------- #}
+{% if release.release_type or release.release_stage or release.release_year %}
+  <div class="segment">
+    <b>Type</b> <code>{{ release.release_type or 'unknown' }}</code><br>
+    <b>Stage</b> <code>{{ release.release_stage or 'unknown' }}
+      {% if release.withdrawn_status %}
+        <strong style="color: red;">[{{ release.withdrawn_status }}]</strong>
+      {% endif %}
+    </code><br>
+    {% if release.release_date %}
+      <meta itemprop="datePublished" content="{{ release.release_date }}">
+      <b>Date</b> {{ release.release_date }}<br>
+    {% elif release.release_year %}
+      <meta itemprop="datePublished" content="{{ release.release_year }}">
+      <b>Year</b> {{ release.release_year }}<br>
+    {% endif %}
+    {% if release.version %}
+      <b>Version</b> <code>{{ release.version }}</code><br>
+    {% endif %}
+    {% if release.language %}
+      <b>Language</b> <code>{{ release.language }}</code>
+        <sup><a href="https://www.loc.gov/standards/iso639-2/php/langcodes_name.php?iso_639_1={{ release.language }}">?</a></sup>
+    {% endif %}
+  </div>
+{% endif %}
+
+{# -- External identifiers ------------------------------------------------- #}
+{% if extids %}
+<div class="segment">
+{% if release.number %}
+  <b>Number</b> <code>{{ release.number }}</code><br>
+{% endif %}
+{% if extids.get("doi") %}
+  <b>DOI</b> <code><a href="https://doi.org/{{ extids.doi }}" itemprop="sameAs">{{ extids.doi }}</a></code><br>
+{% endif %}
+{% if extids.get("isbn13") %}
+  <b>ISBN-13</b> <code>{{ extids.isbn13 }}</code><br>
+{% endif %}
+{% if extids.get("pmid") %}
+  <b>PubMed</b> <a href="https://www.ncbi.nlm.nih.gov/pubmed/{{ extids.pmid }}"><code>{{ extids.pmid }}</code></a><br>
+{% endif %}
+{% if extids.get("pmcid") %}
+  <b>PMC</b> <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/{{ extids.pmcid }}/"><code>{{ extids.pmcid }}</code></a><br>
+{% endif %}
+{% if extids.get("wikidata_qid") %}
+  <b>Wikidata</b> <a href="https://www.wikidata.org/wiki/{{ extids.wikidata_qid }}"><code>{{ extids.wikidata_qid }}</code></a><br>
+{% endif %}
+{% if extids.get("arxiv") %}
+  <b>arXiv</b> <a href="https://arxiv.org/abs/{{ extids.arxiv }}"><code>{{ extids.arxiv }}</code></a><br>
+{% endif %}
+{% if extids.get("jstor") %}
+  <b>JSTOR</b> <a href="https://jstor.org/stable/{{ extids.jstor }}"><code>{{ extids.jstor }}</code></a><br>
+{% endif %}
+{% if extids.get("ark") %}
+  <b>ARK</b> <a href="https://n2t.net/{{ extids.ark }}"><code>{{ extids.ark }}</code></a><br>
+{% endif %}
+{% if extids.get("doaj") %}
+  <b>DOAJ</b> <a href="https://doaj.org/article/{{ extids.doaj }}"><code>{{ extids.doaj[:20] }}...</code></a><br>
+{% endif %}
+{% if extids.get("dblp") %}
+  <b>dblp</b> <a href="https://dblp.org/rec/{{ extids.dblp }}.html"><code>{{ extids.dblp }}</code></a><br>
+{% endif %}
+{% if extids.get("hdl") %}
+  <b>Handle</b> <a href="https://hdl.handle.net/{{ extids.hdl }}"><code>{{ extids.hdl }}</code></a><br>
+{% endif %}
+</div>
+{% endif %}
+
+{# -- Container / Journal metadata ----------------------------------------- #}
+{% if container %}
+<div class="segment">
+  <b><a href="{{ url('fcweb:container_view', ident=uuid2fcid(container.id)) }}">
+  {% if container.container_type == "journal" %}
+    Journal Metadata
+  {% elif container.container_type == "proceedings" %}
+    Proceedings Metadata
+  {% elif container.container_type == "book-series" %}
+    Book Series Metadata
+  {% elif container.container_type == "blog" %}
+    Blog Metadata
+  {% else %}
+    Container Metadata
+  {% endif %}
+  </a></b>
+  {% if container.issnl %}
+    <br>ISSN-L: <code>{{ container.issnl }}</code>
+  {% endif %}
+</div>
+{% endif %}
+
+{# -- Work entity link ----------------------------------------------------- #}
+<div class="segment">
+  <b><a href="{{ url('fcweb:work_view', ident=uuid2fcid(release.work_id)) }}">Work Entity</a></b>
+  <br>access all versions, variants, and formats of this work (eg, pre-prints)
+</div>
+
+{# -- Cite This ------------------------------------------------------------ #}
+<details class="accordion">
+  <summary>Cite This</summary>
+  <div>
+    <a href="{{ url('fcweb:release_bibtex', ident=ident) }}">BibTeX</a>
+    <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=csl-json">CSL-JSON</a>
+    <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=modern-language-association">MLA</a>
+    <br><a href="{{ url('fcweb:release_citeproc', ident=ident) }}?style=elsevier-harvard">Harvard</a>
+  </div>
+</details>
+
+{# -- Lookup Links --------------------------------------------------------- #}
+<details class="accordion">
+  <summary>Lookup Links</summary>
+  <div>
+    {% if extids.get("doi") %}
+      <a href="https://oadoi.org/{{ extids.doi }}">oaDOI/unpaywall</a> (OA fulltext)<br>
+      <a href="https://api.crossref.org/v1/works/http://dx.doi.org/{{ extids.doi }}">Crossref Metadata</a> (via API)<br>
+    {% endif %}
+    {% if extids.get("isbn13") %}
+      <a href="https://openlibrary.org/search?isbn={{ extids.isbn13 }}">Open Library</a><br>
+      <a href="http://www.worldcat.org/search?q=bn%3A{{ extids.isbn13 }}">Worldcat</a><br>
+    {% else %}
+      <a href="http://www.worldcat.org/search?qt=worldcat_org_art&q={{ release.title|urlencode }}">Worldcat</a><br>
+    {% endif %}
+    {% if container and container.issnl %}
+      <a href="http://www.sherpa.ac.uk/romeo/issn/{{ container.issnl }}/">SHERPA/RoMEO</a> (journal policies)<br>
+    {% endif %}
+    <a href="https://www.wikidata.org/w/index.php?search={{ release.title|urlencode }}">wikidata.org</a><br>
+    <a href="https://core.ac.uk/search?q={{ release.title|urlencode }}">CORE.ac.uk</a><br>
+    <a href="https://www.semanticscholar.org/search?q={{ release.title|urlencode }}">Semantic Scholar</a><br>
+    <a href="https://scholar.google.com/scholar?q={{ release.title|urlencode }}">Google Scholar</a><br>
+  </div>
+</details>
+
+{# -- Catalog record ------------------------------------------------------- #}
+<div class="segment" style="font-size: 0.85rem;">
+  <b>Catalog Record</b>
+  API URL: <a href="/api/fatcat/v2/release/{{ ident }}">JSON</a>
+</div>
+
+</div>
+</div>
+</div>
+
+</main>
+{% endblock %}

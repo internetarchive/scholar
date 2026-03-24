@@ -4,8 +4,13 @@ Each view corresponds to a route from fatcat-scholar's src/scholar/fatcat/web.py
 They will be implemented incrementally.
 """
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, Http404
 from django.template import engines
+
+from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
+from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import releases as release_svc
+from djscholar.fcapi.services import files as file_svc
 
 
 def _get_jinja_env():
@@ -19,7 +24,7 @@ def _render(request: HttpRequest, template_name: str, context: dict | None = Non
     return HttpResponse(html, status=status)
 
 
-def _stub(request: HttpRequest) -> HttpResponse:
+def _stub(request: HttpRequest, **kwargs) -> HttpResponse:
     return HttpResponse("not yet implemented", status=501)
 
 
@@ -27,6 +32,8 @@ def _stub(request: HttpRequest) -> HttpResponse:
 
 def index(request: HttpRequest) -> HttpResponse:
     return _render(request, "fcweb/index.html")
+
+
 search = _stub
 release_search = _stub
 container_search = _stub
@@ -40,7 +47,37 @@ release_lookup = _stub
 
 # -- Entity views ------------------------------------------------------------
 
-release_view = _stub
+
+def release_view(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        import pdb; pdb.set_trace()
+        release_uuid = fcid2uuid(ident)
+        release = release_svc.get(release_uuid)
+    except (EntityNotFound, Exception):
+        raise Http404(f"release not found: {ident}")
+
+    authors = release_svc.get_authors(release_uuid)
+    contribs = list(release_svc.get_contribs(release_uuid))
+    extids = release_svc.get_extids(release_uuid)
+    abstracts = list(release_svc.get_abstracts(release_uuid))
+    files = list(release_svc.get_files(release_uuid))
+    webcaptures = list(release_svc.get_webcaptures(release_uuid))
+    container = release.container
+
+    return _render(request, "fcweb/release_view.html", {
+        "release": release,
+        "authors": authors,
+        "contribs": contribs,
+        "extids": extids,
+        "abstracts": abstracts,
+        "files": files,
+        "webcaptures": webcaptures,
+        "container": container,
+        "ident": ident,
+        "uuid2fcid": uuid2fcid,
+    })
+
+
 release_view_metadata = _stub
 release_view_contribs = _stub
 release_view_references = _stub

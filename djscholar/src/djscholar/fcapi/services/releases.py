@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from djscholar.fcapi import models as m
 from djscholar.fcapi.fcid import fcid2uuid
@@ -52,8 +52,39 @@ def get_files(ident: UUID) -> QuerySet:
 
 
 def get_contribs(ident: UUID) -> QuerySet:
-    return m.ReleaseContrib.objects.filter(release_id=ident)
+    return (
+        m.ReleaseContrib.objects.filter(release_id=ident)
+        .select_related("creator")
+        .order_by("position")
+    )
+
+
+def get_authors(ident: UUID) -> list[m.ReleaseContrib]:
+    """Return only author contribs (role='author' or NULL), sorted by position."""
+    return list(
+        m.ReleaseContrib.objects.filter(
+            Q(role__in=["author", ""]) | Q(role__isnull=True),
+            release_id=ident,
+        )
+        .select_related("creator")
+        .order_by("position")
+    )
+
+
+def get_extids(ident: UUID) -> dict[str, str]:
+    """Return external IDs as a {id_type: id_value} dict."""
+    return dict(
+        m.ReleaseExtId.objects.filter(release_id=ident)
+        .values_list("id_type", "id_value")
+    )
+
+
+def get_abstracts(ident: UUID) -> QuerySet:
+    return m.ReleaseAbstract.objects.filter(release_id=ident)
 
 
 def get_webcaptures(ident: UUID) -> QuerySet:
-    return m.Webcapture.objects.filter(release_id=ident)
+    return (
+        m.Webcapture.objects.filter(release_id=ident)
+        .prefetch_related("urls", "cdx_lines")
+    )

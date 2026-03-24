@@ -1,0 +1,61 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}Work {{ ident }}{% endblock %}
+
+{% block entity_header %}
+    <h1>Work</h1>
+    <p class="entity-ident"><code>{{ ident }}</code></p>
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:work_view', ident=ident) }}" class="active">Overview</a>
+      <a href="{{ url('fcweb:work_view_metadata', ident=ident) }}">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+<h3>Releases</h3>
+{% if releases %}
+<table>
+  <tbody>
+  {% for release in releases %}
+    <tr>
+      <td style="white-space: nowrap;">
+        {% if release.release_date %}{{ release.release_date }}
+        {% elif release.release_year %}{{ release.release_year }}
+        {% else %}<i>unknown</i>
+        {% endif %}
+      </td>
+      <td>
+        <b><a href="{{ url('fcweb:release_view', ident=release.id) }}">{{ release.title }}</a></b>
+        <br><small>{{ release.release_stage or "unknown status" }}
+            | {{ release.release_type or "unknown type" }}
+            {% if release.version %} | {{ release.version }}{% endif %}
+            {% if release.license_slug %} | {{ release.license_slug }}{% endif %}
+        </small>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>There are no known releases associated with this work.
+{% endif %}
+
+<h3>What is a "Work"?</h3>
+<p>A Fatcat "<code>work</code>" groups a set of releases that are all editions
+or editing stages of the same intellectual contribution. For example, a
+pre-print and a published article may contain small differences, but still
+reference the same underlying "work".
+
+{% endblock %}
+
+{% block entity_sidebar %}
+
+{# -- Catalog record ------------------------------------------------------- #}
+<div class="segment" style="font-size: 0.85rem;">
+  <b><a href="/api/fatcat/v2/work/{{ ident }}">API JSON</a></b>
+  <br>See the raw JSON for this record from fatcat's API
+</div>
+
+{% endblock %}

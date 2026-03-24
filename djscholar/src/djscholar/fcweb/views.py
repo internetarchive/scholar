@@ -12,6 +12,7 @@ from djscholar.fcapi.fcid import resolve_ident
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
 from djscholar.fcapi.services import releases as release_svc
+from djscholar.fcapi.services import works as work_svc
 
 
 def _get_jinja_env():
@@ -231,7 +232,23 @@ fileset_view_metadata = _stub
 webcapture_view = _stub
 webcapture_view_metadata = _stub
 
-work_view = _stub
+def work_view(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        work_uuid = resolve_ident(ident)
+        work = work_svc.get(work_uuid)
+    except EntityNotFound:
+        raise Http404(f"work not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    releases = list(work_svc.get_releases(work_uuid))
+
+    return _render(request, "fcweb/work_view.html", {
+        "work": work,
+        "releases": releases,
+        "ident": ident,
+    })
+
 work_view_metadata = _stub
 
 # -- Underscore redirects (legacy URLs) --------------------------------------

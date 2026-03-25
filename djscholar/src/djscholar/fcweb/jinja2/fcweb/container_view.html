@@ -53,6 +53,13 @@
   </div>
   {% endif %}
 
+  {# -- Open Access badge -------------------------------------------------- #}
+  {% if is_oa %}
+  <div class="segment segment-attached" style="text-align: center;">
+    <b>Open Access Publication</b>
+  </div>
+  {% endif %}
+
   {# -- Preservation summary ----------------------------------------------- #}
   {% if stats and stats.total >= 1 %}
   <div class="segment segment-attached">

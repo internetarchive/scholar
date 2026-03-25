@@ -200,9 +200,20 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
 
     stats = fc_search.get_container_stats(container_uuid)
 
+    extra = container.extra or {}
+    is_oa = bool(
+        extra.get("doaj", {}).get("as_of")
+        or extra.get("road", {}).get("as_of")
+        or extra.get("szczepanski", {}).get("as_of")
+        or (extra.get("default_license") or "").startswith("CC-")
+    )
+    if extra.get("sherpa_romeo", {}).get("color") == "white":
+        is_oa = False
+
     return _render(request, "fcweb/container_view.html", {
         "container": container,
         "stats": stats,
+        "is_oa": is_oa,
         "ident": str(container_uuid),
     })
 

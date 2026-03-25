@@ -138,7 +138,7 @@ def release_view(request: HttpRequest, ident: str) -> HttpResponse:
         "files": files,
         "webcaptures": webcaptures,
         "container": container,
-        "ident": ident,
+        "ident": str(release_uuid),
         "preservation": preservation,
     })
 
@@ -161,7 +161,7 @@ def release_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "contribs": contribs,
         "metadata": _entity_schema_metadata(release),
         "extra": release.extra,
-        "ident": ident,
+        "ident": str(release_uuid),
     })
 
 
@@ -181,7 +181,7 @@ def release_view_contribs(request: HttpRequest, ident: str) -> HttpResponse:
         "release": release,
         "authors": authors,
         "contribs": contribs,
-        "ident": ident,
+        "ident": str(release_uuid),
     })
 
 
@@ -202,7 +202,7 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
     return _render(request, "fcweb/container_view.html", {
         "container": container,
         "release_count": release_count,
-        "ident": ident,
+        "ident": str(container_uuid),
     })
 
 def container_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
@@ -218,7 +218,7 @@ def container_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "container": container,
         "metadata": _entity_schema_metadata(container),
         "extra": container.extra,
-        "ident": ident,
+        "ident": str(container_uuid),
     })
 container_view_browse = _stub
 container_view_search = _stub
@@ -238,7 +238,7 @@ def creator_view(request: HttpRequest, ident: str) -> HttpResponse:
     return _render(request, "fcweb/creator_view.html", {
         "creator": creator,
         "releases": releases,
-        "ident": ident,
+        "ident": str(creator_uuid),
     })
 
 def creator_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
@@ -254,7 +254,7 @@ def creator_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "creator": creator,
         "metadata": _entity_schema_metadata(creator),
         "extra": creator.extra,
-        "ident": ident,
+        "ident": str(creator_uuid),
     })
 
 def file_view(request: HttpRequest, ident: str) -> HttpResponse:
@@ -285,7 +285,7 @@ def file_view(request: HttpRequest, ident: str) -> HttpResponse:
         "releases": releases,
         "urls": urls,
         "best_url": best_url,
-        "ident": ident,
+        "ident": str(file_uuid),
     })
 
 def file_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
@@ -301,7 +301,7 @@ def file_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "file": file,
         "metadata": _entity_schema_metadata(file),
         "extra": file.extra,
-        "ident": ident,
+        "ident": str(file_uuid),
     })
 
 def fileset_view(request: HttpRequest, ident: str) -> HttpResponse:
@@ -337,7 +337,7 @@ def fileset_view(request: HttpRequest, ident: str) -> HttpResponse:
         "total_size": total_size or None,
         "archive_base": archive_base,
         "webarchive_base": webarchive_base,
-        "ident": ident,
+        "ident": str(fs_uuid),
     })
 
 
@@ -354,7 +354,7 @@ def fileset_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "fileset": fileset,
         "metadata": _entity_schema_metadata(fileset),
         "extra": fileset.extra,
-        "ident": ident,
+        "ident": str(fs_uuid),
     })
 
 
@@ -375,7 +375,7 @@ def webcapture_view(request: HttpRequest, ident: str) -> HttpResponse:
     wayback_suffix = ""
     if webcapture.original_url and webcapture.captured:
         ts = webcapture.captured.strftime("%Y%m%d%H%M%S")
-        wayback_suffix = f"/{ts}/{webcapture.original_url}"
+        wayback_suffix = f"{ts}/{webcapture.original_url}"
 
     # pick best access URL for the "View Web Archive" button
     best_url = None
@@ -393,7 +393,7 @@ def webcapture_view(request: HttpRequest, ident: str) -> HttpResponse:
         "cdx_lines": cdx_lines,
         "wayback_suffix": wayback_suffix,
         "best_url": best_url,
-        "ident": ident,
+        "ident": str(wc_uuid),
     })
 
 
@@ -410,7 +410,7 @@ def webcapture_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "webcapture": webcapture,
         "metadata": _entity_schema_metadata(webcapture),
         "extra": webcapture.extra,
-        "ident": ident,
+        "ident": str(wc_uuid),
     })
 
 def work_view(request: HttpRequest, ident: str) -> HttpResponse:
@@ -427,7 +427,7 @@ def work_view(request: HttpRequest, ident: str) -> HttpResponse:
     return _render(request, "fcweb/work_view.html", {
         "work": work,
         "releases": releases,
-        "ident": ident,
+        "ident": str(work_uuid),
     })
 
 
@@ -444,7 +444,7 @@ def work_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "work": work,
         "metadata": _entity_schema_metadata(work),
         "extra": work.extra,
-        "ident": ident,
+        "ident": str(work_uuid),
     })
 
 # -- Underscore redirects (legacy URLs) --------------------------------------

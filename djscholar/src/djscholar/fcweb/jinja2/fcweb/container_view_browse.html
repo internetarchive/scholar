@@ -1,0 +1,141 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}{{ container.name or "Container" }} — Browse{% endblock %}
+
+{% block entity_header %}
+    <h1>{{ container.name }}</h1>
+    {% if container.publisher %}
+      <p class="entity-byline">{{ container.publisher }}</p>
+    {% endif %}
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:container_view', ident=ident) }}">Overview</a>
+      <a href="{{ url('fcweb:container_view_browse', ident=ident) }}" class="active">Browse</a>
+      <a href="{{ url('fcweb:container_view_coverage', ident=ident) }}">Preservation</a>
+      <a href="{{ url('fcweb:container_view_search', ident=ident) }}">Search</a>
+      <a href="{{ url('fcweb:container_view_metadata', ident=ident) }}">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+{% if releases_found %}
+  {# -- Drill-down view: releases for a specific year/volume/issue ---------- #}
+  <h2>
+    {% if volume %}
+      Volume {{ volume }}{% if issue %}, Issue {{ issue }}{% endif %}{% if year %} ({{ year }}){% endif %}
+    {% else %}
+      Year {{ year }}
+    {% endif %}
+  </h2>
+
+  {% if releases_found.results %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 8em;">{% if volume %}Page(s){% else %}Date{% endif %}</th>
+        <th>Publication</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for release in releases_found.results %}
+      <tr>
+        <td style="white-space: nowrap;">
+          {% if volume %}
+            {{ release.pages or "-" }}
+          {% elif release.release_date %}
+            {{ release.release_date }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td>
+          <b><a href="{{ url('fcweb:release_view', ident=release.uuid) }}">{{ release.title or "[blank]" }}</a></b>
+          {% if release.release_type and release.release_type not in ("article-journal", "paper-conference") %}
+            <span class="label label-grey">{{ release.release_type }}</span>
+          {% endif %}
+          {% if release.contrib_names %}
+            <br><small>{{ release.contrib_names[:12]|join(", ") }}{% if release.contrib_names|length > 12 %} (+{{ release.contrib_names|length - 12 }} others){% endif %}</small>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if releases_found.count_found > releases_found.count_returned %}
+    <p><i>Showing only the first {{ releases_found.count_returned }} out of {{ "{:,}".format(releases_found.count_found) }} releases.</i></p>
+  {% endif %}
+  {% else %}
+    <p><i>No publications found.</i></p>
+  {% endif %}
+
+  <p style="margin-top: 1rem;"><a href="{{ url('fcweb:container_view_browse', ident=ident) }}">&laquo; Back to full listing</a></p>
+
+{% elif browse_data %}
+  {# -- Overview: year/volume/issue table ----------------------------------- #}
+  <h3>Publications by Year, Volume, and Issue</h3>
+  <p style="font-size: 0.9rem; color: #555; margin-bottom: 1rem;">
+    This table includes content which does not have article-level metadata
+    about volume or issue, but at least the year of publication must be known.
+    Stub releases (e.g. spam or duplicate DOIs) are not listed.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th>Volume</th>
+        <th>Issue</th>
+        <th style="text-align: right;">Indexed Content</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for year_row in browse_data %}
+      {% set volume_loop = namespace() %}
+      {% for volume_row in year_row.volumes %}
+        {% set volume_loop.first = loop.first %}
+        {% for issue_row in volume_row.issues %}
+          <tr>
+            {# year cell — spans all volume*issue rows for this year #}
+            {% if loop.first and volume_loop.first %}
+              {% set year_rowspan = year_row.volumes|map(attribute='issues')|map('length')|sum %}
+              <td rowspan="{{ year_rowspan }}" style="vertical-align: top; font-weight: bold;">
+                <a href="{{ url('fcweb:container_view_browse', ident=ident) }}?year={{ year_row.year }}">{{ year_row.year }}</a>
+              </td>
+            {% endif %}
+
+            {# volume cell — spans all issue rows for this volume #}
+            {% if loop.first %}
+              <td rowspan="{{ volume_row.issues|length }}" style="vertical-align: top;">
+                {% if volume_row.volume %}
+                  <a href="{{ url('fcweb:container_view_browse', ident=ident) }}?year={{ year_row.year }}&volume={{ volume_row.volume }}">Vol. {{ volume_row.volume }}</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            {% endif %}
+
+            <td>
+              {% if issue_row.issue %}
+                <a href="{{ url('fcweb:container_view_browse', ident=ident) }}?year={{ year_row.year }}&volume={{ volume_row.volume or '' }}&issue={{ issue_row.issue or '' }}">Issue {{ issue_row.issue }}</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td style="text-align: right;">
+              <a href="{{ url('fcweb:container_view_browse', ident=ident) }}?year={{ year_row.year }}&volume={{ volume_row.volume or '' }}&issue={{ issue_row.issue or '' }}">{{ "{:,}".format(issue_row.count) }} releases</a>
+            </td>
+          </tr>
+        {% endfor %}
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
+
+{% else %}
+  <p><i>No browse data available for this container.</i></p>
+{% endif %}
+
+{% endblock %}
+
+{% block entity_sidebar %}{% endblock %}

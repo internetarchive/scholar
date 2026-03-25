@@ -234,7 +234,44 @@ def container_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "extra": container.extra,
         "ident": str(container_uuid),
     })
-container_view_browse = _stub
+def container_view_browse(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        container_uuid = resolve_ident(ident)
+        container = container_svc.get(container_uuid)
+    except EntityNotFound:
+        raise Http404(f"container not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    year_str = request.GET.get("year")
+    volume = request.GET.get("volume")
+    issue = request.GET.get("issue")
+
+    year = None
+    if year_str and year_str.isdigit():
+        year = int(year_str)
+
+    browse_data = None
+    releases_found = None
+
+    if year is not None:
+        # drill into a specific year (and optionally volume/issue)
+        releases_found = fc_search.search_container_releases(
+            container_uuid, year=year, volume=volume, issue=issue,
+        )
+    else:
+        # show the year/volume/issue overview table
+        browse_data = fc_search.get_container_browse_year_volume_issue(container_uuid)
+
+    return _render(request, "fcweb/container_view_browse.html", {
+        "container": container,
+        "browse_data": browse_data,
+        "releases_found": releases_found,
+        "year": year,
+        "volume": volume,
+        "issue": issue,
+        "ident": str(container_uuid),
+    })
 def container_view_coverage(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         container_uuid = resolve_ident(ident)

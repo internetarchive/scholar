@@ -308,3 +308,186 @@ def get_preservation_by_type(
         td["total"] = td["bright"] + td["dark"] + td["none"]
 
     return sorted(type_dicts.values(), key=lambda x: x["total"], reverse=True)
+
+
+def get_container_browse_year_volume_issue(
+    container_uuid: uuid.UUID,
+) -> list[dict[str, Any]] | None:
+    """Fetch year/volume/issue breakdown for a container's releases.
+
+    Returns a nested structure:
+        [{ year: int, volumes: [{ volume: str|None, issues: [{ issue: str|None, count: int }] }] }]
+    Sorted by year descending, volume descending, issue descending.
+    Returns None on failure.
+    """
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    legacy_ident = uuid2fcid(container_uuid)
+
+    body = {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"container_id": legacy_ident}},
+                    {"bool": {"must_not": {"match": {"release_type": "stub"}}}},
+                ],
+            }
+        },
+        "aggs": {
+            "year_volume": {
+                "composite": {
+                    "size": 1500,
+                    "sources": [
+                        {"year": {"histogram": {"field": "release_year", "interval": 1, "missing_bucket": True}}},
+                        {"volume": {"terms": {"field": "volume", "missing_bucket": True}}},
+                        {"issue": {"terms": {"field": "issue", "missing_bucket": True}}},
+                    ],
+                }
+            }
+        },
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+        )
+    except Exception:
+        return None
+
+    buckets = resp["aggregations"]["year_volume"]["buckets"]
+    # filter out rows with no year
+    buckets = [h for h in buckets if h["key"]["year"] is not None]
+
+    # build nested structure: year -> volume -> issue -> count
+    year_dicts: dict[int, dict[str, dict[str, int]]] = {}
+    for row in buckets:
+        year = int(row["key"]["year"])
+        volume = row["key"]["volume"] or ""
+        issue = row["key"]["issue"] or ""
+        if year not in year_dicts:
+            year_dicts[year] = {}
+        if volume not in year_dicts[year]:
+            year_dicts[year][volume] = {}
+        year_dicts[year][volume][issue] = int(row["doc_count"])
+
+    def _sort_key(val: str | None) -> tuple[bool, bool, int, str]:
+        if not val:
+            return (False, False, 0, "")
+        if val.isdigit():
+            return (True, True, int(val), "")
+        return (True, False, 0, val)
+
+    result = []
+    for year in sorted(year_dicts.keys(), reverse=True):
+        volumes = []
+        for vol in sorted(year_dicts[year].keys(), key=_sort_key, reverse=True):
+            issues = []
+            for iss in sorted(year_dicts[year][vol].keys(), key=_sort_key, reverse=True):
+                issues.append({"issue": iss or None, "count": year_dicts[year][vol][iss]})
+            volumes.append({"volume": vol or None, "issues": issues})
+        result.append({"year": year, "volumes": volumes})
+    return result
+
+
+def search_container_releases(
+    container_uuid: uuid.UUID,
+    year: int | None = None,
+    volume: str | None = None,
+    issue: str | None = None,
+) -> SearchHits | None:
+    """Search releases in a container filtered by year/volume/issue.
+
+    Used by the Browse tab when drilling into a specific year/volume/issue.
+    """
+    legacy_ident = uuid2fcid(container_uuid)
+
+    # build query string from filters
+    parts = [f"year:{year}"]
+    if volume is not None and volume != "":
+        parts.append(f'volume:"{volume}"')
+    else:
+        parts.append("!volume:*")
+    if issue is not None and issue != "":
+        parts.append(f'issue:"{issue}"')
+    elif volume is not None:
+        # volume specified but no issue — don't filter on issue
+        pass
+    else:
+        parts.append("!issue:*")
+
+    query_string = " ".join(parts)
+
+    # determine sort order
+    if volume is not None:
+        sort_fields = ["first_page", "pages", "release_date"]
+    else:
+        sort_fields = ["release_date"]
+
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    body = {
+        "size": 300,
+        "query": {
+            "bool": {
+                "must": {
+                    "query_string": {
+                        "query": query_string,
+                        "default_operator": "AND",
+                        "lenient": True,
+                    }
+                },
+                "filter": [
+                    {"term": {"container_id": legacy_ident}},
+                    {"bool": {"must_not": {"match": {"release_type": "stub"}}}},
+                ],
+            }
+        },
+        "sort": [{f: {"order": "asc"}} for f in sort_fields],
+        "_source": _RELEASE_SOURCE_FIELDS + ["pages", "first_page", "release_date"],
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    total_hits = resp["hits"]["total"]
+    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+
+    results = []
+    for hit in resp["hits"]["hits"]:
+        src = hit["_source"]
+        r = _parse_release_hit(src)
+        r["pages"] = src.get("pages")
+        r["first_page"] = src.get("first_page")
+        r["release_date"] = src.get("release_date")
+        results.append(r)
+
+    # numeric re-sort by first_page when browsing by volume
+    if volume is not None and results:
+        for r in results:
+            fp = r.get("first_page")
+            if fp and str(fp).isdigit():
+                r["first_page"] = int(fp)
+        results.sort(key=lambda d: d.get("first_page") or 99999999)
+
+    return SearchHits(
+        count_returned=len(results),
+        count_found=count_found,
+        offset=0,
+        limit=300,
+        results=results,
+    )

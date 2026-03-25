@@ -11,6 +11,7 @@ from django.template import engines
 from djscholar.fcapi.fcid import resolve_ident
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
+from djscholar.fcweb import search as fc_search
 from djscholar.fcapi.services import creators as creator_svc
 from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import filesets as fileset_svc
@@ -197,11 +198,11 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
     except ValueError:
         return HttpResponse(f"bad id: {ident}", status=400)
 
-    release_count = container_svc.get_releases(container_uuid).count()
+    stats = fc_search.get_container_stats(container_uuid)
 
     return _render(request, "fcweb/container_view.html", {
         "container": container,
-        "release_count": release_count,
+        "stats": stats,
         "ident": str(container_uuid),
     })
 

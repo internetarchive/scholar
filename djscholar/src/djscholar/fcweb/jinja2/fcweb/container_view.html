@@ -46,10 +46,62 @@
 
 <div class="segment-group">
   {# -- Release count ------------------------------------------------------ #}
-  {% if release_count is not none %}
+  {% if stats %}
   <div class="segment segment-attached" style="text-align: center;">
-    <div style="font-size: 1.8rem; font-weight: bold;">{{ "{:,}".format(release_count) }}</div>
+    <div style="font-size: 1.8rem; font-weight: bold;">{{ "{:,}".format(stats.total) }}</div>
     <div style="color: #555;">Known Releases</div>
+  </div>
+  {% endif %}
+
+  {# -- Preservation summary ----------------------------------------------- #}
+  {% if stats and stats.total >= 1 %}
+  <div class="segment segment-attached">
+    <b>Preservation Summary <a href="{{ url('fcweb:container_view_coverage', ident=ident) }}">[more]</a></b>
+    <div class="preservation-bar" style="margin: 0.5rem 0;">
+      {% set p = stats.preservation %}
+      <span style="width: {{ (p.bright / p.total * 100)|round(1) }}%; background: #21ba45;"
+            title="bright: {{ "{:,}".format(p.bright) }}"></span>
+      <span style="width: {{ (p.dark / p.total * 100)|round(1) }}%; background: #006400;"
+            title="dark: {{ "{:,}".format(p.dark) }}"></span>
+      <span style="width: {{ (p.none / p.total * 100)|round(1) }}%; background: #db2828;"
+            title="none: {{ "{:,}".format(p.none) }}"></span>
+    </div>
+    <table style="font-size: 0.8rem;">
+      <tbody>
+        <tr>
+          <td style="width: 0.8em; background: #21ba45;"></td>
+          <td style="text-align: right;">{{ "{:,}".format(p.bright) }}</td>
+          <td>preserved and accessible (bright)</td>
+        </tr>
+        <tr>
+          <td style="background: #006400;"></td>
+          <td style="text-align: right;">{{ "{:,}".format(p.dark) }}</td>
+          <td>preserved, inaccessible (dark)</td>
+        </tr>
+        <tr>
+          <td style="background: #db2828;"></td>
+          <td style="text-align: right;">{{ "{:,}".format(p.none) }}</td>
+          <td>no known preservation</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# -- Release types ------------------------------------------------------ #}
+  {% if stats and stats.release_type %}
+  <div class="segment segment-attached">
+    <b>Release Types</b>
+    <table style="font-size: 0.8rem; margin-top: 0.25rem;">
+      <tbody>
+        {% for type_name, count in stats.release_type.items() %}
+        <tr>
+          <td>{% if type_name == "_unknown" %}<i>unknown-type</i>{% else %}<code>{{ type_name }}</code>{% endif %}</td>
+          <td style="text-align: right;">{{ "{:,}".format(count) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% endif %}
 

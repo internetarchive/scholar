@@ -148,3 +148,5 @@ STATIC_ROOT = BASE_DIR / "static"
 ES_HOSTS = ["https://scholar.archive.org/_es"]
 ES_SNIFF = True
 ES_INDEX = "scholar_fulltext"
+ES_FATCAT_RELEASE_INDEX = "fatcat_release"
+ES_FATCAT_CONTAINER_INDEX = "fatcat_container"

@@ -114,6 +114,7 @@ def get_container_example_releases(
         "_source": [
             "ident", "title", "contrib_names", "release_year",
             "release_type", "preservation",
+            "doi", "pmcid", "pmid", "arxiv_id",
         ],
     }
 
@@ -141,5 +142,9 @@ def get_container_example_releases(
             "release_year": src.get("release_year"),
             "release_type": src.get("release_type"),
             "preservation": src.get("preservation"),
+            "doi": src.get("doi"),
+            "pmcid": src.get("pmcid"),
+            "pmid": src.get("pmid"),
+            "arxiv_id": src.get("arxiv_id"),
         })
     return results

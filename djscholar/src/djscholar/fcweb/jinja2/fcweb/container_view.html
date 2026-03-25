@@ -60,6 +60,14 @@
   {% if release.release_year %}
     <br><small>{{ release.release_year }}</small>
   {% endif %}
+  {% if release.doi or release.pmcid or release.pmid or release.arxiv_id %}
+    <br><small style="color: #006400;">
+      {% if release.doi %}doi:{{ release.doi }}{% endif %}
+      {% if release.pmcid %}{% if release.doi %} &nbsp;{% endif %}pmcid:{{ release.pmcid }}{% endif %}
+      {% if release.pmid %}{% if release.doi or release.pmcid %} &nbsp;{% endif %}pmid:{{ release.pmid }}{% endif %}
+      {% if release.arxiv_id %}{% if release.doi or release.pmcid or release.pmid %} &nbsp;{% endif %}arxiv:{{ release.arxiv_id }}{% endif %}
+    </small>
+  {% endif %}
 </div>
 {% endfor %}
 {% endif %}

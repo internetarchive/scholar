@@ -1,0 +1,104 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}{{ container.name or "Container" }} — Search{% endblock %}
+
+{% block entity_header %}
+    <h1>{{ container.name }}</h1>
+    {% if container.publisher %}
+      <p class="entity-byline">{{ container.publisher }}</p>
+    {% endif %}
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:container_view', ident=ident) }}">Overview</a>
+      <a href="{{ url('fcweb:container_view_browse', ident=ident) }}">Browse</a>
+      <a href="{{ url('fcweb:container_view_coverage', ident=ident) }}">Preservation</a>
+      <a href="{{ url('fcweb:container_view_search', ident=ident) }}" class="active">Search</a>
+      <a href="{{ url('fcweb:container_view_metadata', ident=ident) }}">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+<form class="search-form" role="search" action="{{ url('fcweb:container_view_search', ident=ident) }}" method="get">
+  <input type="text" placeholder="Search releases in this container..." name="q" value="{{ q }}" aria-label="search release metadata">
+  <button type="submit">Search</button>
+</form>
+
+{% if es_error %}
+  <div class="msg msg-error" style="margin-top: 1rem;">
+    <b>Search error:</b> {{ es_error }}
+  </div>
+{% elif found %}
+  {% if found.results %}
+    <p style="margin-top: 1rem; color: #555; font-size: 0.9rem;">
+      <i>Showing
+      {% if found.offset == 0 %}first{% else %}{{ found.offset }} &mdash;{% endif %}
+      {{ found.offset + found.count_returned }}
+      out of {{ "{:,}".format(found.count_found) }} results</i>
+    </p>
+
+    {% for release in found.results %}
+    <div style="margin-bottom: 1rem;">
+      {% if release.preservation == "bright" %}
+        <span class="label label-green" style="float: right;">bright archive</span>
+      {% elif release.preservation == "dark" %}
+        <span class="label label-grey" style="float: right;">dark archive</span>
+      {% endif %}
+      <b><a href="{{ url('fcweb:release_view', ident=release.uuid) }}">{{ release.title or "[blank]" }}</a></b>
+      {% if release.release_type and release.release_type not in ("article-journal", "paper-conference") %}
+        <span class="label label-grey">{{ release.release_type }}</span>
+      {% endif %}
+      {% if release.contrib_names %}
+        <br><small>{{ release.contrib_names[:12]|join(", ") }}{% if release.contrib_names|length > 12 %} (+{{ release.contrib_names|length - 12 }} others){% endif %}</small>
+      {% endif %}
+      {% if release.release_year %}
+        <br><small>{{ release.release_year }}</small>
+      {% endif %}
+      {% if release.doi or release.pmcid or release.pmid or release.arxiv_id %}
+        <br><small style="color: #006400;">
+          {% if release.doi %}doi:{{ release.doi }}{% endif %}
+          {% if release.pmcid %}{% if release.doi %} &nbsp;{% endif %}pmcid:{{ release.pmcid }}{% endif %}
+          {% if release.pmid %}{% if release.doi or release.pmcid %} &nbsp;{% endif %}pmid:{{ release.pmid }}{% endif %}
+          {% if release.arxiv_id %}{% if release.doi or release.pmcid or release.pmid %} &nbsp;{% endif %}arxiv:{{ release.arxiv_id }}{% endif %}
+        </small>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {# -- Pagination --------------------------------------------------------- #}
+    {% if found.count_found > found.limit %}
+    <div style="text-align: center; margin-top: 1.5rem; font-size: 0.9rem;">
+      {% if found.offset > 0 %}
+        <a href="{{ url('fcweb:container_view_search', ident=ident) }}?q={{ q|urlencode }}&offset={{ [found.offset - found.limit, 0]|max }}">&laquo; Previous</a>
+      {% else %}
+        <span style="color: #999;">&laquo; Previous</span>
+      {% endif %}
+      &nbsp;&nbsp;
+      <i>{{ found.offset + 1 }}&ndash;{{ found.offset + found.count_returned }}
+      of {{ "{:,}".format(found.count_found) }}</i>
+      &nbsp;&nbsp;
+      {% if found.offset + found.limit < found.count_found and found.offset + found.limit < found.deep_page_limit %}
+        <a href="{{ url('fcweb:container_view_search', ident=ident) }}?q={{ q|urlencode }}&offset={{ found.offset + found.limit }}">Next &raquo;</a>
+      {% else %}
+        <span style="color: #999;">Next &raquo;</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  {% elif q %}
+    <p style="margin-top: 1rem;">No results found for <i>{{ q }}</i>.</p>
+  {% endif %}
+{% endif %}
+
+{% endblock %}
+
+{% block entity_sidebar %}
+
+<div class="segment-group">
+  <div class="segment segment-attached" style="font-size: 0.85rem;">
+    <b><a href="/api/fatcat/v2/container/{{ ident }}">API JSON</a></b>
+    <br>See the raw JSON for this record from fatcat's API
+  </div>
+</div>
+
+{% endblock %}

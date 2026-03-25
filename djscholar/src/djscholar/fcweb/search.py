@@ -1,12 +1,52 @@
 """Elasticsearch queries for the fatcat web UI."""
 
 import uuid
+from dataclasses import dataclass, field
 from typing import Any
 
 from django.conf import settings
 
 from djscholar import es
 from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
+
+
+_RELEASE_SOURCE_FIELDS = [
+    "ident", "title", "contrib_names", "release_year",
+    "release_type", "preservation",
+    "doi", "pmcid", "pmid", "arxiv_id",
+    "container_name",
+]
+
+
+def _parse_release_hit(src: dict[str, Any]) -> dict[str, Any]:
+    """Convert an ES release hit _source into a template-friendly dict."""
+    contrib_names = src.get("contrib_names") or []
+    if isinstance(contrib_names, str):
+        contrib_names = [contrib_names]
+    return {
+        "uuid": fcid2uuid(src["ident"]),
+        "title": src.get("title"),
+        "contrib_names": contrib_names,
+        "release_year": src.get("release_year"),
+        "release_type": src.get("release_type"),
+        "preservation": src.get("preservation"),
+        "doi": src.get("doi"),
+        "pmcid": src.get("pmcid"),
+        "pmid": src.get("pmid"),
+        "arxiv_id": src.get("arxiv_id"),
+        "container_name": src.get("container_name"),
+    }
+
+
+@dataclass
+class SearchHits:
+    count_returned: int = 0
+    count_found: int = 0
+    offset: int = 0
+    limit: int = 25
+    deep_page_limit: int = 2000
+    query_time_ms: int = 0
+    results: list[dict[str, Any]] = field(default_factory=list)
 
 
 def get_container_stats(container_uuid: uuid.UUID) -> dict[str, Any] | None:
@@ -111,11 +151,7 @@ def get_container_example_releases(
             {"in_web": {"order": "desc"}},
             {"release_date": {"order": "desc"}},
         ],
-        "_source": [
-            "ident", "title", "contrib_names", "release_year",
-            "release_type", "preservation",
-            "doi", "pmcid", "pmid", "arxiv_id",
-        ],
+        "_source": _RELEASE_SOURCE_FIELDS,
     }
 
     try:
@@ -127,24 +163,88 @@ def get_container_example_releases(
     except Exception:
         return []
 
-    results = []
-    for hit in resp["hits"]["hits"]:
-        src = hit["_source"]
-        # convert legacy ident to UUID for links
-        release_uuid = fcid2uuid(src["ident"])
-        contrib_names = src.get("contrib_names") or []
-        if isinstance(contrib_names, str):
-            contrib_names = [contrib_names]
-        results.append({
-            "uuid": release_uuid,
-            "title": src.get("title"),
-            "contrib_names": contrib_names,
-            "release_year": src.get("release_year"),
-            "release_type": src.get("release_type"),
-            "preservation": src.get("preservation"),
-            "doi": src.get("doi"),
-            "pmcid": src.get("pmcid"),
-            "pmid": src.get("pmid"),
-            "arxiv_id": src.get("arxiv_id"),
-        })
-    return results
+    return [_parse_release_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
+
+
+def search_releases(
+    q: str,
+    container_id: uuid.UUID | None = None,
+    offset: int = 0,
+    limit: int = 25,
+) -> SearchHits:
+    """Full-text search of the fatcat_release ES index.
+
+    Supports optional container_id filtering for container-scoped search.
+    """
+    client = es.client()
+
+    limit = min(limit, 300)
+    offset = min(max(offset, 0), 2000)
+
+    basic_query = {
+        "query_string": {
+            "query": q,
+            "default_operator": "AND",
+            "analyze_wildcard": True,
+            "allow_leading_wildcard": False,
+            "lenient": True,
+            "fields": ["title^2", "biblio"],
+        }
+    }
+
+    filters = []
+    if container_id:
+        filters.append({"term": {"container_id": uuid2fcid(container_id)}})
+
+    if filters:
+        query = {"bool": {"must": basic_query, "filter": filters}}
+    else:
+        query = {
+            "boosting": {
+                "positive": {
+                    "bool": {
+                        "must": basic_query,
+                        "should": [{"term": {"in_ia": True}}],
+                    }
+                },
+                "negative": {
+                    "bool": {
+                        "should": [
+                            {"bool": {"must_not": {"exists": {"field": "title"}}}},
+                            {"bool": {"must_not": {"exists": {"field": "release_year"}}}},
+                            {"bool": {"must_not": {"exists": {"field": "release_type"}}}},
+                            {"bool": {"must_not": {"exists": {"field": "release_stage"}}}},
+                            {"bool": {"must_not": {"exists": {"field": "container_id"}}}},
+                        ]
+                    }
+                },
+                "negative_boost": 0.5,
+            }
+        }
+
+    body = {
+        "size": limit,
+        "from": offset,
+        "query": query,
+        "_source": _RELEASE_SOURCE_FIELDS,
+    }
+
+    resp = client.search(
+        index=settings.ES_FATCAT_RELEASE_INDEX,
+        body=body,
+        track_total_hits=True,
+    )
+
+    total_hits = resp["hits"]["total"]
+    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+
+    results = [_parse_release_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
+
+    return SearchHits(
+        count_returned=len(results),
+        count_found=count_found,
+        offset=offset,
+        limit=limit,
+        query_time_ms=resp.get("took", 0),
+        results=results,
+    )

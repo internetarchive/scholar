@@ -6,7 +6,7 @@ from typing import Any
 from django.conf import settings
 
 from djscholar import es
-from djscholar.fcapi.fcid import uuid2fcid
+from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
 
 
 def get_container_stats(container_uuid: uuid.UUID) -> dict[str, Any] | None:
@@ -80,3 +80,66 @@ def get_container_stats(container_uuid: uuid.UUID) -> dict[str, Any] | None:
         "preservation": preservation,
         "release_type": release_type,
     }
+
+
+def get_container_example_releases(
+    container_uuid: uuid.UUID, limit: int = 5
+) -> list[dict[str, Any]]:
+    """Fetch a few recent/notable releases for a container.
+
+    Queries the fatcat_release ES index sorted by web availability and date.
+    Returns a list of dicts with keys: uuid, title, contrib_names,
+    release_year, release_type, preservation. Returns [] on failure.
+    """
+    try:
+        client = es.client()
+    except Exception:
+        return []
+
+    legacy_ident = uuid2fcid(container_uuid)
+
+    body = {
+        "size": limit,
+        "query": {
+            "bool": {
+                "must": [
+                    {"term": {"container_id": legacy_ident}},
+                ],
+            }
+        },
+        "sort": [
+            {"in_web": {"order": "desc"}},
+            {"release_date": {"order": "desc"}},
+        ],
+        "_source": [
+            "ident", "title", "contrib_names", "release_year",
+            "release_type", "preservation",
+        ],
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+        )
+    except Exception:
+        return []
+
+    results = []
+    for hit in resp["hits"]["hits"]:
+        src = hit["_source"]
+        # convert legacy ident to UUID for links
+        release_uuid = fcid2uuid(src["ident"])
+        contrib_names = src.get("contrib_names") or []
+        if isinstance(contrib_names, str):
+            contrib_names = [contrib_names]
+        results.append({
+            "uuid": release_uuid,
+            "title": src.get("title"),
+            "contrib_names": contrib_names,
+            "release_year": src.get("release_year"),
+            "release_type": src.get("release_type"),
+            "preservation": src.get("preservation"),
+        })
+    return results

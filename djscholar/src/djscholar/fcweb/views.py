@@ -199,6 +199,7 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
         return HttpResponse(f"bad id: {ident}", status=400)
 
     stats = fc_search.get_container_stats(container_uuid)
+    example_releases = fc_search.get_container_example_releases(container_uuid)
 
     extra = container.extra or {}
     is_oa = bool(
@@ -214,6 +215,7 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
         "container": container,
         "stats": stats,
         "is_oa": is_oa,
+        "example_releases": example_releases,
         "ident": str(container_uuid),
     })
 

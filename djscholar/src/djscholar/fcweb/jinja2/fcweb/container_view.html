@@ -40,6 +40,25 @@
   </table>
 {% endif %}
 
+{# -- Example publications ------------------------------------------------- #}
+{% if example_releases %}
+<h3>Example Publications</h3>
+{% for release in example_releases %}
+<div style="margin-bottom: 1rem;">
+  <b><a href="{{ url('fcweb:release_view', ident=release.uuid) }}">{{ release.title or "[blank]" }}</a></b>
+  {% if release.release_type and release.release_type not in ("article-journal", "paper-conference") %}
+    <span class="label label-grey">{{ release.release_type }}</span>
+  {% endif %}
+  {% if release.contrib_names %}
+    <br><small>{{ release.contrib_names[:12]|join(", ") }}{% if release.contrib_names|length > 12 %} (+{{ release.contrib_names|length - 12 }} others){% endif %}</small>
+  {% endif %}
+  {% if release.release_year %}
+    <br><small>{{ release.release_year }}</small>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
 {% endblock %}
 
 {% block entity_sidebar %}

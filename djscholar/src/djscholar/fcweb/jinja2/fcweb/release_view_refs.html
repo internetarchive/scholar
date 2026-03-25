@@ -91,34 +91,30 @@
         <td>
           {% if direction == "out" %}
             {# -- outbound: show target info --------------------------------- #}
-            {% if ref.target_release_uuid %}
-              <a href="{{ url('fcweb:release_view', ident=ref.target_release_uuid) }}">
-                {% if ref.target_csl and ref.target_csl.title %}
-                  {{ ref.target_csl.title }}
-                {% else %}
-                  [matched release]
-                {% endif %}
-              </a>
-              {% if ref.target_csl and ref.target_csl.author %}
-                <br><small>{{ ref.target_csl.author[:3]|map(attribute='family', default='')|select|join(', ') }}{% if ref.target_csl.author|length > 3 %} et al.{% endif %}</small>
-              {% endif %}
-            {% elif ref.target_unstructured %}
-              <code style="white-space: pre-wrap; word-break: break-word;">{{ ref.target_unstructured }}</code>
-              {% if ref.target_openlibrary_work %}
-                <br><a href="https://openlibrary.org/works/{{ ref.target_openlibrary_work }}" style="color: #006400;">openlibrary:{{ ref.target_openlibrary_work }}</a>
-              {% endif %}
-            {% elif ref.target_csl %}
-              {% if ref.target_csl.title %}<b>{{ ref.target_csl.title }}</b>{% endif %}
+            {# prefer unstructured text or CSL as the citation display #}
+            {% if ref.target_unstructured %}
+              <span style="white-space: pre-wrap; word-break: break-word;">{{ ref.target_unstructured }}</span>
+            {% elif ref.target_csl and ref.target_csl.title %}
+              <b>{{ ref.target_csl.title }}</b>
               {% if ref.target_csl.author %}
                 <br><small>{{ ref.target_csl.author[:3]|map(attribute='family', default='')|select|join(', ') }}{% if ref.target_csl.author|length > 3 %} et al.{% endif %}</small>
               {% endif %}
+            {% elif ref.enriched_title %}
+              <a href="{{ url('fcweb:release_view', ident=ref.target_release_uuid) }}">{{ ref.enriched_title }}</a>
+            {% elif ref.target_release_uuid %}
+              <a href="{{ url('fcweb:release_view', ident=ref.target_release_uuid) }}"><i>[matched release]</i></a>
             {% else %}
               <i>blank</i>
             {% endif %}
+            {% if ref.target_openlibrary_work %}
+              <br><a href="https://openlibrary.org/works/{{ ref.target_openlibrary_work }}" style="color: #006400;">openlibrary:{{ ref.target_openlibrary_work }}</a>
+            {% endif %}
           {% else %}
             {# -- inbound: show source info ---------------------------------- #}
-            {% if ref.source_release_uuid %}
-              <a href="{{ url('fcweb:release_view', ident=ref.source_release_uuid) }}">[citing release]</a>
+            {% if ref.enriched_title %}
+              <a href="{{ url('fcweb:release_view', ident=ref.source_release_uuid) }}">{{ ref.enriched_title }}</a>
+            {% elif ref.source_release_uuid %}
+              <a href="{{ url('fcweb:release_view', ident=ref.source_release_uuid) }}"><i>[citing release]</i></a>
             {% elif ref.source_wikipedia_article %}
               {% set wiki_lang = ref.source_wikipedia_article.split(':')[0] %}
               {% set wiki_article = ':'.join(ref.source_wikipedia_article.split(':')[1:]) %}

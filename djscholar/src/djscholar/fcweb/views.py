@@ -190,6 +190,36 @@ release_view_references = _stub
 release_save = _stub
 
 
+def _enrich_refs(hits, direction: str) -> None:
+    """Annotate ref hits with release titles from PostgreSQL (in-place)."""
+    if not hits or not hits.result_refs:
+        return
+    # collect release UUIDs that need enrichment
+    import uuid as _uuid
+    uuids = []
+    for ref in hits.result_refs:
+        key = "target_release_uuid" if direction == "out" else "source_release_uuid"
+        val = ref.get(key)
+        if val:
+            try:
+                uuids.append(_uuid.UUID(val))
+            except ValueError:
+                pass
+    if not uuids:
+        return
+    releases = release_svc.get_bulk(uuids)
+    for ref in hits.result_refs:
+        key = "target_release_uuid" if direction == "out" else "source_release_uuid"
+        val = ref.get(key)
+        if val:
+            try:
+                r = releases.get(_uuid.UUID(val))
+            except ValueError:
+                r = None
+            if r:
+                ref["enriched_title"] = r.title
+
+
 def release_view_refs_outbound(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         release_uuid = resolve_ident(ident)
@@ -206,6 +236,7 @@ def release_view_refs_outbound(request: HttpRequest, ident: str) -> HttpResponse
     offset = max(0, int(offset)) if offset.isdigit() else 0
 
     hits = fc_search.get_outbound_refs(release_uuid, offset=offset)
+    _enrich_refs(hits, "out")
 
     return _render(request, "fcweb/release_view_refs.html", {
         "release": release,
@@ -233,6 +264,7 @@ def release_view_refs_inbound(request: HttpRequest, ident: str) -> HttpResponse:
     offset = max(0, int(offset)) if offset.isdigit() else 0
 
     hits = fc_search.get_inbound_refs(release_uuid, offset=offset)
+    _enrich_refs(hits, "in")
 
     return _render(request, "fcweb/release_view_refs.html", {
         "release": release,

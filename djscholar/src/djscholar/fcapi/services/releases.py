@@ -88,3 +88,15 @@ def get_webcaptures(ident: UUID) -> QuerySet:
         m.Webcapture.objects.filter(release_id=ident)
         .prefetch_related("urls", "cdx_lines")
     )
+
+
+def get_bulk(idents: list[UUID]) -> dict[UUID, m.Release]:
+    """Fetch multiple releases by UUID in a single query.
+
+    Returns a dict mapping UUID -> Release for all found releases.
+    Missing UUIDs are silently omitted.
+    """
+    if not idents:
+        return {}
+    releases = m.Release.objects.filter(id__in=idents)
+    return {r.id: r for r in releases}

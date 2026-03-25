@@ -12,6 +12,7 @@ from djscholar.fcapi.fcid import resolve_ident
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
 from djscholar.fcapi.services import creators as creator_svc
+from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import releases as release_svc
 from djscholar.fcapi.services import works as work_svc
 
@@ -254,8 +255,52 @@ def creator_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": ident,
     })
 
-file_view = _stub
-file_view_metadata = _stub
+def file_view(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        file_uuid = resolve_ident(ident)
+        file = file_svc.get(file_uuid)
+    except EntityNotFound:
+        raise Http404(f"file not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    releases = list(file_svc.get_releases(file_uuid))
+    urls = list(file.urls.all())
+
+    # pick best access URL: prefer wayback > webarchive > any
+    best_url = None
+    for u in urls:
+        if "web.archive.org" in u.url:
+            best_url = u.url
+            break
+        if u.rel == "webarchive" and not best_url:
+            best_url = u.url
+        elif not best_url and u.url.startswith("http"):
+            best_url = u.url
+
+    return _render(request, "fcweb/file_view.html", {
+        "file": file,
+        "releases": releases,
+        "urls": urls,
+        "best_url": best_url,
+        "ident": ident,
+    })
+
+def file_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        file_uuid = resolve_ident(ident)
+        file = file_svc.get(file_uuid)
+    except EntityNotFound:
+        raise Http404(f"file not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    return _render(request, "fcweb/file_view_metadata.html", {
+        "file": file,
+        "metadata": _entity_schema_metadata(file),
+        "extra": file.extra,
+        "ident": ident,
+    })
 
 fileset_view = _stub
 fileset_view_metadata = _stub

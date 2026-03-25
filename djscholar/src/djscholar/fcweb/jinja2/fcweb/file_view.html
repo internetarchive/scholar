@@ -84,18 +84,20 @@
   </a>
 {% endif %}
 
-{# -- Size / type ---------------------------------------------------------- #}
-<div class="segment segment-attached">
-  <b>Size</b> &nbsp;{% if file.size_bytes %}{{ file.size_bytes|filesizeformat }}{% else %}<i>(unknown)</i>{% endif %}<br>
-  {% if file.mimetype %}
-    <b>MIME Type</b> &nbsp;<code>{{ file.mimetype }}</code>
-  {% endif %}
-</div>
+<div class="segment-group">
+  {# -- Size / type -------------------------------------------------------- #}
+  <div class="segment segment-attached">
+    <b>Size</b> &nbsp;{% if file.size_bytes %}{{ file.size_bytes|filesizeformat }}{% else %}<i>(unknown)</i>{% endif %}<br>
+    {% if file.mimetype %}
+      <b>MIME Type</b> &nbsp;<code>{{ file.mimetype }}</code>
+    {% endif %}
+  </div>
 
-{# -- Catalog record ------------------------------------------------------- #}
-<div class="segment attached" style="font-size: 0.85rem;">
-  <b><a href="/api/fatcat/v2/file/{{ ident }}">API JSON</a></b>
-  <br>See the raw JSON for this record from fatcat's API
+  {# -- Catalog record ----------------------------------------------------- #}
+  <div class="segment segment-attached" style="font-size: 0.85rem;">
+    <b><a href="/api/fatcat/v2/file/{{ ident }}">API JSON</a></b>
+    <br>See the raw JSON for this record from fatcat's API
+  </div>
 </div>
 
 {% endblock %}

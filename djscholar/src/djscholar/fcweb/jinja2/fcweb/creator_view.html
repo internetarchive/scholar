@@ -59,37 +59,39 @@
 
 {% block entity_sidebar %}
 
-{# -- Identifiers ---------------------------------------------------------- #}
-{% if creator.orcid or creator.wikidata_qid %}
-<div class="segment segment-attached">
-  {% if creator.orcid %}
-    <b>ORCID<sup><a href="https://en.wikipedia.org/wiki/Orcid">?</a></sup></b>
-    &nbsp;<a href="https://orcid.org/{{ creator.orcid }}"><code>{{ creator.orcid }}</code></a><br>
+<div class="segment-group">
+  {# -- Identifiers -------------------------------------------------------- #}
+  {% if creator.orcid or creator.wikidata_qid %}
+  <div class="segment segment-attached">
+    {% if creator.orcid %}
+      <b>ORCID<sup><a href="https://en.wikipedia.org/wiki/Orcid">?</a></sup></b>
+      &nbsp;<a href="https://orcid.org/{{ creator.orcid }}"><code>{{ creator.orcid }}</code></a><br>
+    {% endif %}
+    {% if creator.wikidata_qid %}
+      <b>Wikidata</b>
+      &nbsp;<a href="https://www.wikidata.org/wiki/{{ creator.wikidata_qid }}"><code>{{ creator.wikidata_qid }}</code></a><br>
+    {% endif %}
+  </div>
   {% endif %}
-  {% if creator.wikidata_qid %}
-    <b>Wikidata</b>
-    &nbsp;<a href="https://www.wikidata.org/wiki/{{ creator.wikidata_qid }}"><code>{{ creator.wikidata_qid }}</code></a><br>
-  {% endif %}
-</div>
-{% endif %}
 
-{# -- Lookup Links --------------------------------------------------------- #}
-<div class="segment segment-attached">
-  <details class="accordion">
-    <summary>Lookup Links</summary>
-    <div>
-      <a href="https://www.wikidata.org/w/index.php?search={{ creator.display_name|urlencode }}">wikidata.org</a><br>
-      <a href="https://viaf.org/viaf/search?query=local.personalNames%20all%20%22{{ creator.display_name|urlencode }}">VIAF</a><br>
-      <a href="http://dblp.uni-trier.de/search?q={{ creator.display_name|urlencode }}">dblp</a> (CS)<br>
-      <a href="https://scholar.google.com/scholar?q={{ creator.display_name|urlencode }}">Google Scholar</a><br>
-    </div>
-  </details>
-</div>
+  {# -- Lookup Links ------------------------------------------------------- #}
+  <div class="segment segment-attached">
+    <details class="accordion">
+      <summary>Lookup Links</summary>
+      <div>
+        <a href="https://www.wikidata.org/w/index.php?search={{ creator.display_name|urlencode }}">wikidata.org</a><br>
+        <a href="https://viaf.org/viaf/search?query=local.personalNames%20all%20%22{{ creator.display_name|urlencode }}">VIAF</a><br>
+        <a href="http://dblp.uni-trier.de/search?q={{ creator.display_name|urlencode }}">dblp</a> (CS)<br>
+        <a href="https://scholar.google.com/scholar?q={{ creator.display_name|urlencode }}">Google Scholar</a><br>
+      </div>
+    </details>
+  </div>
 
-{# -- Catalog record ------------------------------------------------------- #}
-<div class="segment attached" style="font-size: 0.85rem;">
-  <b><a href="/api/fatcat/v2/creator/{{ ident }}">API JSON</a></b>
-  <br>See the raw JSON for this record from fatcat's API
+  {# -- Catalog record ----------------------------------------------------- #}
+  <div class="segment segment-attached" style="font-size: 0.85rem;">
+    <b><a href="/api/fatcat/v2/creator/{{ ident }}">API JSON</a></b>
+    <br>See the raw JSON for this record from fatcat's API
+  </div>
 </div>
 
 {% endblock %}

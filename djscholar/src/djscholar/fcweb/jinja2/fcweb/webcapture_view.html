@@ -1,0 +1,127 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}Web Capture {{ ident }}{% endblock %}
+
+{% block entity_header %}
+    <h1>Web Capture</h1>
+    <p class="entity-ident"><code>{{ ident }}</code></p>
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:webcapture_view', ident=ident) }}" class="active">Overview</a>
+      <a href="{{ url('fcweb:webcapture_view_metadata', ident=ident) }}">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+<h3>Associated Release</h3>
+{% if release %}
+<table>
+  <tbody>
+    <tr>
+      <td style="white-space: nowrap;">
+        {% if release.release_date %}{{ release.release_date }}
+        {% elif release.release_year %}{{ release.release_year }}
+        {% else %}<i>unknown</i>
+        {% endif %}
+      </td>
+      <td>
+        <b><a href="{{ url('fcweb:release_view', ident=release.id) }}">{{ release.title }}</a></b>
+        <br><small>{{ release.release_stage or "unknown status" }}
+            | {{ release.release_type or "unknown type" }}
+            {% if release.version %} | {{ release.version }}{% endif %}
+            {% if release.license_slug %} | {{ release.license_slug }}{% endif %}
+        </small>
+      </td>
+    </tr>
+  </tbody>
+</table>
+{% else %}
+<p>This Web Capture is not associated with any release entity.
+{% endif %}
+
+<h3>Public Archive URLs</h3>
+{% if archive_urls %}
+<table>
+  <tbody>
+  {% for u in archive_urls %}
+    <tr>
+      <td><code>{{ u.rel }}</code></td>
+      <td>
+        <code>
+        {% if u.rel == "wayback" and wayback_suffix %}
+          <a href="{{ u.url }}{{ wayback_suffix }}"><b>{{ u.url }}</b>{{ wayback_suffix }}</a>
+        {% else %}
+          <a href="{{ u.url }}"><b>{{ u.url }}</b></a>
+        {% endif %}
+        </code>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No known public archive for this web capture.
+{% endif %}
+
+<h3>Captured Resources ({{ cdx_lines|length }})</h3>
+{% if cdx_lines %}
+<table>
+  <thead>
+    <tr>
+      <th>URL</th>
+      <th>Timestamp</th>
+      <th>Type</th>
+      <th>Size</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in cdx_lines %}
+    <tr>
+      <td><code><a href="{{ row.url }}">{{ row.url }}</a></code></td>
+      <td style="white-space: nowrap;">{{ row.captured.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{% if row.mimetype %}<code style="font-size: smaller;">{{ row.mimetype }}</code>{% endif %}</td>
+      <td>{% if row.size_bytes %}{{ row.size_bytes|filesizeformat }}{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>This web capture is empty (contains no resources).
+{% endif %}
+
+{% endblock %}
+
+{% block entity_sidebar %}
+
+{# -- View button -------------------------------------------------------------- #}
+{% if best_url %}
+  <a href="{{ best_url }}" class="btn btn-primary" style="display: block; text-align: center; margin-bottom: 1rem;">
+    View Web Archive
+  </a>
+{% endif %}
+
+<div class="segment-group">
+  {# -- Capture time ----------------------------------------------------------- #}
+  {% if webcapture.captured %}
+  <div class="segment segment-attached">
+    <b>Capture Time</b> &nbsp;{{ webcapture.captured.strftime("%Y-%m-%d %H:%M:%S") }}
+  </div>
+  {% endif %}
+
+  {# -- Original URL ----------------------------------------------------------- #}
+  {% if webcapture.original_url %}
+  <div class="segment segment-attached">
+    <b>Original URL</b><br>
+    <a href="{{ webcapture.original_url }}"><code>{{ webcapture.original_url }}</code></a>
+  </div>
+  {% endif %}
+
+  {# -- Catalog record --------------------------------------------------------- #}
+  <div class="segment segment-attached" style="font-size: 0.85rem;">
+    <b><a href="/api/fatcat/v2/webcapture/{{ ident }}">API JSON</a></b>
+    <br>See the raw JSON for this record from fatcat's API
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}Fileset {{ ident }} — Metadata{% endblock %}
+
+{% block entity_header %}
+    <h1>File Set</h1>
+    <p class="entity-ident"><code>{{ ident }}</code></p>
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:fileset_view', ident=ident) }}">Overview</a>
+      <a href="{{ url('fcweb:fileset_view_metadata', ident=ident) }}" class="active">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+<h3>Schema Fields</h3>
+{% include "fcweb/_metadata_table.html" with context %}
+
+{% if extra %}
+<h3>Extra Metadata (JSON)</h3>
+{% with data=extra %}
+  {% include "fcweb/_metadata_table.html" %}
+{% endwith %}
+{% endif %}
+
+{% endblock %}
+
+{% block entity_sidebar %}
+
+<div class="segment-group">
+  <div class="segment segment-attached" style="font-size: 0.85rem;">
+    <b><a href="/api/fatcat/v2/fileset/{{ ident }}">API JSON</a></b>
+    <br>See the raw JSON for this record from fatcat's API
+  </div>
+</div>
+
+{% endblock %}

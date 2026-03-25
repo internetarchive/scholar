@@ -13,7 +13,9 @@ from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
 from djscholar.fcapi.services import creators as creator_svc
 from djscholar.fcapi.services import files as file_svc
+from djscholar.fcapi.services import filesets as fileset_svc
 from djscholar.fcapi.services import releases as release_svc
+from djscholar.fcapi.services import webcaptures as webcapture_svc
 from djscholar.fcapi.services import works as work_svc
 
 
@@ -302,11 +304,114 @@ def file_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": ident,
     })
 
-fileset_view = _stub
-fileset_view_metadata = _stub
+def fileset_view(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        fs_uuid = resolve_ident(ident)
+        fileset = fileset_svc.get(fs_uuid)
+    except EntityNotFound:
+        raise Http404(f"fileset not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
 
-webcapture_view = _stub
-webcapture_view_metadata = _stub
+    release = fileset.release
+    manifest = list(fileset_svc.get_files(fs_uuid))
+    urls = list(fileset_svc.get_urls(fs_uuid))
+
+    # compute total size from manifest
+    total_size = sum(f.size_bytes for f in manifest if f.size_bytes)
+
+    # find base URLs for per-file access links
+    archive_base = None
+    webarchive_base = None
+    for u in urls:
+        if u.rel == "archive-base":
+            archive_base = u.url
+        elif u.rel in ("webarchive-base", "repository-base"):
+            webarchive_base = u.url
+
+    return _render(request, "fcweb/fileset_view.html", {
+        "fileset": fileset,
+        "release": release,
+        "manifest": manifest,
+        "urls": urls,
+        "total_size": total_size or None,
+        "archive_base": archive_base,
+        "webarchive_base": webarchive_base,
+        "ident": ident,
+    })
+
+
+def fileset_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        fs_uuid = resolve_ident(ident)
+        fileset = fileset_svc.get(fs_uuid)
+    except EntityNotFound:
+        raise Http404(f"fileset not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    return _render(request, "fcweb/fileset_view_metadata.html", {
+        "fileset": fileset,
+        "metadata": _entity_schema_metadata(fileset),
+        "extra": fileset.extra,
+        "ident": ident,
+    })
+
+
+def webcapture_view(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        wc_uuid = resolve_ident(ident)
+        webcapture = webcapture_svc.get(wc_uuid)
+    except EntityNotFound:
+        raise Http404(f"webcapture not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    release = webcapture.release
+    archive_urls = list(webcapture.urls.all())
+    cdx_lines = list(webcapture.cdx_lines.all())
+
+    # build wayback suffix from original_url and capture timestamp
+    wayback_suffix = ""
+    if webcapture.original_url and webcapture.captured:
+        ts = webcapture.captured.strftime("%Y%m%d%H%M%S")
+        wayback_suffix = f"/{ts}/{webcapture.original_url}"
+
+    # pick best access URL for the "View Web Archive" button
+    best_url = None
+    for u in archive_urls:
+        if u.rel == "wayback":
+            best_url = u.url + wayback_suffix
+            break
+        if u.rel == "webarchive" and not best_url:
+            best_url = u.url
+
+    return _render(request, "fcweb/webcapture_view.html", {
+        "webcapture": webcapture,
+        "release": release,
+        "archive_urls": archive_urls,
+        "cdx_lines": cdx_lines,
+        "wayback_suffix": wayback_suffix,
+        "best_url": best_url,
+        "ident": ident,
+    })
+
+
+def webcapture_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        wc_uuid = resolve_ident(ident)
+        webcapture = webcapture_svc.get(wc_uuid)
+    except EntityNotFound:
+        raise Http404(f"webcapture not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    return _render(request, "fcweb/webcapture_view_metadata.html", {
+        "webcapture": webcapture,
+        "metadata": _entity_schema_metadata(webcapture),
+        "extra": webcapture.extra,
+        "ident": ident,
+    })
 
 def work_view(request: HttpRequest, ident: str) -> HttpResponse:
     try:

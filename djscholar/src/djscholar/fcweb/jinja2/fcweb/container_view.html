@@ -44,61 +44,63 @@
 
 {% block entity_sidebar %}
 
-{# -- Release count -------------------------------------------------------- #}
-{% if release_count is not none %}
-<div class="segment segment-attached" style="text-align: center;">
-  <div style="font-size: 1.8rem; font-weight: bold;">{{ "{:,}".format(release_count) }}</div>
-  <div style="color: #555;">Known Releases</div>
-</div>
-{% endif %}
-
-{# -- Publication type ----------------------------------------------------- #}
-{% if container.container_type %}
-<div class="segment segment-attached">
-  <b>Publication Type</b> &nbsp;<code>{{ container.container_type }}</code>
-</div>
-{% endif %}
-
-{# -- Identifiers ---------------------------------------------------------- #}
-{% if container.issnl or container.issne or container.issnp or container.wikidata_qid %}
-<div class="segment segment-attached">
-  {% if container.issnl %}
-    <b>ISSN-L<sup><a href="https://en.wikipedia.org/wiki/International_Standard_Serial_Number#Linking_ISSN">?</a></sup></b>
-    &nbsp;<code><a href="https://portal.issn.org/resource/issn/{{ container.issnl }}">{{ container.issnl }}</a></code><br>
+<div class="segment-group">
+  {# -- Release count ------------------------------------------------------ #}
+  {% if release_count is not none %}
+  <div class="segment segment-attached" style="text-align: center;">
+    <div style="font-size: 1.8rem; font-weight: bold;">{{ "{:,}".format(release_count) }}</div>
+    <div style="color: #555;">Known Releases</div>
+  </div>
   {% endif %}
-  {% if container.issnp %}
-    &nbsp; &nbsp; <b>Print:</b> &nbsp;<code>{{ container.issnp }}</code><br>
-  {% endif %}
-  {% if container.issne %}
-    &nbsp; &nbsp; <b>Electronic:</b> &nbsp;<code>{{ container.issne }}</code><br>
-  {% endif %}
-  {% if container.wikidata_qid %}
-    <b>Wikidata</b> &nbsp;<a href="https://wikidata.org/wiki/{{ container.wikidata_qid }}"><code>{{ container.wikidata_qid }}</code></a><br>
-  {% endif %}
-</div>
-{% endif %}
 
-{# -- Lookup Links --------------------------------------------------------- #}
-<div class="segment segment-attached">
-  <details class="accordion">
-    <summary>Lookup Links</summary>
-    <div>
-      {% if container.issnl %}
-        <a href="https://portal.issn.org/resource/issn/{{ container.issnl }}">ISSN Portal</a><br>
-        <a href="https://keepers.issn.org/?q=api/search&search[]=MUST=allissn={{ container.issnl }}&search[]=MUST_EXIST=keepers">The Keepers Registry</a> (preservation)<br>
-        <a href="http://www.sherpa.ac.uk/romeo/issn/{{ container.issnl }}/">SHERPA/RoMEO</a> (access policies)<br>
-      {% endif %}
-      {% if not container.wikidata_qid %}
-        <a href="https://www.wikidata.org/w/index.php?search={{ container.name|urlencode }}">wikidata.org</a><br>
-      {% endif %}
-    </div>
-  </details>
-</div>
+  {# -- Publication type --------------------------------------------------- #}
+  {% if container.container_type %}
+  <div class="segment segment-attached">
+    <b>Publication Type</b> &nbsp;<code>{{ container.container_type }}</code>
+  </div>
+  {% endif %}
 
-{# -- Catalog record ------------------------------------------------------- #}
-<div class="segment attached" style="font-size: 0.85rem;">
-  <b><a href="/api/fatcat/v2/container/{{ ident }}">API JSON</a></b>
-  <br>See the raw JSON for this record from fatcat's API
+  {# -- Identifiers -------------------------------------------------------- #}
+  {% if container.issnl or container.issne or container.issnp or container.wikidata_qid %}
+  <div class="segment segment-attached">
+    {% if container.issnl %}
+      <b>ISSN-L<sup><a href="https://en.wikipedia.org/wiki/International_Standard_Serial_Number#Linking_ISSN">?</a></sup></b>
+      &nbsp;<code><a href="https://portal.issn.org/resource/issn/{{ container.issnl }}">{{ container.issnl }}</a></code><br>
+    {% endif %}
+    {% if container.issnp %}
+      &nbsp; &nbsp; <b>Print:</b> &nbsp;<code>{{ container.issnp }}</code><br>
+    {% endif %}
+    {% if container.issne %}
+      &nbsp; &nbsp; <b>Electronic:</b> &nbsp;<code>{{ container.issne }}</code><br>
+    {% endif %}
+    {% if container.wikidata_qid %}
+      <b>Wikidata</b> &nbsp;<a href="https://wikidata.org/wiki/{{ container.wikidata_qid }}"><code>{{ container.wikidata_qid }}</code></a><br>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# -- Lookup Links ------------------------------------------------------- #}
+  <div class="segment segment-attached">
+    <details class="accordion">
+      <summary>Lookup Links</summary>
+      <div>
+        {% if container.issnl %}
+          <a href="https://portal.issn.org/resource/issn/{{ container.issnl }}">ISSN Portal</a><br>
+          <a href="https://keepers.issn.org/?q=api/search&search[]=MUST=allissn={{ container.issnl }}&search[]=MUST_EXIST=keepers">The Keepers Registry</a> (preservation)<br>
+          <a href="http://www.sherpa.ac.uk/romeo/issn/{{ container.issnl }}/">SHERPA/RoMEO</a> (access policies)<br>
+        {% endif %}
+        {% if not container.wikidata_qid %}
+          <a href="https://www.wikidata.org/w/index.php?search={{ container.name|urlencode }}">wikidata.org</a><br>
+        {% endif %}
+      </div>
+    </details>
+  </div>
+
+  {# -- Catalog record ----------------------------------------------------- #}
+  <div class="segment segment-attached" style="font-size: 0.85rem;">
+    <b><a href="/api/fatcat/v2/container/{{ ident }}">API JSON</a></b>
+    <br>See the raw JSON for this record from fatcat's API
+  </div>
 </div>
 
 {% endblock %}

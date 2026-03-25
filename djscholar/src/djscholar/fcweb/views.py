@@ -189,6 +189,60 @@ def release_view_contribs(request: HttpRequest, ident: str) -> HttpResponse:
 release_view_references = _stub
 release_save = _stub
 
+
+def release_view_refs_outbound(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        release_uuid = resolve_ident(ident)
+        release = release_svc.get(release_uuid)
+    except EntityNotFound:
+        raise Http404(f"release not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    authors = release_svc.get_authors(release_uuid)
+    contribs = list(release_svc.get_contribs(release_uuid))
+
+    offset = request.GET.get("offset", "0")
+    offset = max(0, int(offset)) if offset.isdigit() else 0
+
+    hits = fc_search.get_outbound_refs(release_uuid, offset=offset)
+
+    return _render(request, "fcweb/release_view_refs.html", {
+        "release": release,
+        "authors": authors,
+        "contribs": contribs,
+        "ident": str(release_uuid),
+        "hits": hits,
+        "direction": "out",
+    })
+
+
+def release_view_refs_inbound(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        release_uuid = resolve_ident(ident)
+        release = release_svc.get(release_uuid)
+    except EntityNotFound:
+        raise Http404(f"release not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    authors = release_svc.get_authors(release_uuid)
+    contribs = list(release_svc.get_contribs(release_uuid))
+
+    offset = request.GET.get("offset", "0")
+    offset = max(0, int(offset)) if offset.isdigit() else 0
+
+    hits = fc_search.get_inbound_refs(release_uuid, offset=offset)
+
+    return _render(request, "fcweb/release_view_refs.html", {
+        "release": release,
+        "authors": authors,
+        "contribs": contribs,
+        "ident": str(release_uuid),
+        "hits": hits,
+        "direction": "in",
+    })
+
 def container_view(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         container_uuid = resolve_ident(ident)
@@ -570,8 +624,6 @@ release_citeproc = _stub
 
 # -- References (HTML) -------------------------------------------------------
 
-release_view_refs_inbound = _stub
-release_view_refs_outbound = _stub
 openlibrary_view_refs_inbound = _stub
 wikipedia_view_refs_outbound = _stub
 

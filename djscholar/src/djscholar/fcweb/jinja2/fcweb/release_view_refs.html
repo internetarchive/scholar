@@ -1,0 +1,168 @@
+{% extends "fcweb/entity_base.html" %}
+
+{% block title %}{% if direction == "out" %}References{% else %}Cited By{% endif %} - {{ release.title or "Release" }}{% endblock %}
+
+{% block main_extra_attr %}itemscope itemtype="http://schema.org/ScholarlyArticle" itemid="#release"{% endblock %}
+
+{% block entity_header %}
+    <h1>
+      <span itemprop="headline"><span itemprop="name">{{ release.title }}</span></span>
+      {% if release.subtitle %}
+        <br><span class="subtitle">{{ release.subtitle }}</span>
+      {% endif %}
+    </h1>
+
+    {% if authors %}
+      <p class="entity-byline">
+      by
+        {% for contrib in authors[:12] %}
+          {% if contrib.creator and contrib.creator.display_name %}
+            <b><a href="{{ url('fcweb:creator_view', ident=contrib.creator.id) }}">{{ contrib.creator.display_name }}</a></b>
+          {% else %}
+            {{ contrib.raw_name or "Unknown" }}
+          {% endif %}
+          {%- if not loop.last %}, {% endif %}
+        {% endfor %}
+        {% if authors|length > 12 %}
+          <b>(+{{ authors|length - 12 }} others)</b>
+        {% endif %}
+      </p>
+    {% endif %}
+{% endblock %}
+
+{% block entity_tabs %}
+      <a href="{{ url('fcweb:release_view', ident=ident) }}">Overview</a>
+      <a href="{{ url('fcweb:release_view_contribs', ident=ident) }}">Authors ({{ contribs|length }})</a>
+      <a href="{{ url('fcweb:release_view_refs_outbound', ident=ident) }}"{% if direction == "out" %} class="active"{% endif %}>References</a>
+      <a href="{{ url('fcweb:release_view_refs_inbound', ident=ident) }}"{% if direction == "in" %} class="active"{% endif %}>Cited By</a>
+      <a href="{{ url('fcweb:release_view_metadata', ident=ident) }}">Metadata</a>
+{% endblock %}
+
+{% block entity_main %}
+
+{% if direction == "out" %}
+  <h3>References</h3>
+  <p style="font-size: 0.9rem; color: #555;"><i>This release citing other releases</i></p>
+{% else %}
+  <h3>Cited By</h3>
+  <p style="font-size: 0.9rem; color: #555;"><i>Other releases citing this one</i></p>
+{% endif %}
+
+<div class="msg msg-warning" style="margin-bottom: 1rem;">
+  <b>Fuzzy reference matching is a work in progress!</b>
+  Read more about quality, completeness, and caveats in the fatcat guide.
+</div>
+
+{% if hits and hits.count_found > 0 %}
+
+  <p style="font-size: 0.9rem; color: #555; margin-bottom: 1rem;">
+    <i>Showing
+    {% if hits.offset == 0 %}first{% else %}{{ hits.offset + 1 }} &mdash;{% endif %}
+    {{ hits.offset + hits.count_returned }}
+    of {{ "{:,}".format(hits.count_found) }} references</i>
+    ({{ hits.query_time_ms }}ms)
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 6em;">Match</th>
+        <th>Reference</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for ref in hits.result_refs %}
+      <tr>
+        <td style="vertical-align: top; white-space: nowrap; font-size: 0.85rem;">
+          {% if direction == "out" and ref.ref_key %}
+            <code>[{{ ref.ref_key }}]</code><br>
+          {% endif %}
+          {% if ref.match_status == "exact" %}
+            <span title="{{ ref.match_status }} {{ ref.match_reason or '' }}">&#x1F517;</span>
+          {% elif ref.match_status == "unmatched" %}
+            <span title="unmatched" style="color: #999;">?</span>
+          {% else %}
+            <span title="{{ ref.match_status or '' }} {{ ref.match_reason or '' }}" style="color: #b8860b;">&#x2728;</span>
+          {% endif %}
+          {% if ref.match_provenance %}
+            <br><small>via {{ ref.match_provenance }}</small>
+          {% endif %}
+        </td>
+        <td>
+          {% if direction == "out" %}
+            {# -- outbound: show target info --------------------------------- #}
+            {% if ref.target_release_uuid %}
+              <a href="{{ url('fcweb:release_view', ident=ref.target_release_uuid) }}">
+                {% if ref.target_csl and ref.target_csl.title %}
+                  {{ ref.target_csl.title }}
+                {% else %}
+                  [matched release]
+                {% endif %}
+              </a>
+              {% if ref.target_csl and ref.target_csl.author %}
+                <br><small>{{ ref.target_csl.author[:3]|map(attribute='family', default='')|select|join(', ') }}{% if ref.target_csl.author|length > 3 %} et al.{% endif %}</small>
+              {% endif %}
+            {% elif ref.target_unstructured %}
+              <code style="white-space: pre-wrap; word-break: break-word;">{{ ref.target_unstructured }}</code>
+              {% if ref.target_openlibrary_work %}
+                <br><a href="https://openlibrary.org/works/{{ ref.target_openlibrary_work }}" style="color: #006400;">openlibrary:{{ ref.target_openlibrary_work }}</a>
+              {% endif %}
+            {% elif ref.target_csl %}
+              {% if ref.target_csl.title %}<b>{{ ref.target_csl.title }}</b>{% endif %}
+              {% if ref.target_csl.author %}
+                <br><small>{{ ref.target_csl.author[:3]|map(attribute='family', default='')|select|join(', ') }}{% if ref.target_csl.author|length > 3 %} et al.{% endif %}</small>
+              {% endif %}
+            {% else %}
+              <i>blank</i>
+            {% endif %}
+          {% else %}
+            {# -- inbound: show source info ---------------------------------- #}
+            {% if ref.source_release_uuid %}
+              <a href="{{ url('fcweb:release_view', ident=ref.source_release_uuid) }}">[citing release]</a>
+            {% elif ref.source_wikipedia_article %}
+              {% set wiki_lang = ref.source_wikipedia_article.split(':')[0] %}
+              {% set wiki_article = ':'.join(ref.source_wikipedia_article.split(':')[1:]) %}
+              <b><a href="https://{{ wiki_lang }}.wikipedia.org/wiki/{{ wiki_article.replace(' ', '_') }}">{{ wiki_article }}</a></b>
+              <span class="label label-grey">wikipedia</span>
+            {% else %}
+              <i>unknown source</i>
+            {% endif %}
+            {% if ref.source_year %}
+              <br><small>{{ ref.source_year }}</small>
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {# -- Pagination --------------------------------------------------------- #}
+  {% if hits.count_found > hits.limit %}
+  <div style="text-align: center; margin-top: 1.5rem; font-size: 0.9rem;">
+    {% if hits.offset > 0 %}
+      <a href="?offset={{ [hits.offset - hits.limit, 0]|max }}">&laquo; Previous</a>
+    {% else %}
+      <span style="color: #999;">&laquo; Previous</span>
+    {% endif %}
+    &nbsp;&nbsp;
+    <i>{{ hits.offset + 1 }}&ndash;{{ hits.offset + hits.count_returned }}
+    of {{ "{:,}".format(hits.count_found) }}</i>
+    &nbsp;&nbsp;
+    {% if hits.offset + hits.limit < hits.count_found %}
+      <a href="?offset={{ hits.offset + hits.limit }}">Next &raquo;</a>
+    {% else %}
+      <span style="color: #999;">Next &raquo;</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+{% elif hits %}
+  <p>No references found.</p>
+{% else %}
+  <p><i>Error fetching references from search index.</i></p>
+{% endif %}
+
+{% endblock %}
+
+{% block entity_sidebar %}{% endblock %}

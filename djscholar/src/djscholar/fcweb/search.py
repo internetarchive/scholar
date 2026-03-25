@@ -497,3 +497,172 @@ def search_container_releases(
         limit=300,
         results=results,
     )
+
+
+# -- Reference graph queries ------------------------------------------------
+
+
+@dataclass
+class RefHits:
+    count_returned: int = 0
+    count_found: int = 0
+    offset: int = 0
+    limit: int = 25
+    query_time_ms: int = 0
+    result_refs: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _clean_ref_key(ref_key: str | None, ref_index: int | None) -> str | None:
+    """Clean up messy ref_key values, matching the original hacks() logic."""
+    if not ref_key:
+        return str(ref_index) if ref_index is not None else None
+    ref_key = ref_key.strip()
+    if ref_key and ref_key[0] in ("/", "_"):
+        ref_key = ref_key[1:]
+    if ref_key.startswith("10.") and "SICI" in ref_key and "-" in ref_key:
+        ref_key = ref_key.split("-")[-1]
+    if ref_key.startswith("10.") and "_" in ref_key:
+        ref_key = ref_key.split("_")[-1]
+    if len(ref_key) > 10 and "#" in ref_key:
+        ref_key = ref_key.split("#")[-1]
+    if len(ref_key) > 10 and "_" in ref_key:
+        ref_key = ref_key.split("_")[-1]
+    return ref_key
+
+
+def _parse_ref_hit(src: dict[str, Any]) -> dict[str, Any]:
+    """Convert an ES fatcat_ref hit into a template-friendly dict."""
+    ref_index = src.get("ref_index")
+    target_ident = src.get("target_release_ident")
+    source_ident = src.get("source_release_ident")
+    return {
+        "ref_index": ref_index,
+        "ref_key": _clean_ref_key(src.get("ref_key"), ref_index),
+        "ref_locator": src.get("ref_locator"),
+        "source_release_ident": source_ident,
+        "source_release_uuid": fcid2uuid(source_ident) if source_ident else None,
+        "source_work_ident": src.get("source_work_ident"),
+        "source_wikipedia_article": src.get("source_wikipedia_article"),
+        "source_year": src.get("source_year"),
+        "target_release_ident": target_ident,
+        "target_release_uuid": fcid2uuid(target_ident) if target_ident else None,
+        "target_work_ident": src.get("target_work_ident"),
+        "target_openlibrary_work": src.get("target_openlibrary_work"),
+        "target_url": src.get("target_url"),
+        "target_unstructured": src.get("target_unstructured"),
+        "target_csl": src.get("target_csl"),
+        "match_provenance": src.get("match_provenance"),
+        "match_status": src.get("match_status"),
+        "match_reason": src.get("match_reason"),
+    }
+
+
+def get_outbound_refs(
+    release_uuid: uuid.UUID,
+    offset: int = 0,
+    limit: int = 100,
+) -> RefHits | None:
+    """Fetch outbound references (this release cites others) from fatcat_ref.
+
+    Sorted by ref_index (sequential order in the paper).
+    """
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    legacy_ident = uuid2fcid(release_uuid)
+    limit = min(limit, 200)
+    offset = max(offset, 0)
+
+    body = {
+        "size": limit,
+        "from": offset,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"source_release_ident": legacy_ident}},
+                ],
+            }
+        },
+        "sort": [{"ref_index": {"order": "asc"}}],
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_REF_INDEX,
+            body=body,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    total_hits = resp["hits"]["total"]
+    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+
+    results = [_parse_ref_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
+    results.sort(key=lambda r: r.get("ref_index") or 0)
+
+    return RefHits(
+        count_returned=len(results),
+        count_found=count_found,
+        offset=offset,
+        limit=limit,
+        query_time_ms=resp.get("took", 0),
+        result_refs=results,
+    )
+
+
+def get_inbound_refs(
+    release_uuid: uuid.UUID,
+    offset: int = 0,
+    limit: int = 25,
+) -> RefHits | None:
+    """Fetch inbound references (other releases citing this one) from fatcat_ref.
+
+    Sorted by source_year descending (newest first).
+    """
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    legacy_ident = uuid2fcid(release_uuid)
+    limit = min(limit, 200)
+    offset = max(offset, 0)
+
+    body = {
+        "size": limit,
+        "from": offset,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"target_release_ident": legacy_ident}},
+                ],
+            }
+        },
+        "sort": [{"source_year": {"order": "desc"}}],
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_REF_INDEX,
+            body=body,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    total_hits = resp["hits"]["total"]
+    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+
+    results = [_parse_ref_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
+
+    return RefHits(
+        count_returned=len(results),
+        count_found=count_found,
+        offset=offset,
+        limit=limit,
+        query_time_ms=resp.get("took", 0),
+        result_refs=results,
+    )

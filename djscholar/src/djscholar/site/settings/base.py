@@ -150,3 +150,4 @@ ES_SNIFF = True
 ES_INDEX = "scholar_fulltext"
 ES_FATCAT_RELEASE_INDEX = "fatcat_release"
 ES_FATCAT_CONTAINER_INDEX = "fatcat_container"
+ES_FATCAT_REF_INDEX = "fatcat_ref"

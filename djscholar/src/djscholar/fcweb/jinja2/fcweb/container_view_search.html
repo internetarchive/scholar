@@ -19,10 +19,13 @@
 
 {% block entity_main %}
 
-<form class="search-form" role="search" action="{{ url('fcweb:container_view_search', ident=ident) }}" method="get">
-  <input type="text" placeholder="Search releases in this container..." name="q" value="{{ q }}" aria-label="search release metadata">
-  <button type="submit">Search</button>
-</form>
+<div style="background: #f0f0f0; border: 1px solid #ddd; border-radius: 4px; padding: 1rem; margin-bottom: 1rem;">
+  <h3 style="margin-top: 0; margin-bottom: 0.75rem;">Search Inside Container</h3>
+  <form class="search-form" role="search" action="{{ url('fcweb:container_view_search', ident=ident) }}" method="get">
+    <input type="text" placeholder="Query..." name="q" value="{{ q }}" aria-label="search release metadata">
+    <button type="submit" style="background: #2980b9;">Search</button>
+  </form>
+</div>
 
 {% if es_error %}
   <div class="msg msg-error" style="margin-top: 1rem;">
@@ -30,7 +33,7 @@
   </div>
 {% elif found %}
   {% if found.results %}
-    <p style="margin-top: 1rem; color: #555; font-size: 0.9rem;">
+    <p style="margin-top: 1rem; margin-bottom: 1.5rem; color: #555; font-size: 0.9rem;">
       <i>Showing
       {% if found.offset == 0 %}first{% else %}{{ found.offset }} &mdash;{% endif %}
       {{ found.offset + found.count_returned }}
@@ -92,13 +95,4 @@
 
 {% endblock %}
 
-{% block entity_sidebar %}
-
-<div class="segment-group">
-  <div class="segment segment-attached" style="font-size: 0.85rem;">
-    <b><a href="/api/fatcat/v2/container/{{ ident }}">API JSON</a></b>
-    <br>See the raw JSON for this record from fatcat's API
-  </div>
-</div>
-
-{% endblock %}
+{% block entity_sidebar %}{% endblock %}

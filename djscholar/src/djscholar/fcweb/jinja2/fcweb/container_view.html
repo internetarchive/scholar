@@ -92,6 +92,19 @@
   </div>
   {% endif %}
 
+  {# -- Directory listings ------------------------------------------------- #}
+  {% if in_doaj or in_road %}
+  <div class="segment segment-attached">
+    <b>Directory Listings</b><br>
+    {% if in_doaj %}
+      <span style="color: #21ba45;">&#x2714;</span> In <a href="https://doaj.org/toc/{{ container.issnl }}">DOAJ</a><br>
+    {% endif %}
+    {% if in_road %}
+      <span style="color: #21ba45;">&#x2714;</span> In <a href="http://road.issn.org/issn/{{ container.issnl }}">ISSN ROAD</a><br>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {# -- Preservation summary ----------------------------------------------- #}
   {% if stats and stats.total >= 1 %}
   <div class="segment segment-attached">

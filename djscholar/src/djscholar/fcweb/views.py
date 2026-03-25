@@ -202,9 +202,11 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
     example_releases = fc_search.get_container_example_releases(container_uuid)
 
     extra = container.extra or {}
+    in_doaj = bool(extra.get("doaj", {}).get("as_of"))
+    in_road = bool(extra.get("road", {}).get("as_of"))
     is_oa = bool(
-        extra.get("doaj", {}).get("as_of")
-        or extra.get("road", {}).get("as_of")
+        in_doaj
+        or in_road
         or extra.get("szczepanski", {}).get("as_of")
         or (extra.get("default_license") or "").startswith("CC-")
     )
@@ -215,6 +217,8 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
         "container": container,
         "stats": stats,
         "is_oa": is_oa,
+        "in_doaj": in_doaj,
+        "in_road": in_road,
         "example_releases": example_releases,
         "ident": str(container_uuid),
     })

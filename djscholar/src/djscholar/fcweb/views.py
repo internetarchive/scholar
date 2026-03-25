@@ -235,7 +235,24 @@ def container_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": str(container_uuid),
     })
 container_view_browse = _stub
-container_view_coverage = _stub
+def container_view_coverage(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        container_uuid = resolve_ident(ident)
+        container = container_svc.get(container_uuid)
+    except EntityNotFound:
+        raise Http404(f"container not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    stats = fc_search.get_container_stats(container_uuid)
+    type_preservation = fc_search.get_preservation_by_type(container_uuid)
+
+    return _render(request, "fcweb/container_view_coverage.html", {
+        "container": container,
+        "stats": stats,
+        "type_preservation": type_preservation,
+        "ident": str(container_uuid),
+    })
 
 
 def container_view_search(request: HttpRequest, ident: str) -> HttpResponse:

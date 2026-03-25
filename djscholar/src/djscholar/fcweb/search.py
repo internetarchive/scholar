@@ -248,3 +248,63 @@ def search_releases(
         query_time_ms=resp.get("took", 0),
         results=results,
     )
+
+
+def get_preservation_by_type(
+    container_uuid: uuid.UUID,
+) -> list[dict[str, Any]] | None:
+    """Fetch preservation coverage broken down by release type for a container.
+
+    Returns a list of dicts sorted by total, each with keys:
+    release_type, bright, dark, none, total.
+    Returns None on failure.
+    """
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    legacy_ident = uuid2fcid(container_uuid)
+
+    body = {
+        "size": 0,
+        "query": {"term": {"container_id": legacy_ident}},
+        "aggs": {
+            "type_preservation": {
+                "composite": {
+                    "size": 1500,
+                    "sources": [
+                        {"release_type": {"terms": {"field": "release_type"}}},
+                        {"preservation": {"terms": {"field": "preservation"}}},
+                    ],
+                }
+            }
+        },
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    buckets = resp["aggregations"]["type_preservation"]["buckets"]
+    type_dicts: dict[str, dict[str, Any]] = {}
+    for row in buckets:
+        rt = row["key"]["release_type"]
+        if rt not in type_dicts:
+            type_dicts[rt] = {
+                "release_type": rt,
+                "bright": 0, "dark": 0, "shadows_only": 0, "none": 0, "total": 0,
+            }
+        type_dicts[rt][row["key"]["preservation"]] = int(row["doc_count"])
+
+    for td in type_dicts.values():
+        td["none"] += td.pop("shadows_only", 0)
+        td["total"] = td["bright"] + td["dark"] + td["none"]
+
+    return sorted(type_dicts.values(), key=lambda x: x["total"], reverse=True)

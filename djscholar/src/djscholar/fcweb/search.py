@@ -408,18 +408,24 @@ def search_container_releases(
     legacy_ident = uuid2fcid(container_uuid)
 
     # build query string from filters
+    #
+    # Three drill-down levels:
+    #   year only          → all releases in that year (no volume/issue filter)
+    #   year + volume      → releases in that volume (issue unconstrained)
+    #   year + volume=""   → releases with NO volume value (issue="" → no issue)
+    #   year + vol + issue → releases in that specific issue
     parts = [f"year:{year}"]
-    if volume is not None and volume != "":
-        parts.append(f'volume:"{volume}"')
-    else:
-        parts.append("!volume:*")
-    if issue is not None and issue != "":
-        parts.append(f'issue:"{issue}"')
-    elif volume is not None:
-        # volume specified but no issue — don't filter on issue
-        pass
-    else:
-        parts.append("!issue:*")
+    if volume is not None:
+        if volume != "":
+            parts.append(f'volume:"{volume}"')
+        else:
+            parts.append("!volume:*")
+        if issue is not None and issue != "":
+            parts.append(f'issue:"{issue}"')
+        elif issue is not None:
+            # issue="" explicitly passed → no issue value
+            parts.append("!issue:*")
+        # else: issue not passed at all → don't filter on issue
 
     query_string = " ".join(parts)
 

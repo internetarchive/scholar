@@ -238,7 +238,21 @@ def creator_view(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": ident,
     })
 
-creator_view_metadata = _stub
+def creator_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        creator_uuid = resolve_ident(ident)
+        creator = creator_svc.get(creator_uuid)
+    except EntityNotFound:
+        raise Http404(f"creator not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    return _render(request, "fcweb/creator_view_metadata.html", {
+        "creator": creator,
+        "metadata": _entity_schema_metadata(creator),
+        "extra": creator.extra,
+        "ident": ident,
+    })
 
 file_view = _stub
 file_view_metadata = _stub
@@ -266,7 +280,22 @@ def work_view(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": ident,
     })
 
-work_view_metadata = _stub
+
+def work_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        work_uuid = resolve_ident(ident)
+        work = work_svc.get(work_uuid)
+    except EntityNotFound:
+        raise Http404(f"work not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    return _render(request, "fcweb/work_view_metadata.html", {
+        "work": work,
+        "metadata": _entity_schema_metadata(work),
+        "extra": work.extra,
+        "ident": ident,
+    })
 
 # -- Underscore redirects (legacy URLs) --------------------------------------
 # TODO remember what these were for

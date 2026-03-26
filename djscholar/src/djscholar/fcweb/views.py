@@ -186,7 +186,25 @@ def release_view_contribs(request: HttpRequest, ident: str) -> HttpResponse:
     })
 
 
-release_view_references = _stub
+def release_view_references(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        release_uuid = resolve_ident(ident)
+        release = release_svc.get(release_uuid)
+    except EntityNotFound:
+        raise Http404(f"release not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    authors = release_svc.get_authors(release_uuid)
+    contribs = list(release_svc.get_contribs(release_uuid))
+
+    return _render(request, "fcweb/release_view_references.html", {
+        "release": release,
+        "authors": authors,
+        "contribs": contribs,
+        "ident": str(release_uuid),
+    })
+
 release_save = _stub
 
 
@@ -238,6 +256,8 @@ def release_view_refs_outbound(request: HttpRequest, ident: str) -> HttpResponse
     hits = fc_search.get_outbound_refs(release_uuid, offset=offset)
     _enrich_refs(hits, "out")
 
+    legacy_ref_count = len(release.refs) if release.refs else 0
+
     return _render(request, "fcweb/release_view_refs.html", {
         "release": release,
         "authors": authors,
@@ -245,6 +265,7 @@ def release_view_refs_outbound(request: HttpRequest, ident: str) -> HttpResponse
         "ident": str(release_uuid),
         "hits": hits,
         "direction": "out",
+        "legacy_ref_count": legacy_ref_count,
     })
 
 

@@ -154,7 +154,11 @@
   {% endif %}
 
 {% elif hits %}
-  <p>No references found.</p>
+  {% if direction == "out" and legacy_ref_count %}
+    <p>No fuzzy references found, but there are <a href="{{ url('fcweb:release_view_references', ident=ident) }}">{{ legacy_ref_count }} legacy references</a>.</p>
+  {% else %}
+    <p>No references found.</p>
+  {% endif %}
 {% else %}
   <p><i>Error fetching references from search index.</i></p>
 {% endif %}

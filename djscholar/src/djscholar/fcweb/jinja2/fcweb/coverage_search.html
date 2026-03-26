@@ -1,0 +1,258 @@
+{% extends "fcweb/base.html" %}
+
+{% block title %}
+{% if q %}Search: {{ q }}{% else %}Preservation Coverage by Query{% endif %}
+{% endblock %}
+
+{% block styles %}
+  .coverage-hero {
+    background: #eee;
+    padding: 2rem 0 1.5rem;
+  }
+  .coverage-hero h1 {
+    margin-top: 3.5rem;
+  }
+  .coverage-hero .search-form {
+    margin-top: 1rem;
+  }
+  .coverage-checkbox {
+    float: right;
+    margin: 1em 0;
+    font-size: 0.9rem;
+  }
+  .coverage-links {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    color: #555;
+  }
+  .stat-big {
+    text-align: center;
+    margin: 2rem 0 1rem;
+  }
+  .stat-big .value {
+    font-size: 2.5rem;
+    font-weight: bold;
+  }
+  .stat-big .label {
+    font-size: 1rem;
+    color: #555;
+  }
+  .histogram {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 200px;
+    margin: 1rem 0;
+    border-bottom: 1px solid #ddd;
+  }
+  .histogram .bar {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-width: 2px;
+  }
+  .histogram .bar span {
+    display: block;
+  }
+  .histogram-labels {
+    display: flex;
+    gap: 1px;
+    font-size: 0.65rem;
+    color: #777;
+  }
+  .histogram-labels span {
+    flex: 1;
+    text-align: center;
+    min-width: 2px;
+    overflow: hidden;
+  }
+{% endblock %}
+
+{% block fullmain %}
+<div class="coverage-hero">
+  <div class="container-text">
+    <h1>Preservation Coverage by Query</h1>
+    <form class="search-form" role="search" action="{{ url('fcweb:coverage_search') }}" method="get">
+      <input type="text" placeholder="Query..." name="q" value="{{ q }}" aria-label="visualize preservation coverage">
+      <button>Search</button>
+      {% if recent %}
+        <input type="hidden" name="recent" value="true">
+      {% endif %}
+    </form>
+    <div class="coverage-checkbox">
+      <label>
+        <input type="checkbox" name="recent" value="true"
+          {% if recent %}checked{% endif %}
+          onchange="
+            var url = new URL(window.location);
+            if (this.checked) { url.searchParams.set('recent', 'true'); }
+            else { url.searchParams.delete('recent'); }
+            window.location = url;
+          ">
+        Recent Publications Only
+      </label>
+    </div>
+    <div class="coverage-links">
+      Can also search for
+      <b><a href="{{ url('fcweb:release_search') }}?q={{ q }}">releases</a></b> (eg, individual papers)
+      or <b><a href="{{ url('fcweb:container_search') }}?q={{ q }}">containers</a></b> (eg, journals).
+    </div>
+  </div>
+</div>
+
+<main>
+  <div class="container-text">
+
+{% if es_error %}
+  <div class="msg msg-error">
+    <b>Elasticsearch error:</b> {{ es_error }}
+  </div>
+{% endif %}
+
+{% if coverage_stats %}
+<div class="stat-big">
+  <div class="value">{{ "{:,}".format(coverage_stats.total) }}</div>
+  <div class="label">Known Releases</div>
+</div>
+
+{% if coverage_stats.total >= 1 %}
+  {% set p = coverage_stats.preservation %}
+  <div class="preservation-bar" style="height: 2rem; font-size: 0.8rem; margin-bottom: 0.5rem;">
+    <span style="width: {{ (p.bright / p.total * 100)|round(1) }}%; background: #21ba45;"
+          title="bright: {{ "{:,}".format(p.bright) }}">
+      {% if p.bright / p.total > 0.05 %}{{ (p.bright / p.total * 100)|round(1) }}%{% endif %}
+    </span>
+    <span style="width: {{ (p.dark / p.total * 100)|round(1) }}%; background: #006400;"
+          title="dark: {{ "{:,}".format(p.dark) }}">
+      {% if p.dark / p.total > 0.05 %}{{ (p.dark / p.total * 100)|round(1) }}%{% endif %}
+    </span>
+    <span style="width: {{ (p.none / p.total * 100)|round(1) }}%; background: #db2828;"
+          title="none: {{ "{:,}".format(p.none) }}">
+      {% if p.none / p.total > 0.05 %}{{ (p.none / p.total * 100)|round(1) }}%{% endif %}
+    </span>
+  </div>
+
+  <table style="margin-bottom: 2rem;">
+    <tbody>
+      <tr>
+        <td style="width: 1em; background: #21ba45;"></td>
+        <td style="text-align: right;">{{ "{:,}".format(p.bright) }}</td>
+        <td>({{ (p.bright / p.total * 100)|round(1) }}%)</td>
+        <td>preserved and accessible (bright)</td>
+      </tr>
+      <tr>
+        <td style="background: #006400;"></td>
+        <td style="text-align: right;">{{ "{:,}".format(p.dark) }}</td>
+        <td>({{ (p.dark / p.total * 100)|round(1) }}%)</td>
+        <td>preserved, inaccessible (dark)</td>
+      </tr>
+      <tr>
+        <td style="background: #db2828;"></td>
+        <td style="text-align: right;">{{ "{:,}".format(p.none) }}</td>
+        <td>({{ (p.none / p.total * 100)|round(1) }}%)</td>
+        <td>no known preservation</td>
+      </tr>
+    </tbody>
+  </table>
+{% endif %}
+{% endif %}
+
+{# -- Year histogram -------------------------------------------------------- #}
+{% if year_histogram %}
+  <h2>Preservation Coverage by Year</h2>
+  {% set max_total = namespace(val=0) %}
+  {% for row in year_histogram %}
+    {% set row_total = row.bright + row.dark + row.none %}
+    {% if row_total > max_total.val %}
+      {% set max_total.val = row_total %}
+    {% endif %}
+  {% endfor %}
+
+  {% if max_total.val > 0 %}
+  <div class="histogram">
+    {% for row in year_histogram %}
+      {% set row_total = row.bright + row.dark + row.none %}
+      {% set pct = (row_total / max_total.val * 100)|round(1) %}
+      <div class="bar" title="{{ row.year }}: {{ "{:,}".format(row_total) }} (bright: {{ row.bright }}, dark: {{ row.dark }}, none: {{ row.none }})">
+        <span style="height: {{ (row.none / max_total.val * 100)|round(1) }}%; background: #db2828;"></span>
+        <span style="height: {{ (row.dark / max_total.val * 100)|round(1) }}%; background: #006400;"></span>
+        <span style="height: {{ (row.bright / max_total.val * 100)|round(1) }}%; background: #21ba45;"></span>
+      </div>
+    {% endfor %}
+  </div>
+  <div class="histogram-labels">
+    {% for row in year_histogram %}
+      <span>{% if loop.first or loop.last or loop.index0 % (year_histogram|length // 8 + 1) == 0 %}{{ row.year }}{% endif %}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endif %}
+
+{# -- Date histogram -------------------------------------------------------- #}
+{% if date_histogram %}
+  <h2>Preservation Coverage by Date</h2>
+  {% set max_total = namespace(val=0) %}
+  {% for row in date_histogram %}
+    {% set row_total = row.bright + row.dark + row.none %}
+    {% if row_total > max_total.val %}
+      {% set max_total.val = row_total %}
+    {% endif %}
+  {% endfor %}
+
+  {% if max_total.val > 0 %}
+  <div class="histogram">
+    {% for row in date_histogram %}
+      {% set row_total = row.bright + row.dark + row.none %}
+      <div class="bar" title="{{ row.date }}: {{ "{:,}".format(row_total) }} (bright: {{ row.bright }}, dark: {{ row.dark }}, none: {{ row.none }})">
+        <span style="height: {{ (row.none / max_total.val * 100)|round(1) }}%; background: #db2828;"></span>
+        <span style="height: {{ (row.dark / max_total.val * 100)|round(1) }}%; background: #006400;"></span>
+        <span style="height: {{ (row.bright / max_total.val * 100)|round(1) }}%; background: #21ba45;"></span>
+      </div>
+    {% endfor %}
+  </div>
+  <div class="histogram-labels">
+    {% for row in date_histogram %}
+      <span>{% if loop.first or loop.last or loop.index0 % 10 == 0 %}{{ row.date[5:] }}{% endif %}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endif %}
+
+{# -- Preservation by type -------------------------------------------------- #}
+{% if coverage_type_preservation %}
+  <h2 style="margin-top: 2rem;">Preservation Coverage by Release Type</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Release Type</th>
+        <th style="text-align: right;">Total Count</th>
+        <th style="width: 50%;">Coverage</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in coverage_type_preservation %}
+      <tr>
+        <td>{% if row.release_type == "_unknown" %}<i>unknown</i>{% else %}<code>{{ row.release_type }}</code>{% endif %}</td>
+        <td style="text-align: right;">{{ "{:,}".format(row.total) }}</td>
+        <td>
+          {% if row.total > 0 %}
+          <div class="preservation-bar">
+            <span style="width: {{ (row.bright / row.total * 100)|round(1) }}%; background: #21ba45;"
+                  title="bright: {{ row.bright }}"></span>
+            <span style="width: {{ (row.dark / row.total * 100)|round(1) }}%; background: #006400;"
+                  title="dark: {{ row.dark }}"></span>
+            <span style="width: {{ (row.none / row.total * 100)|round(1) }}%; background: #db2828;"
+                  title="none: {{ row.none }}"></span>
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+
+  </div>
+</main>
+{% endblock %}

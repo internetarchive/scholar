@@ -1,5 +1,6 @@
 """Elasticsearch queries for the fatcat web UI."""
 
+import datetime
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -666,3 +667,265 @@ def get_inbound_refs(
         query_time_ms=resp.get("took", 0),
         result_refs=results,
     )
+
+
+# -- Coverage search queries -------------------------------------------------
+
+
+def _coverage_base_query(q: str, recent: bool = False) -> dict:
+    """Build the base ES query for coverage searches."""
+    query = {
+        "query_string": {
+            "query": q,
+            "default_operator": "AND",
+            "analyze_wildcard": True,
+            "allow_leading_wildcard": False,
+            "lenient": True,
+            "fields": ["biblio"],
+        }
+    }
+    if recent:
+        today = datetime.date.today()
+        start = str(today - datetime.timedelta(days=60))
+        end = str(today + datetime.timedelta(days=1))
+        return {
+            "bool": {
+                "must": query,
+                "filter": [{"range": {"release_date": {"gte": start, "lte": end}}}],
+            }
+        }
+    return query
+
+
+def get_coverage_stats(q: str, recent: bool = False) -> dict[str, Any] | None:
+    """Overall coverage stats for a query: total + preservation breakdown."""
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    body = {
+        "size": 0,
+        "query": _coverage_base_query(q, recent),
+        "aggs": {
+            "preservation": {
+                "terms": {"field": "preservation", "missing": "_unknown"},
+            },
+        },
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    total_hits = resp["hits"]["total"]
+    total = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+
+    preservation = {"bright": 0, "dark": 0, "shadows_only": 0, "none": 0, "total": total}
+    for bucket in resp["aggregations"]["preservation"]["buckets"]:
+        preservation[bucket["key"]] = bucket["doc_count"]
+    preservation["none"] += preservation.pop("shadows_only", 0)
+
+    return {
+        "total": total,
+        "preservation": preservation,
+    }
+
+
+def get_coverage_preservation_by_type(
+    q: str, recent: bool = False,
+) -> list[dict[str, Any]] | None:
+    """Preservation coverage by release type for a query."""
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    body = {
+        "size": 0,
+        "query": _coverage_base_query(q, recent),
+        "aggs": {
+            "type_preservation": {
+                "composite": {
+                    "size": 1500,
+                    "sources": [
+                        {"release_type": {"terms": {"field": "release_type"}}},
+                        {"preservation": {"terms": {"field": "preservation"}}},
+                    ],
+                }
+            }
+        },
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    buckets = resp["aggregations"]["type_preservation"]["buckets"]
+    type_dicts: dict[str, dict[str, Any]] = {}
+    for row in buckets:
+        rt = row["key"]["release_type"]
+        if rt not in type_dicts:
+            type_dicts[rt] = {
+                "release_type": rt,
+                "bright": 0, "dark": 0, "shadows_only": 0, "none": 0, "total": 0,
+            }
+        type_dicts[rt][row["key"]["preservation"]] = int(row["doc_count"])
+
+    for td in type_dicts.values():
+        td["none"] += td.pop("shadows_only", 0)
+        td["total"] = td["bright"] + td["dark"] + td["none"]
+
+    return sorted(type_dicts.values(), key=lambda x: x["total"], reverse=True)
+
+
+def get_coverage_preservation_by_year(q: str) -> list[dict[str, Any]] | None:
+    """Year-by-year preservation histogram for a query (last 250 years)."""
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    this_year = datetime.date.today().year
+
+    body = {
+        "size": 0,
+        "query": {
+            "bool": {
+                "must": {
+                    "query_string": {
+                        "query": q,
+                        "default_operator": "AND",
+                        "analyze_wildcard": True,
+                        "allow_leading_wildcard": False,
+                        "lenient": True,
+                        "fields": ["biblio"],
+                    }
+                },
+                "filter": [
+                    {"range": {"release_year": {"gte": this_year - 249, "lte": this_year}}},
+                ],
+            }
+        },
+        "aggs": {
+            "year_preservation": {
+                "composite": {
+                    "size": 1500,
+                    "sources": [
+                        {"year": {"histogram": {"field": "release_year", "interval": 1}}},
+                        {"preservation": {"terms": {"field": "preservation"}}},
+                    ],
+                }
+            }
+        },
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    buckets = resp["aggregations"]["year_preservation"]["buckets"]
+    year_dicts: dict[int, dict[str, Any]] = {}
+
+    year_nums = {int(h["key"]["year"]) for h in buckets}
+    if year_nums:
+        for num in range(min(year_nums), max(year_nums) + 1):
+            year_dicts[num] = {"year": num, "bright": 0, "dark": 0, "shadows_only": 0, "none": 0}
+        for row in buckets:
+            year_dicts[int(row["key"]["year"])][row["key"]["preservation"]] = int(row["doc_count"])
+
+    for yd in year_dicts.values():
+        yd["none"] += yd.pop("shadows_only", 0)
+
+    return sorted(year_dicts.values(), key=lambda x: x["year"])
+
+
+def get_coverage_preservation_by_date(q: str) -> list[dict[str, Any]] | None:
+    """Day-by-day preservation histogram for recent publications (last 60 days)."""
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    today = datetime.date.today()
+    start_date = today - datetime.timedelta(days=60)
+    end_date = today + datetime.timedelta(days=1)
+
+    body = {
+        "size": 0,
+        "query": {
+            "bool": {
+                "must": {
+                    "query_string": {
+                        "query": q,
+                        "default_operator": "AND",
+                        "analyze_wildcard": True,
+                        "allow_leading_wildcard": False,
+                        "lenient": True,
+                        "fields": ["biblio"],
+                    }
+                },
+                "filter": [
+                    {"range": {"release_date": {"gte": str(start_date), "lte": str(end_date)}}},
+                ],
+            }
+        },
+        "aggs": {
+            "date_preservation": {
+                "composite": {
+                    "size": 1500,
+                    "sources": [
+                        {"date": {"histogram": {"field": "release_date", "interval": 1}}},
+                        {"preservation": {"terms": {"field": "preservation"}}},
+                    ],
+                }
+            }
+        },
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    buckets = resp["aggregations"]["date_preservation"]["buckets"]
+    date_dicts: dict[str, dict[str, Any]] = {}
+
+    # pre-fill every date in the range
+    d = start_date
+    while d <= end_date:
+        date_dicts[str(d)] = {"date": str(d), "bright": 0, "dark": 0, "shadows_only": 0, "none": 0}
+        d += datetime.timedelta(days=1)
+
+    for row in buckets:
+        date_key = row["key"]["date"][:10]
+        if date_key in date_dicts:
+            date_dicts[date_key][row["key"]["preservation"]] = int(row["doc_count"])
+
+    for dd in date_dicts.values():
+        dd["none"] += dd.pop("shadows_only", 0)
+
+    return sorted(date_dicts.values(), key=lambda x: x["date"])

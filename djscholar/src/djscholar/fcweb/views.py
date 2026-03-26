@@ -808,7 +808,46 @@ container_ident_preservation_by_type = _stub
 
 # -- Coverage ----------------------------------------------------------------
 
-coverage_search = _stub
+
+def coverage_search(request: HttpRequest) -> HttpResponse:
+    q = request.GET.get("q")
+    recent = bool(request.GET.get("recent"))
+
+    if not q:
+        return _render(request, "fcweb/coverage_search.html", {
+            "q": "",
+            "recent": recent,
+        })
+
+    es_error = None
+    coverage_stats = None
+    coverage_type_preservation = None
+    year_histogram = None
+    date_histogram = None
+
+    try:
+        coverage_stats = fc_search.get_coverage_stats(q, recent=recent)
+    except Exception as e:
+        es_error = str(e)
+
+    if coverage_stats and coverage_stats["total"] > 1:
+        coverage_type_preservation = fc_search.get_coverage_preservation_by_type(
+            q, recent=recent,
+        )
+        if recent:
+            date_histogram = fc_search.get_coverage_preservation_by_date(q)
+        else:
+            year_histogram = fc_search.get_coverage_preservation_by_year(q)
+
+    return _render(request, "fcweb/coverage_search.html", {
+        "q": q,
+        "recent": recent,
+        "es_error": es_error,
+        "coverage_stats": coverage_stats,
+        "coverage_type_preservation": coverage_type_preservation,
+        "year_histogram": year_histogram,
+        "date_histogram": date_histogram,
+    })
 
 # -- Static pages ------------------------------------------------------------
 

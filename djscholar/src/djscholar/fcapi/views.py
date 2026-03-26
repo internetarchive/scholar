@@ -2,7 +2,6 @@ import datetime
 from http import HTTPStatus
 from uuid import UUID
 from typing import Annotated, Literal
-from zoneinfo import ZoneInfo
 
 import pydantic
 from pydantic import AfterValidator
@@ -22,6 +21,7 @@ from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import releases as release_svc
 from djscholar.fcapi.services import webcaptures as webcapture_svc
 from djscholar.fcapi.services import works as work_svc
+from djscholar.fcapi.services import changelog as changelog_svc
 
 COMMON_ENTITY_FIELDS = ["id", "created", "updated", "extra", "source",
                         "hidden_reason", "hidden_when"]
@@ -846,130 +846,49 @@ class ChangelogQuery(pydantic.BaseModel):
         return value
 
 
-def changelog(cq: ChangelogQuery, model: m.Entity, es: EntitySchema) -> list[EntitySchema]:
-    start_dt = datetime.datetime.combine(
-            cq.start,
-            datetime.time(tzinfo=ZoneInfo("UTC")))
+_CHANGELOG_SCHEMAS = {
+    "releases": ReleaseSchema,
+    "creators": CreatorSchema,
+    "containers": ContainerSchema,
+    "works": WorkSchema,
+    "files": FileSchema,
+    "webcaptures": WebcaptureSchema,
+}
 
-    return [es.from_orm(r)
-            for r in model.objects.filter(
-                updated__range=[
-                    start_dt-cq.window,
-                    start_dt+datetime.timedelta(days=1)]).order_by("-updated")]
+_CHANGELOG_DOCSTRING = """\
+Get a list of {entity_type} sorted by updated date. By default, returns {entity_type}
+updated on the current day. the start argument moves the query's window to
+the specified day (eg, 2025-04-01). The window argument specifices the
+number of days to query updates for in the format "1d" and is subtracted
+from the start day.
 
+For example, to see {entity_type} from the month of April: ?start=2025-05-01&window=30d
 
-@v2api.get("/changelog/releases", response=list[ReleaseSchema])
-@paginate
-def release_changelog(request, cq: Query[ChangelogQuery]) -> list[ReleaseSchema]:
-    """
-    Get a list of releases sorted by updated date. By default, returns releases
-    updated on the current day. the start argument moves the query's window to
-    the specified day (eg, 2025-04-01). The window argument specifices the
-    number of days to query updates for in the format "1d" and is subtracted
-    from the start day.
+The maximum value for window is 30d.
 
-    For example, to see releases from the month of April: ?start=2025-05-01&window=30d
-
-    The maximum value for window is 30d.
-
-    NB: all date handling assumes UTC.
-    """
-    return changelog(cq, m.Release, ReleaseSchema)
+NB: all date handling assumes UTC.
+"""
 
 
-@v2api.get("/changelog/creators", response=list[CreatorSchema])
-@paginate
-def creator_changelog(request, cq: Query[ChangelogQuery]) -> list[CreatorSchema]:
-    """
-    Get a list of creators sorted by updated date. By default, returns creators
-    updated on the current day. the start argument moves the query's window to
-    the specified day (eg, 2025-04-01). The window argument specifices the
-    number of days to query updates for in the format "1d" and is subtracted
-    from the start day.
+def _changelog_view(entity_type: str):
+    schema = _CHANGELOG_SCHEMAS[entity_type]
 
-    For example, to see creators from the month of April: ?start=2025-05-01&window=30d
+    @paginate
+    def handler(request, cq: Query[ChangelogQuery]):
+        entries = changelog_svc.recent(
+            entity_type, date=cq.start, window=cq.window,
+        )
+        return [schema.from_orm(e) for e in entries]
 
-    The maximum value for window is 30d.
-
-    NB: all date handling assumes UTC.
-    """
-    return changelog(cq, m.Creator, CreatorSchema)
+    handler.__name__ = f"{entity_type}_changelog"
+    handler.__doc__ = _CHANGELOG_DOCSTRING.format(entity_type=entity_type)
+    return handler
 
 
-@v2api.get("/changelog/containers", response=list[ContainerSchema])
-@paginate
-def container_changelog(request, cq: Query[ChangelogQuery]) -> list[ContainerSchema]:
-    """
-    Get a list of containers sorted by updated date. By default, returns containers
-    updated on the current day. the start argument moves the query's window to
-    the specified day (eg, 2025-04-01). The window argument specifices the
-    number of days to query updates for in the format "1d" and is subtracted
-    from the start day.
-
-    For example, to see containers from the month of April: ?start=2025-05-01&window=30d
-
-    The maximum value for window is 30d.
-
-    NB: all date handling assumes UTC.
-    """
-    return changelog(cq, m.Container, ContainerSchema)
-
-
-@v2api.get("/changelog/works", response=list[WorkSchema])
-@paginate
-def work_changelog(request, cq: Query[ChangelogQuery]) -> list[WorkSchema]:
-    """
-    Get a list of works sorted by updated date. By default, returns works
-    updated on the current day. the start argument moves the query's window to
-    the specified day (eg, 2025-04-01). The window argument specifices the
-    number of days to query updates for in the format "1d" and is subtracted
-    from the start day.
-
-    For example, to see works from the month of April: ?start=2025-05-01&window=30d
-
-    The maximum value for window is 30d.
-
-    NB: all date handling assumes UTC.
-    """
-    return changelog(cq, m.Work, WorkSchema)
-
-
-@v2api.get("/changelog/files", response=list[FileSchema])
-@paginate
-def file_changelog(request, cq: Query[ChangelogQuery]) -> list[FileSchema]:
-    """
-    Get a list of files sorted by updated date. By default, returns files
-    updated on the current day. the start argument moves the query's window to
-    the specified day (eg, 2025-04-01). The window argument specifices the
-    number of days to query updates for in the format "1d" and is subtracted
-    from the start day.
-
-    For example, to see files from the month of April: ?start=2025-05-01&window=30d
-
-    The maximum value for window is 30d.
-
-    NB: all date handling assumes UTC.
-    """
-    return changelog(cq, m.File, FileSchema)
-
-
-@v2api.get("/changelog/webcaptures", response=list[WebcaptureSchema])
-@paginate
-def webcapture_changelog(request, cq: Query[ChangelogQuery]) -> list[WebcaptureSchema]:
-    """
-    Get a list of webcaptures sorted by updated date. By default, returns webcaptures
-    updated on the current day. the start argument moves the query's window to
-    the specified day (eg, 2025-04-01). The window argument specifices the
-    number of days to query updates for in the format "1d" and is subtracted
-    from the start day.
-
-    For example, to see webcaptures from the month of April: ?start=2025-05-01&window=30d
-
-    The maximum value for window is 30d.
-
-    NB: all date handling assumes UTC.
-    """
-    return changelog(cq, m.Webcapture, WebcaptureSchema)
+for _et, _schema in _CHANGELOG_SCHEMAS.items():
+    v2api.get(f"/changelog/{_et}", response=list[_schema])(
+        _changelog_view(_et)
+    )
 
 
 @v2api.exception_handler(Http404)

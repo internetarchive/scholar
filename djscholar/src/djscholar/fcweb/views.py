@@ -4,6 +4,8 @@ Each view corresponds to a route from fatcat-scholar's src/scholar/fatcat/web.py
 They will be implemented incrementally.
 """
 
+import datetime
+
 from django.db import models
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, Http404
 from django.template import engines
@@ -18,6 +20,7 @@ from djscholar.fcapi.services import filesets as fileset_svc
 from djscholar.fcapi.services import releases as release_svc
 from djscholar.fcapi.services import webcaptures as webcapture_svc
 from djscholar.fcapi.services import works as work_svc
+from djscholar.fcapi.services import changelog as changelog_svc
 
 
 def _get_jinja_env():
@@ -748,7 +751,53 @@ reference_match = _stub
 
 # -- Stats / changelog -------------------------------------------------------
 
-changelog_view = _stub
+_CHANGELOG_ENTITY_LABELS = {
+    "releases": "Releases",
+    "containers": "Containers",
+    "creators": "Creators",
+    "files": "Files",
+    "works": "Works",
+    "filesets": "Filesets",
+    "webcaptures": "Webcaptures",
+}
+
+_CHANGELOG_VIEW_NAMES = {
+    "releases": "release_view",
+    "containers": "container_view",
+    "creators": "creator_view",
+    "files": "file_view",
+    "works": "work_view",
+    "filesets": "fileset_view",
+    "webcaptures": "webcapture_view",
+}
+
+
+def changelog_view(request: HttpRequest) -> HttpResponse:
+    entity_type = request.GET.get("entity_type", "releases")
+    if entity_type not in _CHANGELOG_ENTITY_LABELS:
+        entity_type = "releases"
+
+    date_str = request.GET.get("date")
+    if date_str:
+        try:
+            start_date = datetime.date.fromisoformat(date_str)
+        except ValueError:
+            start_date = datetime.date.today()
+    else:
+        start_date = datetime.date.today()
+
+    entries = changelog_svc.recent(entity_type, start_date)
+
+    return _render(request, "fcweb/changelog.html", {
+        "entity_type": entity_type,
+        "entity_labels": _CHANGELOG_ENTITY_LABELS,
+        "view_name": _CHANGELOG_VIEW_NAMES[entity_type],
+        "date": start_date,
+        "prev_date": start_date - datetime.timedelta(days=1),
+        "next_date": start_date + datetime.timedelta(days=1),
+        "today": datetime.date.today(),
+        "entries": entries,
+    })
 changelog_entry_view = _stub
 stats_page = _stub
 stats_json = _stub

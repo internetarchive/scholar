@@ -1,0 +1,109 @@
+{% extends "fcweb/base.html" %}
+
+{% block title %}Changelog — {{ entity_labels[entity_type] }} — {{ date }}{% endblock %}
+
+{% block styles %}
+  .changelog-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border-bottom: 2px solid #ddd;
+    margin-bottom: 1rem;
+  }
+  .changelog-tabs a {
+    padding: 0.5rem 1rem;
+    border: 1px solid transparent;
+    border-bottom: none;
+    margin-bottom: -2px;
+    color: #555;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+  .changelog-tabs a:hover {
+    color: #1a5276;
+  }
+  .changelog-tabs a.active {
+    border-color: #ddd;
+    border-bottom-color: #fff;
+    color: #333;
+    font-weight: bold;
+    background: #fff;
+  }
+  .date-nav {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .date-nav .current-date {
+    font-size: 1.2rem;
+    font-weight: bold;
+  }
+{% endblock %}
+
+{% block body %}
+<h1>Changelog</h1>
+
+<div class="date-nav">
+  <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ prev_date }}">&laquo; {{ prev_date }}</a>
+  <span class="current-date">{{ date }}</span>
+  {% if next_date <= today %}
+    <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ next_date }}">{{ next_date }} &raquo;</a>
+  {% else %}
+    <span style="color: #999;">{{ next_date }} &raquo;</span>
+  {% endif %}
+</div>
+
+<div class="changelog-tabs">
+  {% for key, label in entity_labels.items() %}
+    <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ key }}&date={{ date }}"{% if key == entity_type %} class="active"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</div>
+
+{% if entries %}
+<table>
+  <thead>
+    <tr>
+      <th>Entity</th>
+      <th style="width: 10em;">Updated</th>
+      <th style="width: 10em;">Created</th>
+      <th style="width: 6em;">Source</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for entry in entries %}
+    <tr>
+      <td>
+        <a href="{{ url('fcweb:' ~ view_name, ident=entry.id) }}">
+          {% if entry.title is defined and entry.title %}
+            {{ entry.title }}
+          {% elif entry.display_name is defined and entry.display_name %}
+            {{ entry.display_name }}
+          {% elif entry.name is defined and entry.name %}
+            {{ entry.name }}
+          {% elif entry.original_url is defined and entry.original_url %}
+            {{ entry.original_url }}
+          {% elif entry.sha1 is defined and entry.sha1 %}
+            {{ entry.sha1[:20] }}...
+          {% else %}
+            {{ entry.id }}
+          {% endif %}
+        </a>
+      </td>
+      <td style="white-space: nowrap; font-size: 0.85rem;">{{ entry.updated.strftime('%H:%M:%S') }}</td>
+      <td style="white-space: nowrap; font-size: 0.85rem;">{{ entry.created.strftime('%Y-%m-%d') }}</td>
+      <td><code style="font-size: 0.8rem;">{{ entry.source or "-" }}</code></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if entries|length >= 100 %}
+  <p style="font-size: 0.9rem; color: #555;"><i>Showing first 100 entries only.</i></p>
+{% endif %}
+
+{% else %}
+  <p>No {{ entity_labels[entity_type]|lower }} updated on {{ date }}.</p>
+{% endif %}
+
+{% endblock %}

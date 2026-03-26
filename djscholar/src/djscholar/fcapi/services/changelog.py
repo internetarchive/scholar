@@ -3,7 +3,7 @@
 import datetime
 from uuid import UUID
 
-from django.db.models import QuerySet
+from django.db.models import QuerySet, Prefetch
 
 from djscholar.fcapi import models as m
 
@@ -40,10 +40,14 @@ def recent(
     end_dt = start_dt + datetime.timedelta(days=1)
     begin_dt = start_dt - window
 
-    return list(
-        model.objects.filter(updated__range=[begin_dt, end_dt])
-        .order_by("-updated")[offset:offset + limit]
-    )
+    qs = model.objects.filter(updated__range=[begin_dt, end_dt]).order_by("-updated")
+
+    if model is m.File:
+        qs = qs.prefetch_related(
+            Prefetch("releases", queryset=m.Release.objects.only("id", "title"))
+        )
+
+    return list(qs[offset:offset + limit])
 
 
 def recent_count(

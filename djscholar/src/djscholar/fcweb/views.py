@@ -772,6 +772,9 @@ _CHANGELOG_VIEW_NAMES = {
 }
 
 
+_CHANGELOG_PAGE_SIZE = 50
+
+
 def changelog_view(request: HttpRequest) -> HttpResponse:
     entity_type = request.GET.get("entity_type", "releases")
     if entity_type not in _CHANGELOG_ENTITY_LABELS:
@@ -786,7 +789,15 @@ def changelog_view(request: HttpRequest) -> HttpResponse:
     else:
         start_date = datetime.date.today()
 
-    entries = changelog_svc.recent(entity_type, start_date)
+    try:
+        offset = max(0, int(request.GET.get("offset", 0)))
+    except (ValueError, TypeError):
+        offset = 0
+
+    total = changelog_svc.recent_count(entity_type, start_date)
+    entries = changelog_svc.recent(
+        entity_type, start_date, limit=_CHANGELOG_PAGE_SIZE, offset=offset,
+    )
 
     return _render(request, "fcweb/changelog.html", {
         "entity_type": entity_type,
@@ -797,6 +808,9 @@ def changelog_view(request: HttpRequest) -> HttpResponse:
         "next_date": start_date + datetime.timedelta(days=1),
         "today": datetime.date.today(),
         "entries": entries,
+        "total": total,
+        "offset": offset,
+        "page_size": _CHANGELOG_PAGE_SIZE,
     })
 changelog_entry_view = _stub
 stats_page = _stub

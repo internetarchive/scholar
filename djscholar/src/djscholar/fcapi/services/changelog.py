@@ -23,7 +23,8 @@ def recent(
     entity_type: str,
     date: datetime.date,
     window: datetime.timedelta = datetime.timedelta(days=1),
-    limit: int = 100,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[m.Entity]:
     """Return entities updated within a window ending at date+1day, newest first.
 
@@ -41,5 +42,23 @@ def recent(
 
     return list(
         model.objects.filter(updated__range=[begin_dt, end_dt])
-        .order_by("-updated")[:limit]
+        .order_by("-updated")[offset:offset + limit]
     )
+
+
+def recent_count(
+    entity_type: str,
+    date: datetime.date,
+    window: datetime.timedelta = datetime.timedelta(days=1),
+) -> int:
+    """Return total count of entities updated within the window."""
+    model = ENTITY_MODELS.get(entity_type)
+    if model is None:
+        raise ValueError(f"unknown entity type: {entity_type}")
+
+    start_dt = datetime.datetime.combine(
+        date, datetime.time(), tzinfo=datetime.timezone.utc)
+    end_dt = start_dt + datetime.timedelta(days=1)
+    begin_dt = start_dt - window
+
+    return model.objects.filter(updated__range=[begin_dt, end_dt]).count()

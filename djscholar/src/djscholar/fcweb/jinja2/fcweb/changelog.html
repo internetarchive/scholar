@@ -98,9 +98,23 @@
   </tbody>
 </table>
 
-{% if entries|length >= 100 %}
-  <p style="font-size: 0.9rem; color: #555;"><i>Showing first 100 entries only.</i></p>
-{% endif %}
+{% set prev_offset = offset - page_size %}
+{% set next_offset = offset + page_size %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; font-size: 0.9rem;">
+  <div>
+    {% if prev_offset >= 0 %}
+      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&offset={{ prev_offset }}">&laquo; Newer</a>
+    {% endif %}
+  </div>
+  <div style="color: #555;">
+    {{ offset + 1 }}&ndash;{{ offset + entries|length }} of {{ "{:,}".format(total) }}
+  </div>
+  <div>
+    {% if next_offset < total %}
+      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&offset={{ next_offset }}">Older &raquo;</a>
+    {% endif %}
+  </div>
+</div>
 
 {% else %}
   <p>No {{ entity_labels[entity_type]|lower }} updated on {{ date }}.</p>

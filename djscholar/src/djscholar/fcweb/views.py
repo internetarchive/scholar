@@ -833,11 +833,13 @@ def coverage_search(request: HttpRequest) -> HttpResponse:
             "recent": recent,
         })
 
+    from djscholar.fcweb import graphics
+
     es_error = None
     coverage_stats = None
     coverage_type_preservation = None
-    year_histogram = None
-    date_histogram = None
+    year_histogram_svg = None
+    date_histogram_svg = None
 
     try:
         coverage_stats = fc_search.get_coverage_stats(q, recent=recent)
@@ -849,9 +851,13 @@ def coverage_search(request: HttpRequest) -> HttpResponse:
             q, recent=recent,
         )
         if recent:
-            date_histogram = fc_search.get_coverage_preservation_by_date(q)
+            date_data = fc_search.get_coverage_preservation_by_date(q)
+            if date_data:
+                date_histogram_svg = graphics.preservation_by_date_histogram(date_data)
         else:
-            year_histogram = fc_search.get_coverage_preservation_by_year(q)
+            year_data = fc_search.get_coverage_preservation_by_year(q)
+            if year_data:
+                year_histogram_svg = graphics.preservation_by_year_histogram(year_data)
 
     return _render(request, "fcweb/coverage_search.html", {
         "q": q,
@@ -859,8 +865,8 @@ def coverage_search(request: HttpRequest) -> HttpResponse:
         "es_error": es_error,
         "coverage_stats": coverage_stats,
         "coverage_type_preservation": coverage_type_preservation,
-        "year_histogram": year_histogram,
-        "date_histogram": date_histogram,
+        "year_histogram_svg": year_histogram_svg,
+        "date_histogram_svg": date_histogram_svg,
     })
 
 # -- Static pages ------------------------------------------------------------

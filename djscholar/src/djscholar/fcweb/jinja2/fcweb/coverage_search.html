@@ -37,35 +37,13 @@
     font-size: 1rem;
     color: #555;
   }
-  .histogram {
-    display: flex;
-    align-items: flex-end;
-    gap: 1px;
-    height: 200px;
-    margin: 1rem 0;
-    border-bottom: 1px solid #ddd;
+  .histogram-figure {
+    margin: 0;
+    overflow-x: auto;
   }
-  .histogram .bar {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    min-width: 2px;
-  }
-  .histogram .bar span {
-    display: block;
-  }
-  .histogram-labels {
-    display: flex;
-    gap: 1px;
-    font-size: 0.65rem;
-    color: #777;
-  }
-  .histogram-labels span {
-    flex: 1;
-    text-align: center;
-    min-width: 2px;
-    overflow: hidden;
+  .histogram-figure embed {
+    width: 100%;
+    max-width: 1000px;
   }
 {% endblock %}
 
@@ -159,64 +137,19 @@
 {% endif %}
 
 {# -- Year histogram -------------------------------------------------------- #}
-{% if year_histogram %}
+{% if year_histogram_svg %}
   <h2>Preservation Coverage by Year</h2>
-  {% set max_total = namespace(val=0) %}
-  {% for row in year_histogram %}
-    {% set row_total = row.bright + row.dark + row.none %}
-    {% if row_total > max_total.val %}
-      {% set max_total.val = row_total %}
-    {% endif %}
-  {% endfor %}
-
-  {% if max_total.val > 0 %}
-  <div class="histogram">
-    {% for row in year_histogram %}
-      {% set row_total = row.bright + row.dark + row.none %}
-      {% set pct = (row_total / max_total.val * 100)|round(1) %}
-      <div class="bar" title="{{ row.year }}: {{ "{:,}".format(row_total) }} (bright: {{ row.bright }}, dark: {{ row.dark }}, none: {{ row.none }})">
-        <span style="height: {{ (row.none / max_total.val * 100)|round(1) }}%; background: #db2828;"></span>
-        <span style="height: {{ (row.dark / max_total.val * 100)|round(1) }}%; background: #006400;"></span>
-        <span style="height: {{ (row.bright / max_total.val * 100)|round(1) }}%; background: #21ba45;"></span>
-      </div>
-    {% endfor %}
-  </div>
-  <div class="histogram-labels">
-    {% for row in year_histogram %}
-      <span>{% if loop.first or loop.last or loop.index0 % (year_histogram|length // 8 + 1) == 0 %}{{ row.year }}{% endif %}</span>
-    {% endfor %}
-  </div>
-  {% endif %}
+  <figure class="histogram-figure">
+    <embed type="image/svg+xml" src="{{ year_histogram_svg }}" />
+  </figure>
 {% endif %}
 
 {# -- Date histogram -------------------------------------------------------- #}
-{% if date_histogram %}
+{% if date_histogram_svg %}
   <h2>Preservation Coverage by Date</h2>
-  {% set max_total = namespace(val=0) %}
-  {% for row in date_histogram %}
-    {% set row_total = row.bright + row.dark + row.none %}
-    {% if row_total > max_total.val %}
-      {% set max_total.val = row_total %}
-    {% endif %}
-  {% endfor %}
-
-  {% if max_total.val > 0 %}
-  <div class="histogram">
-    {% for row in date_histogram %}
-      {% set row_total = row.bright + row.dark + row.none %}
-      <div class="bar" title="{{ row.date }}: {{ "{:,}".format(row_total) }} (bright: {{ row.bright }}, dark: {{ row.dark }}, none: {{ row.none }})">
-        <span style="height: {{ (row.none / max_total.val * 100)|round(1) }}%; background: #db2828;"></span>
-        <span style="height: {{ (row.dark / max_total.val * 100)|round(1) }}%; background: #006400;"></span>
-        <span style="height: {{ (row.bright / max_total.val * 100)|round(1) }}%; background: #21ba45;"></span>
-      </div>
-    {% endfor %}
-  </div>
-  <div class="histogram-labels">
-    {% for row in date_histogram %}
-      <span>{% if loop.first or loop.last or loop.index0 % 10 == 0 %}{{ row.date[5:] }}{% endif %}</span>
-    {% endfor %}
-  </div>
-  {% endif %}
+  <figure class="histogram-figure">
+    <embed type="image/svg+xml" src="{{ date_histogram_svg }}" />
+  </figure>
 {% endif %}
 
 {# -- Preservation by type -------------------------------------------------- #}

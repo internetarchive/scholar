@@ -13,7 +13,7 @@ from django.template import engines
 from djscholar.fcapi.fcid import resolve_ident
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
-from djscholar.fcweb import search as fc_search
+from djscholar import fcsearch as fc_search
 from djscholar.fcapi.services import creators as creator_svc
 from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import filesets as fileset_svc

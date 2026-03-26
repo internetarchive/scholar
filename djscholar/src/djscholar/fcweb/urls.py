@@ -88,7 +88,8 @@ urlpatterns = [
 
     # -- Stats / changelog ----------------------------------------------------
     path("changelog", views.changelog_view, name="changelog_view"),
-    path("changelog/<int:index>", views.changelog_entry_view, name="changelog_entry_view"),
+    # feature dropped
+    # path("changelog/<int:index>", views.changelog_entry_view, name="changelog_entry_view"),
     path("stats", views.stats_page, name="stats_page"),
     path("stats.json", views.stats_json, name="stats_json"),
 

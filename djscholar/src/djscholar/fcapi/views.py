@@ -22,6 +22,7 @@ from djscholar.fcapi.services import releases as release_svc
 from djscholar.fcapi.services import webcaptures as webcapture_svc
 from djscholar.fcapi.services import works as work_svc
 from djscholar.fcapi.services import changelog as changelog_svc
+from djscholar import fcsearch
 
 COMMON_ENTITY_FIELDS = ["id", "created", "updated", "extra", "source",
                         "hidden_reason", "hidden_when"]
@@ -896,8 +897,7 @@ for _et, _schema in _CHANGELOG_SCHEMAS.items():
 
 @v2api.get("/stats")
 def stats(request):
-    from djscholar.fcweb import search as fc_search
-    return fc_search.get_entity_stats() or {}
+    return fcsearch.get_entity_stats() or {}
 
 
 @v2api.exception_handler(Http404)

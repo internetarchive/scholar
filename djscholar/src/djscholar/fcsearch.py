@@ -1,4 +1,4 @@
-"""Elasticsearch queries for the fatcat web UI."""
+"""Elasticsearch queries for fatcat data (used by fcweb and fcapi)."""
 
 import datetime
 import uuid

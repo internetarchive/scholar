@@ -84,7 +84,8 @@
           {% elif entry.original_url is defined and entry.original_url %}
             {{ entry.original_url }}
           {% elif entry.releases is defined and entry.releases.all()|list %}
-            {{ entry.releases.all()|list|first.title or entry.sha1[:20] ~ "..." }}
+            {% set first_release = entry.releases.all()|list|first %}
+            {{ first_release.title if first_release and first_release.title else entry.sha1[:20] ~ "..." }}
           {% elif entry.sha1 is defined and entry.sha1 %}
             {{ entry.sha1[:20] }}...
           {% else %}

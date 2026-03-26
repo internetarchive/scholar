@@ -11,14 +11,15 @@ dependencies = [
     "django==5.1.5",
     "elasticsearch==7.13.4",
     "django-ninja==1.4.0",
-    "gevent>=24.11",
+    "gevent==25.5.1",
     "gunicorn>=23.0",
     "ninja-api-key==1.0.2",
     "psycopg[binary]==3.2.4",
     "python-dateutil==2.9.*",
-    "sentry-sdk>=2.29",
+    "sentry-sdk==2.30",
     "surt==0.3.1",
-    "jinja2>=3.1.6",
+    "jinja2==3.1.6",
+    "pygal==3.1.0",
 ]
 
 [project.scripts]

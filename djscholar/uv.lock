@@ -147,6 +147,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "ninja-api-key" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pygal" },
     { name = "python-dateutil" },
     { name = "sentry-sdk" },
     { name = "surt" },
@@ -167,13 +168,14 @@ requires-dist = [
     { name = "django", specifier = "==5.1.5" },
     { name = "django-ninja", specifier = "==1.4.0" },
     { name = "elasticsearch", specifier = "==7.13.4" },
-    { name = "gevent", specifier = ">=24.11" },
+    { name = "gevent", specifier = "==25.5.1" },
     { name = "gunicorn", specifier = ">=23.0" },
-    { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "jinja2", specifier = "==3.1.6" },
     { name = "ninja-api-key", specifier = "==1.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.4" },
+    { name = "pygal", specifier = "==3.1.0" },
     { name = "python-dateutil", specifier = "==2.9.*" },
-    { name = "sentry-sdk", specifier = ">=2.29" },
+    { name = "sentry-sdk", specifier = "==2.30" },
     { name = "surt", specifier = "==0.3.1" },
 ]
 
@@ -299,6 +301,18 @@ source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple
 sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/idna/3.10/idna-3.10.tar.gz", hash = "sha256:12f65c9b470abda6dc35cf8e63cc574b1c52b11df2c86030af0ac09b01b13ea9" }
 wheels = [
     { url = "https://nexus.us.archive.org/repository/pypi-group/packages/idna/3.10/idna-3.10-py3-none-any.whl", hash = "sha256:946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3" },
+]
+
+[[package]]
+name = "importlib-metadata"
+version = "9.0.0"
+source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "zipp" },
+]
+sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/importlib-metadata/9.0.0/importlib_metadata-9.0.0.tar.gz", hash = "sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc" }
+wheels = [
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/importlib-metadata/9.0.0/importlib_metadata-9.0.0-py3-none-any.whl", hash = "sha256:2d21d1cc5a017bd0559e36150c21c830ab1dc304dedd1b7ea85d20f45ef3edd7" },
 ]
 
 [[package]]
@@ -517,6 +531,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pygal"
+version = "3.1.0"
+source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "importlib-metadata" },
+]
+sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/pygal/3.1.0/pygal-3.1.0.tar.gz", hash = "sha256:fbdee7351a7423e7907fb8a9c3b77305f6b5678cb2e6fd0db36a8825e42955ec" }
+wheels = [
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/pygal/3.1.0/pygal-3.1.0-py3-none-any.whl", hash = "sha256:4e923490f3490c90c481f4535fa3adcda20ff374257ab9d8ae897f91b632c0bb" },
+]
+
+[[package]]
 name = "pytest"
 version = "8.3.5"
 source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -732,6 +758,15 @@ source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple
 sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/urllib3/1.26.20/urllib3-1.26.20.tar.gz", hash = "sha256:40c2dc0c681e47eb8f90e7e27bf6ff7df2e677421fd46756da1161c39ca70d32" }
 wheels = [
     { url = "https://nexus.us.archive.org/repository/pypi-group/packages/urllib3/1.26.20/urllib3-1.26.20-py2.py3-none-any.whl", hash = "sha256:0ed14ccfbf1c30a9072c7ca157e4319b70d65f623e91e7b32fadb2853431016e" },
+]
+
+[[package]]
+name = "zipp"
+version = "3.23.0"
+source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/zipp/3.23.0/zipp-3.23.0.tar.gz", hash = "sha256:a07157588a12518c9d4034df3fbbee09c814741a33ff63c05fa29d26a2404166" }
+wheels = [
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/zipp/3.23.0/zipp-3.23.0-py3-none-any.whl", hash = "sha256:071652d6115ed432f5ce1d34c336c0adfd6a884660d1e9712a256d3d3bd4b14e" },
 ]
 
 [[package]]

@@ -1,0 +1,70 @@
+{% extends "fcweb/base.html" %}
+
+{% block title %}Stats{% endblock %}
+
+{% block body %}
+
+<h1>Stats</h1>
+
+<p>You can also fetch these numbers <a href="{{ url('fcweb:stats_json') }}">as JSON</a>.</p>
+
+{% if stats.papers %}
+<h3>"Papers"</h3>
+<table>
+  <tbody>
+    <tr>
+      <td>Total</td>
+      <td style="text-align: right;">{{ "{:,}".format(stats.papers.total) }}</td>
+    </tr>
+    <tr>
+      <td>Fulltext on web</td>
+      <td style="text-align: right;">{{ "{:,}".format(stats.papers.in_web) }}</td>
+    </tr>
+    <tr>
+      <td>"Gold" Open Access</td>
+      <td style="text-align: right;">{{ "{:,}".format(stats.papers.is_oa) }}</td>
+    </tr>
+    <tr>
+      <td>In a Keepers/KBART archive</td>
+      <td style="text-align: right;">{{ "{:,}".format(stats.papers.in_kbart) }}</td>
+    </tr>
+    <tr>
+      <td>On web, not in Keepers</td>
+      <td style="text-align: right;">{{ "{:,}".format(stats.papers.in_web_not_kbart) }}</td>
+    </tr>
+  </tbody>
+</table>
+<p style="font-size: 0.85rem; color: #555; margin-top: 0.5rem;">
+  <i>"Papers" are journal articles and conference proceedings, a subset of Releases.</i>
+</p>
+{% endif %}
+
+{% if stats.release %}
+<h3>Releases</h3>
+<table>
+  <tbody>
+    <tr>
+      <td>Total</td>
+      <td style="text-align: right;">{{ "{:,}".format(stats.release.total) }}</td>
+    </tr>
+    <tr>
+      <td>References (from metadata)</td>
+      <td style="text-align: right;">{{ "{:,}".format(stats.release.refs_total) }}</td>
+    </tr>
+  </tbody>
+</table>
+{% endif %}
+
+{% if stats.container %}
+<h3>Containers</h3>
+<table>
+  <tbody>
+    <tr>
+      <td>Total</td>
+      <td style="text-align: right;">{{ "{:,}".format(stats.container.total) }}</td>
+    </tr>
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

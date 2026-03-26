@@ -812,9 +812,19 @@ def changelog_view(request: HttpRequest) -> HttpResponse:
         "offset": offset,
         "page_size": _CHANGELOG_PAGE_SIZE,
     })
-changelog_entry_view = _stub
-stats_page = _stub
-stats_json = _stub
+
+
+# dropped
+# changelog_entry_view = _stub
+
+
+def stats_page(request: HttpRequest) -> HttpResponse:
+    stats = fc_search.get_entity_stats() or {}
+    return _render(request, "fcweb/stats.html", {"stats": stats})
+
+
+def stats_json(request: HttpRequest) -> HttpResponse:
+    return HttpResponseRedirect("/api/fatcat/v2/stats", status=301)
 container_ident_stats = _stub
 container_ident_preservation_by_year = _stub
 container_ident_preservation_by_volume = _stub

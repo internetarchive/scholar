@@ -669,6 +669,103 @@ def get_inbound_refs(
     )
 
 
+# -- Global stats queries ----------------------------------------------------
+
+
+def get_entity_stats() -> dict[str, Any] | None:
+    """Fetch global entity stats from ES (releases, papers, containers)."""
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    stats: dict[str, Any] = {}
+
+    # -- release totals + ref count --
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body={
+                "size": 0,
+                "aggs": {
+                    "release_ref_count": {"sum": {"field": "ref_count"}},
+                },
+            },
+            request_cache=True,
+            track_total_hits=True,
+        )
+        total_hits = resp["hits"]["total"]
+        stats["release"] = {
+            "total": total_hits["value"] if isinstance(total_hits, dict) else total_hits,
+            "refs_total": int(resp["aggregations"]["release_ref_count"]["value"]),
+        }
+    except Exception:
+        stats["release"] = {"total": 0, "refs_total": 0}
+
+    # -- paper-like subset (article-journal + paper-conference) --
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body={
+                "size": 0,
+                "query": {
+                    "terms": {
+                        "release_type": ["article-journal", "paper-conference"],
+                    }
+                },
+                "aggs": {
+                    "paper_like": {
+                        "filters": {
+                            "filters": {
+                                "in_web": {"term": {"in_web": True}},
+                                "is_oa": {"term": {"is_oa": True}},
+                                "in_kbart": {"term": {"in_kbart": True}},
+                                "in_web_not_kbart": {
+                                    "bool": {
+                                        "filter": [
+                                            {"term": {"in_web": True}},
+                                            {"term": {"in_kbart": False}},
+                                        ]
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
+            },
+            request_cache=True,
+            track_total_hits=True,
+        )
+        total_hits = resp["hits"]["total"]
+        buckets = resp["aggregations"]["paper_like"]["buckets"]
+        stats["papers"] = {
+            "total": total_hits["value"] if isinstance(total_hits, dict) else total_hits,
+            "in_web": buckets["in_web"]["doc_count"],
+            "is_oa": buckets["is_oa"]["doc_count"],
+            "in_kbart": buckets["in_kbart"]["doc_count"],
+            "in_web_not_kbart": buckets["in_web_not_kbart"]["doc_count"],
+        }
+    except Exception:
+        stats["papers"] = {"total": 0, "in_web": 0, "is_oa": 0, "in_kbart": 0, "in_web_not_kbart": 0}
+
+    # -- container totals --
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_CONTAINER_INDEX,
+            body={"size": 0},
+            request_cache=True,
+            track_total_hits=True,
+        )
+        total_hits = resp["hits"]["total"]
+        stats["container"] = {
+            "total": total_hits["value"] if isinstance(total_hits, dict) else total_hits,
+        }
+    except Exception:
+        stats["container"] = {"total": 0}
+
+    return stats
+
+
 # -- Coverage search queries -------------------------------------------------
 
 

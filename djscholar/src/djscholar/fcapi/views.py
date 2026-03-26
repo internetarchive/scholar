@@ -891,6 +891,15 @@ for _et, _schema in _CHANGELOG_SCHEMAS.items():
     )
 
 
+# -- Stats -------------------------------------------------------------------
+
+
+@v2api.get("/stats")
+def stats(request):
+    from djscholar.fcweb import search as fc_search
+    return fc_search.get_entity_stats() or {}
+
+
 @v2api.exception_handler(Http404)
 def not_found(request, exc):
     return v2api.create_response(

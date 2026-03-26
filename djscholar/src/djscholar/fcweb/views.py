@@ -5,7 +5,7 @@ They will be implemented incrementally.
 """
 
 from django.db import models
-from django.http import HttpRequest, HttpResponse, Http404
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, Http404
 from django.template import engines
 
 from djscholar.fcapi.fcid import resolve_ident
@@ -47,10 +47,64 @@ container_search = _stub
 
 # -- Lookups -----------------------------------------------------------------
 
-creator_lookup = _stub
-file_lookup = _stub
-container_lookup = _stub
-release_lookup = _stub
+_RELEASE_LOOKUP_PARAMS = [
+    "doi", "wikidata_qid", "pmid", "pmcid", "isbn13",
+    "jstor", "arxiv", "core", "ark", "mag", "oai", "hdl",
+]
+_CONTAINER_LOOKUP_PARAMS = ["issn", "issnl", "issne", "issnp", "wikidata_qid"]
+_CREATOR_LOOKUP_PARAMS = ["orcid", "wikidata_qid"]
+_FILE_LOOKUP_PARAMS = ["md5", "sha1", "sha256"]
+
+
+def _generic_lookup(request, svc, param_names, entity_type, view_name):
+    """Shared lookup logic: find first matching query param, look up entity, redirect."""
+    lookup_key = None
+    lookup_value = None
+    for p in param_names:
+        val = request.GET.get(p)
+        if val:
+            lookup_key = p
+            lookup_value = val
+            break
+
+    if not lookup_key:
+        return _render(request, f"fcweb/{entity_type}_lookup.html", {})
+
+    try:
+        entity = svc.lookup(lookup_key, lookup_value)
+    except EntityNotFound:
+        return _render(request, f"fcweb/{entity_type}_lookup.html", {
+            "lookup_key": lookup_key,
+            "lookup_value": lookup_value,
+            "lookup_error": 404,
+        }, status=404)
+    except ValueError:
+        return _render(request, f"fcweb/{entity_type}_lookup.html", {
+            "lookup_key": lookup_key,
+            "lookup_value": lookup_value,
+            "lookup_error": 400,
+        }, status=400)
+
+    from django.urls import reverse
+    url = reverse(f"fcweb:{view_name}", kwargs={"ident": str(entity.id)})
+    return HttpResponseRedirect(url)
+
+
+def release_lookup(request: HttpRequest) -> HttpResponse:
+    return _generic_lookup(request, release_svc, _RELEASE_LOOKUP_PARAMS,
+                           "release", "release_view")
+
+def container_lookup(request: HttpRequest) -> HttpResponse:
+    return _generic_lookup(request, container_svc, _CONTAINER_LOOKUP_PARAMS,
+                           "container", "container_view")
+
+def creator_lookup(request: HttpRequest) -> HttpResponse:
+    return _generic_lookup(request, creator_svc, _CREATOR_LOOKUP_PARAMS,
+                           "creator", "creator_view")
+
+def file_lookup(request: HttpRequest) -> HttpResponse:
+    return _generic_lookup(request, file_svc, _FILE_LOOKUP_PARAMS,
+                           "file", "file_view")
 
 # -- Helpers -----------------------------------------------------------------
 

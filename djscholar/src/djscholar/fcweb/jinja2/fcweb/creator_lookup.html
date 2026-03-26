@@ -1,0 +1,35 @@
+{% extends "fcweb/base.html" %}
+
+{% block title %}Creator Lookup{% endblock %}
+
+{% block body %}
+<h1>Creator Lookup</h1>
+
+{% if lookup_error %}
+  <div class="msg msg-error" style="margin-bottom: 1rem;">
+    {% if lookup_error == 404 %}
+      No creator found with <code>{{ lookup_key }}</code> of <code>{{ lookup_value }}</code>.
+    {% else %}
+      Invalid lookup: <code>{{ lookup_key }}</code> = <code>{{ lookup_value }}</code>.
+    {% endif %}
+  </div>
+{% endif %}
+
+<p>Look up a creator (author) by identifier. You will be redirected to the creator's detail page if a match is found.</p>
+
+<table>
+  <tbody>
+    {% for param, label in [("orcid", "ORCID"), ("wikidata_qid", "Wikidata QID")] %}
+    <tr>
+      <td style="white-space: nowrap;"><b>{{ label }}</b></td>
+      <td>
+        <form method="get" action="{{ url('fcweb:creator_lookup') }}" style="display: flex; gap: 0.5rem;">
+          <input type="text" name="{{ param }}" placeholder="{{ label }}" style="flex: 1;">
+          <button type="submit">Lookup</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

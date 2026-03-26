@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from djscholar.fcapi import models as m
 from djscholar.fcapi.fcid import fcid2uuid
@@ -19,6 +19,15 @@ def get(ident: UUID) -> m.Container:
 def lookup(id_type: str, id_value: str) -> m.Container:
     if id_type == "legacy_ident":
         return get(fcid2uuid(id_value))
+
+    if id_type == "issn":
+        results = m.Container.objects.filter(
+            Q(issnl=id_value) | Q(issne=id_value) | Q(issnp=id_value)
+        )
+        if not results.exists():
+            raise EntityNotFound("container",
+                                 f"no container found with issn of {id_value}")
+        return results[0]
 
     if id_type not in LOOKUP_FIELDS:
         raise ValueError(f"unsupported container lookup type: {id_type}")

@@ -1,0 +1,35 @@
+{% extends "fcweb/base.html" %}
+
+{% block title %}Release Lookup{% endblock %}
+
+{% block body %}
+<h1>Release Lookup</h1>
+
+{% if lookup_error %}
+  <div class="msg msg-error" style="margin-bottom: 1rem;">
+    {% if lookup_error == 404 %}
+      No release found with <code>{{ lookup_key }}</code> of <code>{{ lookup_value }}</code>.
+    {% else %}
+      Invalid lookup: <code>{{ lookup_key }}</code> = <code>{{ lookup_value }}</code>.
+    {% endif %}
+  </div>
+{% endif %}
+
+<p>Look up a release by external identifier. You will be redirected to the release's detail page if a match is found.</p>
+
+<table>
+  <tbody>
+    {% for param, label in [("doi", "DOI"), ("pmid", "PubMed ID"), ("pmcid", "PMC ID"), ("arxiv", "arXiv ID"), ("isbn13", "ISBN-13"), ("jstor", "JSTOR ID"), ("wikidata_qid", "Wikidata QID"), ("core", "CORE ID"), ("hdl", "Handle"), ("ark", "ARK"), ("mag", "MAG ID"), ("oai", "OAI ID")] %}
+    <tr>
+      <td style="white-space: nowrap;"><b>{{ label }}</b></td>
+      <td>
+        <form method="get" action="{{ url('fcweb:release_lookup') }}" style="display: flex; gap: 0.5rem;">
+          <input type="text" name="{{ param }}" placeholder="{{ label }}" style="flex: 1;">
+          <button type="submit">Lookup</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -2,34 +2,105 @@
 
 {% block title %}Container Lookup{% endblock %}
 
-{% block body %}
-<h1>Container Lookup</h1>
+{% block styles %}
+  .lookup-section {
+    border: 1px solid #ddd;
+    border-bottom: none;
+    padding: 1rem 1.5rem;
+  }
+  .lookup-section:last-child {
+    border-bottom: 1px solid #ddd;
+  }
+  .lookup-section:first-of-type {
+    border-radius: 4px 4px 0 0;
+  }
+  .lookup-section:last-of-type {
+    border-radius: 0 0 4px 4px;
+  }
+  .lookup-section h2 {
+    margin-top: 0;
+  }
+  .lookup-form {
+    display: flex;
+    gap: 0;
+  }
+  .lookup-form input[type="text"] {
+    flex: 1;
+    font-size: 1.1rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #ccc;
+    border-right: none;
+    border-radius: 4px 0 0 4px;
+  }
+  .lookup-form button {
+    font-size: 1.1rem;
+    padding: 0.6rem 1.2rem;
+    background: #ddd;
+    border: 1px solid #ccc;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+  }
+  .lookup-hint {
+    font-style: italic;
+    font-size: 0.9rem;
+    color: #555;
+    margin-top: 0.4rem;
+  }
+{% endblock %}
 
-{% if lookup_error %}
+{% block body %}
+<h1>Lookup Container by Identifier</h1>
+
+{% if lookup_error == 400 %}
   <div class="msg msg-error" style="margin-bottom: 1rem;">
-    {% if lookup_error == 404 %}
-      No container found with <code>{{ lookup_key }}</code> of <code>{{ lookup_value }}</code>.
-    {% else %}
-      Invalid lookup: <code>{{ lookup_key }}</code> = <code>{{ lookup_value }}</code>.
+    <b>400: Syntax Error</b><br>
+    <b><code>{{ lookup_key }}:{{ lookup_value }}</code></b> doesn't look right to us. See below for details.
+  </div>
+{% elif lookup_error == 404 %}
+  <div class="msg msg-error" style="margin-bottom: 1rem;">
+    <b>404: Not Found</b><br>
+    Couldn't find a container with that identifier (<b><code>{{ lookup_key }}:{{ lookup_value }}</code></b>).
+    {% if lookup_key in ("issnl", "issn", "issne", "issnp") %}
+      <p>You can check if it is a registered ISSN by visiting:
+      <b><a href="https://portal.issn.org/api/search?search[]=MUST=allissnbis={{ lookup_value }}">https://portal.issn.org/api/search?search[]=MUST=allissnbis={{ lookup_value }}</a></b>.</p>
+    {% elif lookup_key == "wikidata_qid" %}
+      <p>You can check if it is a real Wikidata entity by visiting:
+      <b><a href="https://www.wikidata.org/wiki/{{ lookup_value }}">https://www.wikidata.org/wiki/{{ lookup_value }}</a></b></p>
     {% endif %}
   </div>
 {% endif %}
 
-<p>Look up a container (journal, conference, etc.) by identifier. You will be redirected to the container's detail page if a match is found.</p>
+{# -- ISSN ----------------------------------------------------------------- #}
+<div class="lookup-section">
+  <h2>ISSN</h2>
+  <p>Lookup container with the given ISSN as any of the ISSN-L, ISSN-E (electronic) or ISSN-P (print) ISSNs.</p>
+  <form class="lookup-form" method="get" action="{{ url('fcweb:container_lookup') }}">
+    <input type="text" name="issn" placeholder="1234-567X" value="{% if lookup_key == 'issn' %}{{ lookup_value }}{% endif %}" aria-label="ISSN lookup">
+    <button type="submit">Go!</button>
+  </form>
+  <div class="lookup-hint">Must include the dash.</div>
+</div>
 
-<table>
-  <tbody>
-    {% for param, label in [("issn", "ISSN"), ("issnl", "ISSN-L"), ("issne", "ISSN (electronic)"), ("issnp", "ISSN (print)"), ("wikidata_qid", "Wikidata QID")] %}
-    <tr>
-      <td style="white-space: nowrap;"><b>{{ label }}</b></td>
-      <td>
-        <form method="get" action="{{ url('fcweb:container_lookup') }}" style="display: flex; gap: 0.5rem;">
-          <input type="text" name="{{ param }}" placeholder="{{ label }}" style="flex: 1;">
-          <button type="submit">Lookup</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{# -- ISSN-L --------------------------------------------------------------- #}
+<div class="lookup-section">
+  <h2>ISSN-L</h2>
+  <p>The "linking" ISSN for a journal or other publication is one of the "print" or "electronic" <a href="https://en.wikipedia.org/wiki/International_Standard_Serial_Number#Linking_ISSN">International Standard Serial Numbers</a>, which has been selected to represent the resource in all media. It is usually the ISSN which was registered first, and defaults to the "print" ISSN number for a journal. Fatcat uses ISSN-L as the primary identifier for journals to reduce confusion and potential for duplication. The ISSN organization publicly publishes a mapping between linking and print/electronic ISSNs.</p>
+  <form class="lookup-form" method="get" action="{{ url('fcweb:container_lookup') }}">
+    <input type="text" name="issnl" placeholder="1234-567X" value="{% if lookup_key == 'issnl' %}{{ lookup_value }}{% endif %}" aria-label="ISSN-L lookup">
+    <button type="submit">Go!</button>
+  </form>
+  <div class="lookup-hint">Must include the dash.</div>
+</div>
+
+{# -- Wikidata ------------------------------------------------------------- #}
+<div class="lookup-section">
+  <h2>Wikidata QID</h2>
+  <p><a href="https://en.wikipedia.org/wiki/Wikidata#Items">Wikidata</a> is the structured, machine-readable database that complements Wikipedia. Entities, which can include bibliographic entities like books and papers, are identified by a "QID". Fatcat also links container (journal) and creator (author) entities to Wikidata by QID. Anybody can edit Wikidata and create QIDs.</p>
+  <form class="lookup-form" method="get" action="{{ url('fcweb:container_lookup') }}">
+    <input type="text" name="wikidata_qid" placeholder="Q94324" value="{% if lookup_key == 'wikidata_qid' %}{{ lookup_value }}{% endif %}" aria-label="Wikidata QID lookup">
+    <button type="submit">Go!</button>
+  </form>
+  <div class="lookup-hint">Include the "Q" prefix.</div>
+</div>
+
 {% endblock %}

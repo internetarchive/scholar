@@ -2,34 +2,94 @@
 
 {% block title %}Creator Lookup{% endblock %}
 
-{% block body %}
-<h1>Creator Lookup</h1>
+{% block styles %}
+  .lookup-section {
+    border: 1px solid #ddd;
+    border-bottom: none;
+    padding: 1rem 1.5rem;
+  }
+  .lookup-section:last-child {
+    border-bottom: 1px solid #ddd;
+  }
+  .lookup-section:first-of-type {
+    border-radius: 4px 4px 0 0;
+  }
+  .lookup-section:last-of-type {
+    border-radius: 0 0 4px 4px;
+  }
+  .lookup-section h2 {
+    margin-top: 0;
+  }
+  .lookup-form {
+    display: flex;
+    gap: 0;
+  }
+  .lookup-form input[type="text"] {
+    flex: 1;
+    font-size: 1.1rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #ccc;
+    border-right: none;
+    border-radius: 4px 0 0 4px;
+  }
+  .lookup-form button {
+    font-size: 1.1rem;
+    padding: 0.6rem 1.2rem;
+    background: #ddd;
+    border: 1px solid #ccc;
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+  }
+  .lookup-hint {
+    font-style: italic;
+    font-size: 0.9rem;
+    color: #555;
+    margin-top: 0.4rem;
+  }
+{% endblock %}
 
-{% if lookup_error %}
+{% block body %}
+<h1>Lookup Creator by Identifier</h1>
+
+{% if lookup_error == 400 %}
   <div class="msg msg-error" style="margin-bottom: 1rem;">
-    {% if lookup_error == 404 %}
-      No creator found with <code>{{ lookup_key }}</code> of <code>{{ lookup_value }}</code>.
-    {% else %}
-      Invalid lookup: <code>{{ lookup_key }}</code> = <code>{{ lookup_value }}</code>.
+    <b>400: Syntax Error</b><br>
+    <b><code>{{ lookup_key }}:{{ lookup_value }}</code></b> doesn't look right to us. See below for details.
+  </div>
+{% elif lookup_error == 404 %}
+  <div class="msg msg-error" style="margin-bottom: 1rem;">
+    <b>404: Not Found</b><br>
+    Couldn't find a creator with that identifier (<b><code>{{ lookup_key }}:{{ lookup_value }}</code></b>).
+    {% if lookup_key == "orcid" %}
+      <p>You can check if it is a registered ORCID by visiting:
+      <b><a href="https://orcid.org/{{ lookup_value }}">https://orcid.org/{{ lookup_value }}</a></b></p>
+    {% elif lookup_key == "wikidata_qid" %}
+      <p>You can check if it is a real Wikidata entity by visiting:
+      <b><a href="https://www.wikidata.org/wiki/{{ lookup_value }}">https://www.wikidata.org/wiki/{{ lookup_value }}</a></b></p>
     {% endif %}
   </div>
 {% endif %}
 
-<p>Look up a creator (author) by identifier. You will be redirected to the creator's detail page if a match is found.</p>
+{# -- ORCID ---------------------------------------------------------------- #}
+<div class="lookup-section">
+  <h2>ORCID</h2>
+  <p><a href="https://en.wikipedia.org/wiki/ORCID">Open Researcher and Contributor ID</a> is used to unambiguously refer to a research author. They are free to register.</p>
+  <form class="lookup-form" method="get" action="{{ url('fcweb:creator_lookup') }}">
+    <input type="text" name="orcid" placeholder="0000-0002-1825-0097" value="{% if lookup_key == 'orcid' %}{{ lookup_value }}{% endif %}" aria-label="ORCID lookup">
+    <button type="submit">Go!</button>
+  </form>
+  <div class="lookup-hint">Must include the dashes.</div>
+</div>
 
-<table>
-  <tbody>
-    {% for param, label in [("orcid", "ORCID"), ("wikidata_qid", "Wikidata QID")] %}
-    <tr>
-      <td style="white-space: nowrap;"><b>{{ label }}</b></td>
-      <td>
-        <form method="get" action="{{ url('fcweb:creator_lookup') }}" style="display: flex; gap: 0.5rem;">
-          <input type="text" name="{{ param }}" placeholder="{{ label }}" style="flex: 1;">
-          <button type="submit">Lookup</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{# -- Wikidata ------------------------------------------------------------- #}
+<div class="lookup-section">
+  <h2>Wikidata QID</h2>
+  <p><a href="https://en.wikipedia.org/wiki/Wikidata#Items">Wikidata</a> is the structured, machine-readable database that complements Wikipedia. Entities, which can include bibliographic entities like books and papers, are identified by a "QID". Fatcat also links releases (papers, books) and container (journal) entities to Wikidata by QID. Anybody can edit Wikidata and create QIDs.</p>
+  <form class="lookup-form" method="get" action="{{ url('fcweb:creator_lookup') }}">
+    <input type="text" name="wikidata_qid" placeholder="Q94324" value="{% if lookup_key == 'wikidata_qid' %}{{ lookup_value }}{% endif %}" aria-label="Wikidata QID lookup">
+    <button type="submit">Go!</button>
+  </form>
+  <div class="lookup-hint">Include the "Q" prefix.</div>
+</div>
+
 {% endblock %}

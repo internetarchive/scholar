@@ -90,62 +90,28 @@ well as accommodating niche or field-specific content. Reasonable care should
 be taken with this extra metadata: don't include large text or binary fields,
 hundreds of fields, duplicate metadata, etc.</p>
 
-<p>All full entities (distinct from revisions) also have the following fields:</p>
+<p>All entities also have the following fields:</p>
 
 <ul>
   <li>
     <code>state</code> (string, read-only): summarizes the status of the entity in the
     catalog. One of a small number of fixed values, see vocabulary below.
   </li>
-  <li><code>ident</code> (string, Fatcat identifier, read-only): the Fatcat entity identifier</li>
-  <li>
-    <code>revision</code> (string, UUID): the current revision record that this entity
-    <code>ident</code> points to
-  </li>
-  <li>
-    <code>redirect</code> (string, Fatcat identifier, optional): if set, this entity ident
-    has been redirected to the <code>redirect</code> one. This is a mechanism of merging or
-    &quot;deduplicating&quot; entities.
-  </li>
-  <li>
-    <code>edit_extra</code> (dict, optional): not part of the bibliographic schema, but can
-    be included when creating or updating entities, and the contents of field
-    will be included in the entity's edit history.
-  </li>
+  <li><code>id</code> (UUID, read-only): the entity identifier</li>
 </ul>
 
 <h3 id="state-vocabulary"><a class="header" href="#state-vocabulary"><code>state</code> Vocabulary</a></h3>
 
 <ul>
   <li><code>active</code>: entity exists in the catalog</li>
-  <li><code>redirect</code>: the entity <code>ident</code> exists in the catalog, but is a redirect to another entity ident.</li>
+  <li><code>redirect</code>: the entity <code>id</code> exists in the catalog, but is a redirect to another entity.</li>
   <li>
-    <code>deleted</code>: an entity with the <code>ident</code> did exist in the catalog previously,
-    but it was deleted. The <code>ident</code> is retained as a &quot;tombstone&quot; record (aka,
+    <code>deleted</code>: an entity with this <code>id</code> did exist in the catalog previously,
+    but it was deleted. The <code>id</code> is retained as a &quot;tombstone&quot; record (aka,
     there is a record that an entity <em>did</em> exist previously).
-  </li>
-  <li>
-    <code>wip</code> (&quot;Work in Progress&quot;): an entity identifier has been created as part of
-    an editgroup, but that editgroup has not been accepted yet into the catalog,
-    and there is no previous/current version of the entity.
   </li>
 </ul>
 
-<h3 id="identifiers-and-revisions"><a class="header" href="#identifiers-and-revisions">Identifiers and Revisions</a></h3>
-
-<p>A specific version of any entity in the catalog is called a &quot;revision&quot;.
-Revisions are generally immutable (do not change and are not editable), and are
-not normally referred to directly. Instead, persistent &quot;fatcat identifiers&quot;
-(<code>ident</code>) can be created, which &quot;point to&quot; a single revision at a time. This
-distinction means that entities referred to by an identifier can change over
-time (as metadata is corrected and expanded). Revision objects do not &quot;point&quot;
-back to specific identifiers, so they are not the same as a simple &quot;version
-number&quot; for an identifier.</p>
-
-<p>Identifiers also have the ability to be merged (by redirecting one identifier
-to another) and &quot;deleted&quot; (by pointing the identifier to no revision at all).
-All changes to identifiers are captured as an &quot;edit&quot; object. Edit history can
-be fetched and inspected on a per-identifier basis.</p>
 
 <h3 id="controlled-vocabularies"><a class="header" href="#controlled-vocabularies">Controlled Vocabularies</a></h3>
 
@@ -170,15 +136,6 @@ identifiers or types, such as:</p>
   <li>file mimetypes</li>
   <li>identifiers themselves (DOI, ORCID, etc), by checking for registration against canonical APIs and databases</li>
 </ul>
-
-<h3 id="global-edit-changelog"><a class="header" href="#global-edit-changelog">Global Edit Changelog</a></h3>
-
-<p>As part of the process of &quot;accepting&quot; an edit group, a row is written to an
-immutable, append-only table (which internally is a SQL table) documenting each
-identifier change. This changelog establishes a monotonically increasing
-version number for the entire corpus, and should make interaction with other
-systems easier (eg, search engines, replicated databases, alternative storage
-backends, notification frameworks, etc.).</p>
 
 <h2 id="container-entity-reference"><a class="header" href="#container-entity-reference">Container Entity Reference</a></h2>
 
@@ -337,7 +294,7 @@ included after a <code>+</code>. Example: &quot;application/pdf&quot;</li>
 contain the full representation of a work (eg, fulltext of an article, for an
 <code>article-journal</code> release), describes what that scope of coverage is. Eg,
 entire <code>issue</code>, <code>corrupt</code> file. See vocabulary below.</li>
-<li><code>release_ids</code> (array of string identifiers): references to <code>release</code> entities
+<li><code>release_ids</code> (array of UUIDs): references to <code>release</code> entities
 that this file represents a manifestation of. Note that a single file can
 contain multiple release references (eg, a PDF containing a full issue with
 many articles), and that a release will often have multiple files (differing
@@ -494,7 +451,7 @@ Eg: &quot;archive-base&quot;, &quot;webarchive&quot;.</li>
 </ul>
 </li>
 <li>
-<p><code>release_ids</code> (array of string identifiers): references to <code>release</code> entities</p>
+<p><code>release_ids</code> (array of UUIDs): references to <code>release</code> entities</p>
 </li>
 <li>
 <p><code>content_scope</code> (string): for situations where the fileset does not simply
@@ -570,7 +527,7 @@ contain the full representation of a work (eg, HTML fulltext, for an
 <code>landing-page</code> it doesn't contain the full content. Landing pages are
 out-of-scope for fatcat, but if they were accidentally imported, should mark
 them as such so they aren't re-imported. Uses same vocabulary as File entity.</li>
-<li><code>release_ids</code> (array of string identifiers): references to <code>release</code> entities</li>
+<li><code>release_ids</code> (array of UUIDs): references to <code>release</code> entities</li>
 </ul>
 
 <h2 id="release-entity-reference"><a class="header" href="#release-entity-reference">Release Entity Reference</a></h2>
@@ -581,10 +538,10 @@ them as such so they aren't re-imported. Uses same vocabulary as File entity.</l
 journal articles. Subtitle may also be appended to the <code>title</code> instead of
 populating this field.</li>
 <li><code>original_title</code> (string): the full original language title, if <code>title</code> is translated</li>
-<li><code>work_id</code> (fatcat identifier; required): the (single) work that this release
+<li><code>work_id</code> (UUID; required): the (single) work that this release
 is grouped under. If not specified in a creation (<code>POST</code>) action, the API
 will auto-generate a work.</li>
-<li><code>container_id</code> (fatcat identifier): a (single) container that this release is
+<li><code>container_id</code> (UUID): a (single) container that this release is
 part of. When expanded the <code>container</code> field contains the full <code>container</code>
 entity.</li>
 <li><code>release_type</code> (string, controlled set): represents the medium or form-factor
@@ -644,7 +601,7 @@ author. Authorship order has significance in many fields. Non-author
 contributions (illustration, translation, editorship) may or may not be
 ordered, depending on context, but index numbers should be unique per
 release (aka, there should not be &quot;first author&quot; and &quot;first translator&quot;)</li>
-<li><code>creator_id</code> (identifier): if known, a reference to a specific <code>creator</code></li>
+<li><code>creator_id</code> (UUID): if known, a reference to a specific <code>creator</code></li>
 <li><code>raw_name</code> (string): the name of the contributor, as attributed in the
 text of this work. If the <code>creator_id</code> is linked, this may be different
 from the <code>display_name</code>; if a creator is not linked, this field is
@@ -657,7 +614,7 @@ vocabulary. TODO: vocabulary needs review.</li>
 affiliation, &quot;this is the corresponding author&quot;, etc.</li>
 </ul>
 </li>
-<li><code>refs</code> (array of ident strings): references (aka, citations) to other releases. References
+<li><code>refs</code> (array of objects): references (aka, citations) to other releases. References
 can only be linked to a specific target release (not a work), though it may
 be ambiguous which release of a work is being referenced if the citation is
 not specific enough. IMPORTANT: release refs are distinct from the <a href="#reference-graph-refcat">reference graph</a> API. Reference fields include:
@@ -665,8 +622,8 @@ not specific enough. IMPORTANT: release refs are distinct from the <a href="#ref
 <li><code>index</code> (integer, optional): reference lists and bibliographies almost
 always have an implicit order. Zero-indexed. Note that this is distinct
 from the <code>key</code> field.</li>
-<li><code>target_release_id</code> (fatcat identifier): if known, and the release
-exists, a cross-reference to the Fatcat entity</li>
+<li><code>target_release_id</code> (UUID): if known, and the release
+exists, a cross-reference to the release entity</li>
 <li><code>extra</code> (JSON, optional): additional citation format metadata can be
 stored here, particularly if the citation schema does not align. Common
 fields might be &quot;volume&quot;, &quot;authors&quot;, &quot;issue&quot;, &quot;publisher&quot;, &quot;url&quot;, and
@@ -752,7 +709,7 @@ to lower-case in the catalog (server-side).</li>
 known by</li>
 <li><code>container_name</code> (string) if not matched to a container entity</li>
 <li><code>group-title</code> (string) for releases within an collection/group</li>
-<li><code>translation_of</code> (release identifier) if this release is a translation of
+<li><code>translation_of</code> (release UUID) if this release is a translation of
 another (usually under the same work)</li>
 <li><code>superceded</code> (boolean) if there is another release under the same work that
 should be referenced/indicated instead. Intended as a temporary hint until
@@ -971,7 +928,7 @@ case-by-case basis.</p>
 <p>The Fatcat HTTP API is a read-only API for querying and searching the catalog.</p>
 <p>A declarative specification of all API endpoints, JSON data models, and
 response types is available in OpenAPI 3.1 format. Auto-generated reference
-documentation is, for now, available at <a href="/_sd/fatcat/api/fatcat/v2/docs">https://scholar.archive.org/docs</a>.</p>
+documentation is available at <a href="https://scholar.archive.org/api/fatcat/v2/docs">https://scholar.archive.org/api/fatcat/v2/docs</a>.</p>
 <p>All API traffic is over HTTPS. All endpoints accept and return only JSON serialized content.</p>
 
 <br>
@@ -991,27 +948,20 @@ collection.</p>
 <p>The most simple and complete bulk export. Useful for disaster recovery,
 mirroring, or forking the entire service. The internal database schema is not
 stable, so not as useful for longitudinal analysis. These dumps will include
-edits-in-progress, deleted entities, old revisions, etc, which are potentially
+deleted entities, etc, which are potentially
 difficult or impossible to fetch through the API.</p>
 <p>Public copies may have some tables redacted (eg, API credentials).</p>
 <p>Dumps are in PostgreSQL <code>pg_dump</code> &quot;tar&quot; binary format, and can be restored
 locally with the <code>pg_restore</code> command. See <code>./extra/sql_dumps/</code> for commands
 and details. Dumps are on the order of 100 GBytes (compressed) and will grow
 over time.</p>
-<h3 id="changelog-history"><a class="header" href="#changelog-history">Changelog History</a></h3>
-<p>These are currently unimplemented; would involve &quot;hydrating&quot; sub-entities into
-changelog exports. Useful for some mirrors, and analysis that needs to track
-provenance information. Format would be the public API schema (JSON).</p>
-<p>All information in these dumps should be possible to fetch via the public API,
-including on a feed/streaming basis using the sequential changelog index. All
-information is also contained in the database dumps.</p>
 <h3 id="identifier-snapshots"><a class="header" href="#identifier-snapshots">Identifier Snapshots</a></h3>
 <p>Many of the other dump formats are very large. To save time and bandwidth, a
 few simple snapshot tables can be exported directly in TSV format. Because
 these tables can be dumped in single SQL transactions, they are consistent
 point-in-time snapshots.</p>
-<p>One format is per-entity identifier/revision tables. These contain active,
-deleted, and redirected identifiers, with revision and redirect references, and
+<p>One format is per-entity identifier tables. These contain active,
+deleted, and redirected identifiers, and
 are used to generate the entity dumps below.</p>
 <p>Other tables contain external identifier mappings or file hashes.</p>
 <p>Release abstracts can be dumped in their own table (JSON format), allowing them
@@ -1020,9 +970,7 @@ usage restrictions on abstracts are different from other catalog content; see
 the <a href="#metadata-licensing">metadata licensing</a> section for more context.  Abstracts are immutable and
 referenced by hash in the database, so the consistency of these dumps is not as
 much of a concern as with other exports.</p>
-<p>Unlike all other dumps and public formats, the Fatcat identifiers in these
-dumps are in raw UUID format (not base32-encoded), though this may be fixed in
-the future.</p>
+<p>Entity identifiers in these dumps are in UUID format.</p>
 <p>See <code>./extra/sql_dumps/</code> for scripts and details. Dumps are on the order of a
 couple GBytes each (compressed).</p>
 <h3 id="entity-exports"><a class="header" href="#entity-exports">Entity Exports</a></h3>
@@ -1030,7 +978,7 @@ couple GBytes each (compressed).</p>
 single-entity-per-line JSON files with the same schema as the HTTP API. These
 might contain the default fields, or be in &quot;expanded&quot; format containing
 sub-entities for each record.</p>
-<p>Only &quot;active&quot; entities are included (not deleted, work-in-progress, or
+<p>Only &quot;active&quot; entities are included (not deleted or
 redirected entities).</p>
 <p>These dumps can be quite large when expanded (over 100 GBytes compressed), but
 do not include history so will not grow as fast as other exports over time. Not
@@ -1039,101 +987,16 @@ in touch!</p>
 
 <br>
 
-<h2 id="fatcat-identifiers"><a class="header" href="#fatcat-identifiers">Fatcat Identifiers</a></h2>
-<p>Fatcat identifiers are semantically meaningless fixed-length random numbers,
-usually represented in case-insensitive base32 format. Each entity type has its
-own identifier namespace.</p>
-<p>128-bit (UUID size) identifiers encode as 26 characters (but note that not all
-such strings decode to valid UUIDs), and in the backend can be serialized in
-UUID columns:</p>
-<pre><code>work_rzga5b9cd7efgh04iljk8f3jvz
-/_sd/fatcat/work/rzga5b9cd7efgh04iljk8f3jvz
+<h2 id="entity-identifiers"><a class="header" href="#entity-identifiers">Entity Identifiers</a></h2>
+<p>Each entity in Fatcat is assigned a random UUID as its primary identifier.
+Each entity type has its own identifier namespace.</p>
+<p>Example URLs:</p>
+<pre><code>/_sd/fatcat/release/f1f046a3-45c9-ffec-7824-d16ca4305890
+/_sd/fatcat/container/a018a941-85ec-4287-b6f4-758fbb87bcc4
 </code></pre>
-<p>In comparison, 96-bit identifiers would have 20 characters and look like:</p>
-<pre><code>work_rzga5b9cd7efgh04iljk
-/_sd/fatcat/work/rzga5b9cd7efgh04iljk
-</code></pre>
-<p>and 64-bit:</p>
-<pre><code>work_rzga5b9cd7efg
-/_sd/fatcat/work/rzga5b9cd7efg
-</code></pre>
-<p>Fatcat identifiers can used to interlink between databases, but are explicitly
+<p>Entity UUIDs can be used to interlink between databases, but are explicitly
 <em>not</em> intended to supplant DOIs, ISBNs, handle, ARKs, and other &quot;registered&quot;
 persistent identifiers for general use.</p>
-<h3 id="internal-schema"><a class="header" href="#internal-schema">Internal Schema</a></h3>
-<p>Internally, identifiers are lightweight pointers to &quot;revisions&quot; of an entity.
-Revisions are stored in their complete form, not as a patch or difference; if
-comparing to distributed version control systems (for managing changes to
-source code), this follows the git model, not the mercurial model.</p>
-<p>The entity revisions are immutable once accepted; the editing process involves
-the creation of new entity revisions and, if the edit is approved, pointing the
-identifier to the new revision. Entities cross-reference between themselves by
-<em>identifier</em> not <em>revision number</em>. Identifier pointers also support
-(versioned) deletion and redirects (for merging entities).</p>
-<p>Edit objects represent a change to a single entity; edits get batched together
-into edit groups (like &quot;commits&quot; and &quot;pull requests&quot; in git parlance).</p>
-<p>SQL tables look something like this (with separate tables for entity type a la
-<code>work_revision</code> and <code>work_edit</code>):</p>
-<pre><code>entity_ident
-    id (uuid)
-    current_revision (entity_revision foreign key)
-    redirect_id (optional; points to another entity_ident)
-    is_live (boolean; whether newly created entity has been accepted)
-
-entity_revision
-    revision_id
-    &lt;all entity-style-specific fields&gt;
-    extra: json blob for schema evolution
-
-entity_edit
-    timestamp
-    editgroup_id (editgroup foreign key)
-    ident (entity_ident foreign key)
-    new_revision (entity_revision foreign key)
-    new_redirect (optional; points to entity_ident table)
-    previous_revision (optional; points to entity_revision)
-    extra: json blob for provenance metadata
-
-editgroup
-    editor_id (editor table foreign key)
-    description
-    extra: json blob for provenance metadata
-</code></pre>
-<p>An individual entity can be in the following &quot;states&quot;, from which the given
-actions (transition) can be made:</p>
-<ul>
-<li><code>wip</code> (not live; not redirect; has rev)
-<ul>
-<li>activate (to <code>active</code>)</li>
-</ul>
-</li>
-<li><code>active</code> (live; not redirect; has rev)
-<ul>
-<li>redirect (to <code>redirect</code>)</li>
-<li>delete (to <code>deleted</code>)</li>
-</ul>
-</li>
-<li><code>redirect</code> (live; redirect; rev or not)
-<ul>
-<li>split (to <code>active</code>)</li>
-<li>delete (to <code>delete</code>)</li>
-</ul>
-</li>
-<li><code>deleted</code> (live; not redirect; no rev)
-<ul>
-<li>redirect (to <code>redirect</code>)</li>
-<li>activate (to <code>active</code>)</li>
-</ul>
-</li>
-</ul>
-<p>&quot;WIP, redirect&quot; or &quot;WIP, deleted&quot; are invalid states.</p>
-<p>Additional entity-specific columns hold actual metadata. Additional
-tables (which reference both <code>entity_revision</code> and <code>entity_id</code> foreign
-keys as appropriate) represent things like authorship relationships
-(creator/release), citations between works, etc. Every revision of an entity
-requires duplicating all of these associated rows, which could end up
-being a large source of inefficiency, but is necessary to represent the full
-history of an object.</p>
 <br>
 <h2 id="sources"><a class="header" href="#sources">Sources</a></h2>
 <p>The core metadata bootstrap sources, by entity type, are:</p>
@@ -1154,10 +1017,8 @@ large (~2-3 million more more records) general-purpose aggregators and catalogs
 in a centralized fashion, using bots, and then support volunteers and
 organizations in writing bots to merge high-quality metadata from field or
 institution-specific catalogs.</p>
-<p>Progeny information (where the metadata comes from, or who &quot;makes specific
-claims&quot;) is stored in edit metadata in the data model. Value-level attribution
-can be achieved by looking at the full edit history for an entity as a series of
-patches.</p>
+<p>Progeny information (where the metadata comes from) is tracked alongside
+entity metadata in the data model.</p>
 <br>
 <h2 id="reference-graph-refcat"><a class="header" href="#reference-graph-refcat">Reference Graph (refcat)</a></h2>
 <p>In Summer 2021, the first version of a reference graph dataset, named &quot;refcat&quot;,
@@ -1282,25 +1143,17 @@ date) Wayback captures to that web page, if available.</p>
 article search results by (inbound) citation count. This would require
 resource-intensive transformations and continuous re-indexing of search
 indexes.</p>
-<p>It is unclear how the batch-generated refcat dataset and API-editable release
-refs metadata will interact in the future. The original refs may eventually be
-dropped from the fatcat API, or at some point the refcat corpus may stabilize
-and be imported in to fatcat refs instead of being maintained as a separate
-dataset and index. It would be good to retain a mechanism for human corrections
-and overrides to the machine-generated reference graph.</p>
 
 <br>
 <h2 id="metadata-licensing"><a class="header" href="#metadata-licensing">Metadata Licensing</a></h2>
 <p>The Fatcat catalog content license is the Creative Commons Zero (&quot;CC-0&quot;)
 license, which is effectively a public domain grant. This applies to the
 catalog metadata itself (titles, entity relationships, citation metadata, URLs,
-hashes, identifiers), as well as &quot;meta-meta-data&quot; provided by editors (edit
-descriptions, provenance metadata, etc).</p>
+hashes, identifiers), as well as provenance metadata.</p>
 <p>The core catalog is designed to contain only factual information: &quot;this work,
 known by this title and with these third-party identifiers, is believed to be
 represented by these files and published under such-and-such venue&quot;. As a norm,
-sourcing metadata (for attribution and provenance) is retained for each edit
-made to the catalog.</p>
+sourcing metadata (for attribution and provenance) is retained.</p>
 <p>A notable exception to this policy are abstracts, for which no copyright claims
 or license is made. Abstract content is kept separate from core catalog
 metadata; downstream users need to make their own decision regarding reuse and

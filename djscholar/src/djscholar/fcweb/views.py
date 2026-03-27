@@ -317,7 +317,22 @@ def release_view_references(request: HttpRequest, ident: str) -> HttpResponse:
     })
 
 
-release_save = _stub
+def release_save(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        release_uuid = resolve_ident(ident)
+        release = release_svc.get(release_uuid)
+    except EntityNotFound:
+        raise Http404(f"release not found: {ident}")
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+
+    extids = release_svc.get_extids(release_uuid)
+
+    return _render(request, "fcweb/release_save.html", {
+        "release": release,
+        "extids": extids,
+        "ident": str(release_uuid),
+    })
 
 
 def _enrich_refs(hits, direction: str) -> None:

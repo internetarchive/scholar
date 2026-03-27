@@ -1,0 +1,23 @@
+{% extends "fcweb/base.html" %}
+
+{% block title %}"Save Paper Now" — {{ release.title or "Release" }}{% endblock %}
+
+{% block body %}
+
+<h1>"Save Paper Now"</h1>
+
+<p><b>{{ release.title }}</b></p>
+
+<p>If you know of a legitimate public web access option for this work, you
+can help us preserve it using the Wayback Machine's
+<a href="https://web.archive.org/save">"Save Page Now"</a> feature.</p>
+
+<p>If you are the author of this work, and the published version is not
+publicly available, another option is to upload a version to an institutional
+or discipline repository. The
+<a href="https://shareyourpaper.org/{% if extids.doi %}{{ extids.doi }}{% endif %}">Share Your Paper</a>
+tool can help with this process.</p>
+
+<p style="margin-top: 2rem;"><a href="{{ url('fcweb:release_view', ident=ident) }}">&larr; Back to release</a></p>
+
+{% endblock %}

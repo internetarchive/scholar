@@ -23,6 +23,7 @@ from djscholar.fcapi.services import releases as release_svc
 from djscholar.fcapi.services import webcaptures as webcapture_svc
 from djscholar.fcapi.services import works as work_svc
 from djscholar.fcapi.services import changelog as changelog_svc
+from djscholar.fcweb import graphics
 
 
 def _get_jinja_env():
@@ -528,10 +529,18 @@ def container_view_coverage(request: HttpRequest, ident: str) -> HttpResponse:
     stats = fc_search.get_container_stats(container_uuid)
     type_preservation = fc_search.get_preservation_by_type(container_uuid)
 
+    year_data = fc_search.get_container_preservation_by_year(container_uuid)
+    year_histogram_svg = graphics.preservation_by_year_histogram(year_data) if year_data else None
+
+    volume_data = fc_search.get_container_preservation_by_volume(container_uuid)
+    volume_histogram_svg = graphics.preservation_by_volume_histogram(volume_data) if volume_data else None
+
     return _render(request, "fcweb/container_view_coverage.html", {
         "container": container,
         "stats": stats,
         "type_preservation": type_preservation,
+        "year_histogram_svg": year_histogram_svg,
+        "volume_histogram_svg": volume_histogram_svg,
         "ident": str(container_uuid),
     })
 
@@ -956,7 +965,6 @@ def coverage_search(request: HttpRequest) -> HttpResponse:
             "recent": recent,
         })
 
-    from djscholar.fcweb import graphics
 
     es_error = None
     coverage_stats = None

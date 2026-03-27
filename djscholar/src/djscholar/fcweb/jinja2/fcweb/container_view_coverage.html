@@ -119,6 +119,28 @@
 <p>No holdings at any other locations recorded.</p>
 {% endif %}
 
+{# -- Preservation by year ------------------------------------------------- #}
+<h3 style="margin-top: 2rem;">Preservation Coverage by Year</h3>
+{% if year_histogram_svg %}
+  <figure style="margin: 0;">
+    <embed type="image/svg+xml" src="{{ year_histogram_svg }}" style="max-width: 100%;" />
+  </figure>
+{% endif %}
+<div style="text-align: right; font-size: 0.85rem;">
+  <a href="{{ url('fcweb:container_ident_preservation_by_year', ident=ident) }}">Download as JSON</a>
+</div>
+
+{# -- Preservation by volume ---------------------------------------------- #}
+<h3 style="margin-top: 2rem;">Preservation Coverage by Volume Number</h3>
+{% if volume_histogram_svg %}
+  <figure style="margin: 0;">
+    <embed type="image/svg+xml" src="{{ volume_histogram_svg }}" style="max-width: 100%;" />
+  </figure>
+{% endif %}
+<div style="text-align: right; font-size: 0.85rem;">
+  <a href="{{ url('fcweb:container_ident_preservation_by_volume', ident=ident) }}">Download as JSON</a>
+</div>
+
 {# -- Preservation by release type ----------------------------------------- #}
 {% if type_preservation %}
 <h3 style="margin-top: 2rem;">Preservation Coverage by Release Type</h3>

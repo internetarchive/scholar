@@ -53,7 +53,7 @@
     }
 
     h1 {
-      margin-top: 3.5rem;
+      margin-top: 4.5rem;
     }
 
     h3 {
@@ -92,11 +92,10 @@
       left: 0;
       right: 0;
       z-index: 100;
-      height: 3rem;
       background: #1b1c1d;
       display: flex;
       align-items: center;
-      padding: 0 1rem;
+      padding: 0.4rem 1rem;
     }
 
     .top-nav-inner {
@@ -129,7 +128,7 @@
       margin-left: auto;
     }
 
-    .top-nav .nav-search input {
+    .top-nav .nav-search input[type="text"] {
       background: transparent;
       border: 1px solid #777;
       color: #fff;
@@ -139,14 +138,35 @@
       border-radius: 3px;
     }
 
-    .top-nav .nav-search input::placeholder {
+    .top-nav .nav-search input[type="text"]::placeholder {
       color: rgba(255, 255, 255, 0.5);
+    }
+
+    .search-type-radios {
+      display: flex;
+      gap: 0.75rem;
+      font-size: 0.7rem;
+      color: rgba(255, 255, 255, 0.6);
+      margin-top: 0.2rem;
+    }
+
+    .search-type-radios label {
+      display: flex;
+      align-items: center;
+      gap: 0.2rem;
+      cursor: pointer;
+    }
+
+    .search-type-radios input[type="radio"] {
+      margin: 0;
+      accent-color: #888;
     }
 
     @media (max-width: 640px) {
       .mobile-hide { display: none !important; }
 
-      .top-nav .nav-search input { width: 10em; }
+      .top-nav .nav-search input[type="text"] { width: 10em; }
+      .search-type-radios { font-size: 0.6rem; gap: 0.4rem; }
     }
 
     /* -- Entity header (grey banner with title + tabs) ----------------------- */
@@ -506,8 +526,12 @@
     <a href="{{ url('fcweb:page_guide') }}" class="mobile-hide">Guide</a>
     <a href="{{ url('fcweb:changelog_view') }}" class="mobile-hide">Changelog</a>
     <a href="{{ url('ftsearch:home') }}" class="mobile-hide">IA Scholar</a>
-    <form class="nav-search" action="{{ url('fcweb:search') }}" method="get" role="search" aria-label="Papers">
-      <input type="text" name="q" placeholder="Search Papers...">
+    <form class="nav-search" action="{{ url('fcweb:search') }}" method="get" role="search" aria-label="Search">
+      <input type="text" name="q" placeholder="Search...">
+      <div class="search-type-radios">
+        <label><input type="radio" name="entity_type" value="releases" checked> Releases</label>
+        <label><input type="radio" name="entity_type" value="containers"> Containers</label>
+      </div>
     </form>
   </div>
 </nav>

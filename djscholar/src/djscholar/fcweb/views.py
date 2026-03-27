@@ -5,10 +5,12 @@ They will be implemented incrementally.
 """
 
 import datetime
+from urllib.parse import urlencode
 
 from django.db import models
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, Http404
 from django.template import engines
+from django.urls import reverse
 
 from djscholar.fcapi.fcid import resolve_ident
 from djscholar.fcapi.services import EntityNotFound
@@ -44,9 +46,57 @@ def index(request: HttpRequest) -> HttpResponse:
     return _render(request, "fcweb/index.html")
 
 
-search = _stub
-release_search = _stub
-container_search = _stub
+_SEARCH_ENTITY_TYPES = {"releases", "containers"}
+
+
+def search(request: HttpRequest) -> HttpResponse:
+    q = request.GET.get("q", "").strip()
+    entity_type = request.GET.get("entity_type", "releases")
+    if entity_type not in _SEARCH_ENTITY_TYPES:
+        entity_type = "releases"
+
+    if not q:
+        return _render(request, "fcweb/search.html", {
+            "q": "",
+            "entity_type": entity_type,
+        })
+
+    offset = request.GET.get("offset", "0")
+    offset = max(0, int(offset)) if offset.isdigit() else 0
+
+    found = None
+    es_error = None
+
+    try:
+        if entity_type == "containers":
+            found = fc_search.search_containers(q=q, offset=offset)
+        else:
+            found = fc_search.search_releases(q=q, offset=offset)
+    except Exception as e:
+        es_error = str(e)
+
+    return _render(request, "fcweb/search.html", {
+        "q": q,
+        "entity_type": entity_type,
+        "found": found,
+        "es_error": es_error,
+    })
+
+
+def release_search(request: HttpRequest) -> HttpResponse:
+    q = request.GET.get("q", "")
+    params = {"entity_type": "releases"}
+    if q:
+        params["q"] = q
+    return HttpResponseRedirect(reverse("fcweb:search") + "?" + urlencode(params))
+
+
+def container_search(request: HttpRequest) -> HttpResponse:
+    q = request.GET.get("q", "")
+    params = {"entity_type": "containers"}
+    if q:
+        params["q"] = q
+    return HttpResponseRedirect(reverse("fcweb:search") + "?" + urlencode(params))
 
 # -- Lookups -----------------------------------------------------------------
 
@@ -88,7 +138,6 @@ def _generic_lookup(request, svc, param_names, entity_type, view_name):
             "lookup_error": 400,
         }, status=400)
 
-    from django.urls import reverse
     url = reverse(f"fcweb:{view_name}", kwargs={"ident": str(entity.id)})
     return HttpResponseRedirect(url)
 

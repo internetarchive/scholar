@@ -167,6 +167,100 @@ def get_container_example_releases(
     return [_parse_release_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
 
 
+_CONTAINER_SOURCE_FIELDS = [
+    "ident", "name", "original_name", "publisher", "issnl",
+    "container_type", "publication_status",
+    "releases_total", "preservation_bright", "preservation_dark",
+    "preservation_none", "is_oa", "in_doaj", "in_road",
+]
+
+
+def _parse_container_hit(src: dict[str, Any]) -> dict[str, Any]:
+    """Convert an ES container hit _source into a template-friendly dict."""
+    return {
+        "uuid": fcid2uuid(src["ident"]),
+        "name": src.get("name"),
+        "original_name": src.get("original_name"),
+        "publisher": src.get("publisher"),
+        "issnl": src.get("issnl"),
+        "container_type": src.get("container_type"),
+        "publication_status": src.get("publication_status"),
+        "releases_total": src.get("releases_total", 0),
+        "preservation_bright": src.get("preservation_bright", 0),
+        "preservation_dark": src.get("preservation_dark", 0),
+        "preservation_none": src.get("preservation_none", 0),
+        "is_oa": src.get("is_oa", False),
+        "in_doaj": src.get("in_doaj", False),
+        "in_road": src.get("in_road", False),
+    }
+
+
+def search_containers(
+    q: str,
+    offset: int = 0,
+    limit: int = 25,
+) -> SearchHits:
+    """Full-text search of the fatcat_container ES index."""
+    client = es.client()
+
+    limit = min(limit, 300)
+    offset = min(max(offset, 0), 2000)
+
+    basic_query = {
+        "query_string": {
+            "query": q,
+            "default_operator": "AND",
+            "analyze_wildcard": True,
+            "allow_leading_wildcard": False,
+            "lenient": True,
+            "fields": ["biblio"],
+        }
+    }
+
+    query = {
+        "boosting": {
+            "positive": {
+                "bool": {
+                    "must": basic_query,
+                    "should": [
+                        {"range": {"releases_total": {"gte": 500}}},
+                        {"range": {"releases_total": {"gte": 5000}}},
+                    ],
+                }
+            },
+            "negative": {"term": {"releases_total": 0}},
+            "negative_boost": 0.5,
+        }
+    }
+
+    body = {
+        "size": limit,
+        "from": offset,
+        "query": query,
+        "_source": _CONTAINER_SOURCE_FIELDS,
+    }
+
+    resp = client.search(
+        index=settings.ES_FATCAT_CONTAINER_INDEX,
+        body=body,
+        track_total_hits=True,
+    )
+
+    total_hits = resp["hits"]["total"]
+    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+
+    results = [_parse_container_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
+
+    return SearchHits(
+        count_returned=len(results),
+        count_found=count_found,
+        offset=offset,
+        limit=limit,
+        query_time_ms=resp.get("took", 0),
+        results=results,
+    )
+
+
 def search_releases(
     q: str,
     container_id: uuid.UUID | None = None,

@@ -140,9 +140,13 @@
 
 <div class="hero" itemscope itemtype="https://schema.org/WebSite">
   <h1>Perpetual Access to Millions of Open Research Publications From Around The World</h1>
-  <form class="search-form" action="{{ url('fcweb:search') }}" method="get" role="search" aria-label="papers" itemprop="potentialAction" itemscope itemtype="https://schema.org/SearchAction">
+  <form class="search-form" action="{{ url('fcweb:search') }}" method="get" role="search" aria-label="papers" itemprop="potentialAction" itemscope itemtype="https://schema.org/SearchAction" style="flex-wrap: wrap; justify-content: center;">
     <input type="text" placeholder="by title, authors, identifiers..." name="q" aria-label="search metadata" required itemprop="query-input">
     <button type="submit">Search</button>
+    <div class="search-type-radios" style="width: 100%; justify-content: center; margin-top: 0.25rem; color: rgba(255,255,255,0.7); font-size: 0.85rem;">
+      <label><input type="radio" name="entity_type" value="releases" checked> Releases</label>
+      <label><input type="radio" name="entity_type" value="containers"> Containers</label>
+    </div>
   </form>
 </div>
 

@@ -1,0 +1,153 @@
+{% extends "fcweb/base.html" %}
+
+{% block title %}Search{% endblock %}
+
+{% block styles %}
+.search-page {
+  margin-top: 3.5rem;
+}
+
+.search-page .search-form {
+  flex-wrap: wrap;
+}
+
+.search-page .search-type-radios {
+  width: 100%;
+  color: #555;
+  font-size: 0.85rem;
+  margin-top: 0.4rem;
+}
+
+.result-item {
+  margin-bottom: 1.25rem;
+}
+
+.result-item .result-meta {
+  color: #555;
+  font-size: 0.875rem;
+}
+
+.result-item .result-ids {
+  color: #006400;
+  font-size: 0.875rem;
+}
+
+.pagination {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.pagination .disabled {
+  color: #999;
+}
+{% endblock %}
+
+{% block body %}
+
+<div class="search-page">
+  <form class="search-form" action="{{ url('fcweb:search') }}" method="get" role="search">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search..." aria-label="search">
+    <button type="submit">Search</button>
+    <div class="search-type-radios">
+      <label><input type="radio" name="entity_type" value="releases" {{ 'checked' if entity_type == 'releases' }}> Releases</label>
+      <label><input type="radio" name="entity_type" value="containers" {{ 'checked' if entity_type == 'containers' }}> Containers</label>
+    </div>
+  </form>
+
+  {% if es_error %}
+    <div class="msg msg-error" style="margin-top: 1rem;">
+      <b>Search error:</b> {{ es_error }}
+    </div>
+  {% elif found %}
+    {% if found.results %}
+      <p style="margin-top: 1rem; margin-bottom: 1.5rem; color: #555; font-size: 0.9rem;">
+        <i>Showing
+        {% if found.offset == 0 %}first{% else %}{{ found.offset }} &mdash;{% endif %}
+        {{ found.offset + found.count_returned }}
+        out of {{ "{:,}".format(found.count_found) }} results</i>
+      </p>
+
+      {% if entity_type == "containers" %}
+        {% for c in found.results %}
+        <div class="result-item">
+          <b><a href="{{ url('fcweb:container_view', ident=c.uuid) }}">{{ c.name or "[blank]" }}</a></b>
+          {% if c.container_type %}
+            <span class="label label-grey">{{ c.container_type }}</span>
+          {% endif %}
+          {% if c.is_oa %}
+            <span class="label label-green">OA</span>
+          {% endif %}
+          {% if c.publisher %}
+            <br><span class="result-meta">{{ c.publisher }}</span>
+          {% endif %}
+          {% if c.issnl %}
+            <br><span class="result-ids">ISSN-L: {{ c.issnl }}</span>
+          {% endif %}
+          {% if c.releases_total %}
+            <br><span class="result-meta">{{ "{:,}".format(c.releases_total) }} releases</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+      {% else %}
+        {% for release in found.results %}
+        <div class="result-item">
+          {% if release.preservation == "bright" %}
+            <span class="label label-green" style="float: right;">bright archive</span>
+          {% elif release.preservation == "dark" %}
+            <span class="label label-grey" style="float: right;">dark archive</span>
+          {% endif %}
+          <b><a href="{{ url('fcweb:release_view', ident=release.uuid) }}">{{ release.title or "[blank]" }}</a></b>
+          {% if release.release_type and release.release_type not in ("article-journal", "paper-conference") %}
+            <span class="label label-grey">{{ release.release_type }}</span>
+          {% endif %}
+          {% if release.contrib_names %}
+            <br><span class="result-meta">{{ release.contrib_names[:12]|join(", ") }}{% if release.contrib_names|length > 12 %} (+{{ release.contrib_names|length - 12 }} others){% endif %}</span>
+          {% endif %}
+          {% if release.release_year or release.container_name %}
+            <br><span class="result-meta">
+              {% if release.release_year %}{{ release.release_year }}{% endif %}
+              {% if release.release_year and release.container_name %} &middot; {% endif %}
+              {% if release.container_name %}{{ release.container_name }}{% endif %}
+            </span>
+          {% endif %}
+          {% if release.doi or release.pmcid or release.pmid or release.arxiv_id %}
+            <br><span class="result-ids">
+              {% if release.doi %}doi:{{ release.doi }}{% endif %}
+              {% if release.pmcid %}{% if release.doi %} &nbsp;{% endif %}pmcid:{{ release.pmcid }}{% endif %}
+              {% if release.pmid %}{% if release.doi or release.pmcid %} &nbsp;{% endif %}pmid:{{ release.pmid }}{% endif %}
+              {% if release.arxiv_id %}{% if release.doi or release.pmcid or release.pmid %} &nbsp;{% endif %}arxiv:{{ release.arxiv_id }}{% endif %}
+            </span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% endif %}
+
+      {# -- Pagination --------------------------------------------------------- #}
+      {% if found.count_found > found.limit %}
+      <div class="pagination">
+        {% if found.offset > 0 %}
+          <a href="{{ url('fcweb:search') }}?q={{ q|urlencode }}&entity_type={{ entity_type }}&offset={{ [found.offset - found.limit, 0]|max }}">&laquo; Previous</a>
+        {% else %}
+          <span class="disabled">&laquo; Previous</span>
+        {% endif %}
+        &nbsp;&nbsp;
+        <i>{{ found.offset + 1 }}&ndash;{{ found.offset + found.count_returned }}
+        of {{ "{:,}".format(found.count_found) }}</i>
+        &nbsp;&nbsp;
+        {% if found.offset + found.limit < found.count_found and found.offset + found.limit < found.deep_page_limit %}
+          <a href="{{ url('fcweb:search') }}?q={{ q|urlencode }}&entity_type={{ entity_type }}&offset={{ found.offset + found.limit }}">Next &raquo;</a>
+        {% else %}
+          <span class="disabled">Next &raquo;</span>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    {% elif q %}
+      <p style="margin-top: 1rem;">No results found for <i>{{ q }}</i>.</p>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% endblock %}

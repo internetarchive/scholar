@@ -825,6 +825,7 @@ def stats_page(request: HttpRequest) -> HttpResponse:
 
 def stats_json(request: HttpRequest) -> HttpResponse:
     return HttpResponseRedirect("/api/fatcat/v2/stats", status=301)
+
 container_ident_stats = _stub
 container_ident_preservation_by_year = _stub
 container_ident_preservation_by_volume = _stub
@@ -881,8 +882,12 @@ def coverage_search(request: HttpRequest) -> HttpResponse:
 
 # -- Static pages ------------------------------------------------------------
 
-page_about = _stub
-page_guide = _stub
+def page_about(request: HttpRequest) -> HttpResponse:
+    return _render(request, "fcweb/about.html")
+
+
+def page_guide(request: HttpRequest) -> HttpResponse:
+    return _render(request, "fcweb/guide.html")
 
 # -- Revision views ----------------------------------------------------------
 # TODO these are no longer useful as we're dropping the notion of revisions;

@@ -405,6 +405,138 @@ def get_preservation_by_type(
     return sorted(type_dicts.values(), key=lambda x: x["total"], reverse=True)
 
 
+def get_container_preservation_by_year(
+    container_uuid: uuid.UUID,
+) -> list[dict[str, Any]] | None:
+    """Year-by-year preservation histogram for a container (last 250 years)."""
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    legacy_ident = uuid2fcid(container_uuid)
+    this_year = datetime.date.today().year
+
+    body = {
+        "size": 0,
+        "query": {
+            "bool": {
+                "must": [
+                    {"term": {"container_id": legacy_ident}},
+                ],
+                "must_not": [
+                    {"terms": {"release_type": ["stub", "component"]}},
+                ],
+                "filter": [
+                    {"range": {"release_year": {"gte": this_year - 249, "lte": this_year}}},
+                ],
+            }
+        },
+        "aggs": {
+            "year_preservation": {
+                "composite": {
+                    "size": 1500,
+                    "sources": [
+                        {"year": {"histogram": {"field": "release_year", "interval": 1}}},
+                        {"preservation": {"terms": {"field": "preservation"}}},
+                    ],
+                }
+            }
+        },
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    buckets = resp["aggregations"]["year_preservation"]["buckets"]
+    year_dicts: dict[int, dict[str, Any]] = {}
+
+    year_nums = {int(h["key"]["year"]) for h in buckets}
+    if year_nums:
+        for num in range(min(year_nums), max(year_nums) + 1):
+            year_dicts[num] = {"year": num, "bright": 0, "dark": 0, "shadows_only": 0, "none": 0}
+        for row in buckets:
+            year_dicts[int(row["key"]["year"])][row["key"]["preservation"]] = int(row["doc_count"])
+
+    for yd in year_dicts.values():
+        yd["none"] += yd.pop("shadows_only", 0)
+
+    return sorted(year_dicts.values(), key=lambda x: x["year"])
+
+
+def get_container_preservation_by_volume(
+    container_uuid: uuid.UUID,
+) -> list[dict[str, Any]] | None:
+    """Volume-by-volume preservation histogram for a container."""
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    legacy_ident = uuid2fcid(container_uuid)
+
+    body = {
+        "size": 0,
+        "query": {
+            "bool": {
+                "must": [
+                    {"term": {"container_id": legacy_ident}},
+                    {"exists": {"field": "volume"}},
+                ],
+                "must_not": [
+                    {"terms": {"release_type": ["stub", "component"]}},
+                ],
+            }
+        },
+        "aggs": {
+            "volume_preservation": {
+                "composite": {
+                    "size": 1500,
+                    "sources": [
+                        {"volume": {"terms": {"field": "volume"}}},
+                        {"preservation": {"terms": {"field": "preservation"}}},
+                    ],
+                }
+            }
+        },
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+            track_total_hits=True,
+        )
+    except Exception:
+        return None
+
+    buckets = resp["aggregations"]["volume_preservation"]["buckets"]
+    vol_dicts: dict[str, dict[str, Any]] = {}
+    for row in buckets:
+        vol = row["key"]["volume"]
+        # only keep integer-like volumes
+        if not vol.isdigit():
+            continue
+        if vol not in vol_dicts:
+            vol_dicts[vol] = {
+                "volume": vol, "bright": 0, "dark": 0, "shadows_only": 0, "none": 0,
+            }
+        vol_dicts[vol][row["key"]["preservation"]] = int(row["doc_count"])
+
+    for vd in vol_dicts.values():
+        vd["none"] += vd.pop("shadows_only", 0)
+
+    return sorted(vol_dicts.values(), key=lambda x: int(x["volume"]))
+
+
 def get_container_browse_year_volume_issue(
     container_uuid: uuid.UUID,
 ) -> list[dict[str, Any]] | None:

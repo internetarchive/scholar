@@ -900,6 +900,29 @@ def stats(request):
     return fcsearch.get_entity_stats() or {}
 
 
+@v2api.get("/container/{container_id}/stats")
+def container_stats(request, container_id: UUID):
+    return fcsearch.get_container_stats(container_id) or {}
+
+
+@v2api.get("/container/{container_id}/preservation_by_year")
+def container_preservation_by_year(request, container_id: UUID):
+    histogram = fcsearch.get_container_preservation_by_year(container_id)
+    return {"container_id": str(container_id), "histogram": histogram or []}
+
+
+@v2api.get("/container/{container_id}/preservation_by_volume")
+def container_preservation_by_volume(request, container_id: UUID):
+    histogram = fcsearch.get_container_preservation_by_volume(container_id)
+    return {"container_id": str(container_id), "histogram": histogram or []}
+
+
+@v2api.get("/container/{container_id}/preservation_by_type")
+def container_preservation_by_type(request, container_id: UUID):
+    histogram = fcsearch.get_preservation_by_type(container_id)
+    return {"container_id": str(container_id), "histogram": histogram or []}
+
+
 @v2api.exception_handler(Http404)
 def not_found(request, exc):
     return v2api.create_response(

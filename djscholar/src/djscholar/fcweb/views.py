@@ -908,10 +908,40 @@ def stats_json(request: HttpRequest) -> HttpResponse:
     return HttpResponseRedirect("/api/fatcat/v2/stats", status=301)
 
 
-container_ident_stats = _stub
-container_ident_preservation_by_year = _stub
-container_ident_preservation_by_volume = _stub
-container_ident_preservation_by_type = _stub
+def container_ident_stats(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        container_uuid = resolve_ident(ident)
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+    return HttpResponseRedirect(
+        f"/api/fatcat/v2/container/{container_uuid}/stats", status=301)
+
+
+def container_ident_preservation_by_year(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        container_uuid = resolve_ident(ident)
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+    return HttpResponseRedirect(
+        f"/api/fatcat/v2/container/{container_uuid}/preservation_by_year", status=301)
+
+
+def container_ident_preservation_by_volume(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        container_uuid = resolve_ident(ident)
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+    return HttpResponseRedirect(
+        f"/api/fatcat/v2/container/{container_uuid}/preservation_by_volume", status=301)
+
+
+def container_ident_preservation_by_type(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        container_uuid = resolve_ident(ident)
+    except ValueError:
+        return HttpResponse(f"bad id: {ident}", status=400)
+    return HttpResponseRedirect(
+        f"/api/fatcat/v2/container/{container_uuid}/preservation_by_type", status=301)
 
 # -- Coverage ----------------------------------------------------------------
 

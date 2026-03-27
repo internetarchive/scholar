@@ -29,7 +29,8 @@ def _get_jinja_env():
     return engines["jinja2"]
 
 
-def _render(request: HttpRequest, template_name: str, context: dict | None = None, status: int = 200) -> HttpResponse:
+def _render(request: HttpRequest, template_name: str,
+            context: dict | None = None, status: int = 200) -> HttpResponse:
     env = _get_jinja_env()
     template = env.get_template(template_name)
     html = template.render(context or {})
@@ -98,6 +99,7 @@ def container_search(request: HttpRequest) -> HttpResponse:
         params["q"] = q
     return HttpResponseRedirect(reverse("fcweb:search") + "?" + urlencode(params))
 
+
 # -- Lookups -----------------------------------------------------------------
 
 _RELEASE_LOOKUP_PARAMS = [
@@ -146,13 +148,16 @@ def release_lookup(request: HttpRequest) -> HttpResponse:
     return _generic_lookup(request, release_svc, _RELEASE_LOOKUP_PARAMS,
                            "release", "release_view")
 
+
 def container_lookup(request: HttpRequest) -> HttpResponse:
     return _generic_lookup(request, container_svc, _CONTAINER_LOOKUP_PARAMS,
                            "container", "container_view")
 
+
 def creator_lookup(request: HttpRequest) -> HttpResponse:
     return _generic_lookup(request, creator_svc, _CREATOR_LOOKUP_PARAMS,
                            "creator", "creator_view")
+
 
 def file_lookup(request: HttpRequest) -> HttpResponse:
     return _generic_lookup(request, file_svc, _FILE_LOOKUP_PARAMS,
@@ -311,6 +316,7 @@ def release_view_references(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": str(release_uuid),
     })
 
+
 release_save = _stub
 
 
@@ -402,6 +408,7 @@ def release_view_refs_inbound(request: HttpRequest, ident: str) -> HttpResponse:
         "direction": "in",
     })
 
+
 def container_view(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         container_uuid = resolve_ident(ident)
@@ -436,6 +443,7 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": str(container_uuid),
     })
 
+
 def container_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         container_uuid = resolve_ident(ident)
@@ -451,6 +459,8 @@ def container_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "extra": container.extra,
         "ident": str(container_uuid),
     })
+
+
 def container_view_browse(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         container_uuid = resolve_ident(ident)
@@ -489,6 +499,8 @@ def container_view_browse(request: HttpRequest, ident: str) -> HttpResponse:
         "issue": issue,
         "ident": str(container_uuid),
     })
+
+
 def container_view_coverage(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         container_uuid = resolve_ident(ident)
@@ -540,6 +552,7 @@ def container_view_search(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": str(container_uuid),
     })
 
+
 def creator_view(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         creator_uuid = resolve_ident(ident)
@@ -557,6 +570,7 @@ def creator_view(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": str(creator_uuid),
     })
 
+
 def creator_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         creator_uuid = resolve_ident(ident)
@@ -572,6 +586,7 @@ def creator_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "extra": creator.extra,
         "ident": str(creator_uuid),
     })
+
 
 def file_view(request: HttpRequest, ident: str) -> HttpResponse:
     try:
@@ -604,6 +619,7 @@ def file_view(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": str(file_uuid),
     })
 
+
 def file_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         file_uuid = resolve_ident(ident)
@@ -619,6 +635,7 @@ def file_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "extra": file.extra,
         "ident": str(file_uuid),
     })
+
 
 def fileset_view(request: HttpRequest, ident: str) -> HttpResponse:
     try:
@@ -875,6 +892,7 @@ def stats_page(request: HttpRequest) -> HttpResponse:
 def stats_json(request: HttpRequest) -> HttpResponse:
     return HttpResponseRedirect("/api/fatcat/v2/stats", status=301)
 
+
 container_ident_stats = _stub
 container_ident_preservation_by_year = _stub
 container_ident_preservation_by_volume = _stub
@@ -930,6 +948,7 @@ def coverage_search(request: HttpRequest) -> HttpResponse:
     })
 
 # -- Static pages ------------------------------------------------------------
+
 
 def page_about(request: HttpRequest) -> HttpResponse:
     return _render(request, "fcweb/about.html")

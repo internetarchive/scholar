@@ -53,7 +53,7 @@
     }
 
     h1 {
-      margin-top: 4.5rem;
+      margin-top: 3.5rem;
     }
 
     h3 {
@@ -92,10 +92,11 @@
       left: 0;
       right: 0;
       z-index: 100;
+      height: 3rem;
       background: #1b1c1d;
       display: flex;
       align-items: center;
-      padding: 0.4rem 1rem;
+      padding: 0 1rem;
     }
 
     .top-nav-inner {
@@ -128,7 +129,7 @@
       margin-left: auto;
     }
 
-    .top-nav .nav-search input[type="text"] {
+    .top-nav .nav-search input {
       background: transparent;
       border: 1px solid #777;
       color: #fff;
@@ -138,7 +139,7 @@
       border-radius: 3px;
     }
 
-    .top-nav .nav-search input[type="text"]::placeholder {
+    .top-nav .nav-search input::placeholder {
       color: rgba(255, 255, 255, 0.5);
     }
 
@@ -165,8 +166,7 @@
     @media (max-width: 640px) {
       .mobile-hide { display: none !important; }
 
-      .top-nav .nav-search input[type="text"] { width: 10em; }
-      .search-type-radios { font-size: 0.6rem; gap: 0.4rem; }
+      .top-nav .nav-search input { width: 10em; }
     }
 
     /* -- Entity header (grey banner with title + tabs) ----------------------- */
@@ -528,10 +528,6 @@
     <a href="{{ url('ftsearch:home') }}" class="mobile-hide">IA Scholar</a>
     <form class="nav-search" action="{{ url('fcweb:search') }}" method="get" role="search" aria-label="Search">
       <input type="text" name="q" placeholder="Search...">
-      <div class="search-type-radios">
-        <label><input type="radio" name="entity_type" value="releases" checked> Releases</label>
-        <label><input type="radio" name="entity_type" value="containers"> Containers</label>
-      </div>
     </form>
   </div>
 </nav>

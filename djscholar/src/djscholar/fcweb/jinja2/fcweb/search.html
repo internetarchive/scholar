@@ -97,6 +97,8 @@
             <span class="label label-green" style="float: right;">bright archive</span>
           {% elif release.preservation == "dark" %}
             <span class="label label-grey" style="float: right;">dark archive</span>
+          {% else %}
+            <span class="label label-red" style="float: right;">no archive</span>
           {% endif %}
           <b><a href="{{ url('fcweb:release_view', ident=release.uuid) }}">{{ release.title or "[blank]" }}</a></b>
           {% if release.release_type and release.release_type not in ("article-journal", "paper-conference") %}

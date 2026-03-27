@@ -81,7 +81,11 @@ there are are also generic operations and fields common across all entities.</p>
 <p>All entities have:</p>
 
 <ul>
-  <li><code>extra</code> (dict, optional): free-form JSON metadata</li>
+  <li><code>id</code>: a UUID uniquely identifying this record</li>
+  <li><code>created</code>: when the record was added to our database</li>
+  <li><code>updated</code>: when the record was last changed in our database</li>
+  <li><code>source</code>: whence this record originated; can be used for provenance.</li>
+  <li><code>extra</code>: free-form JSON metadata</li>
 </ul>
 
 <p>The &quot;extra&quot; field is an &quot;escape hatch&quot; to include extra fields not in the
@@ -89,29 +93,6 @@ regular schema. It is intended to enable gradual evolution of the schema, as
 well as accommodating niche or field-specific content. Reasonable care should
 be taken with this extra metadata: don't include large text or binary fields,
 hundreds of fields, duplicate metadata, etc.</p>
-
-<p>All entities also have the following fields:</p>
-
-<ul>
-  <li>
-    <code>state</code> (string, read-only): summarizes the status of the entity in the
-    catalog. One of a small number of fixed values, see vocabulary below.
-  </li>
-  <li><code>id</code> (UUID, read-only): the entity identifier</li>
-</ul>
-
-<h3 id="state-vocabulary"><a class="header" href="#state-vocabulary"><code>state</code> Vocabulary</a></h3>
-
-<ul>
-  <li><code>active</code>: entity exists in the catalog</li>
-  <li><code>redirect</code>: the entity <code>id</code> exists in the catalog, but is a redirect to another entity.</li>
-  <li>
-    <code>deleted</code>: an entity with this <code>id</code> did exist in the catalog previously,
-    but it was deleted. The <code>id</code> is retained as a &quot;tombstone&quot; record (aka,
-    there is a record that an entity <em>did</em> exist previously).
-  </li>
-</ul>
-
 
 <h3 id="controlled-vocabularies"><a class="header" href="#controlled-vocabularies">Controlled Vocabularies</a></h3>
 
@@ -149,8 +130,6 @@ Alternative titles (and translations) can be stored in &quot;extra&quot; metadat
 below)</li>
 <li><code>container_type</code> (string): eg, journal vs. conference vs. book series.
 Controlled vocabulary is described below.</li>
-<li><code>publication_status</code> (string): whether actively publishing, never published
-anything, or discontinued. Controlled vocabularity is described below.</li>
 <li><code>publisher</code> (string): The name of the publishing organization. Eg, &quot;Society
 of Curious Students&quot;.</li>
 <li><code>issnl</code> (string): an external identifier, with registration controlled by the
@@ -294,7 +273,7 @@ included after a <code>+</code>. Example: &quot;application/pdf&quot;</li>
 contain the full representation of a work (eg, fulltext of an article, for an
 <code>article-journal</code> release), describes what that scope of coverage is. Eg,
 entire <code>issue</code>, <code>corrupt</code> file. See vocabulary below.</li>
-<li><code>release_ids</code> (array of UUIDs): references to <code>release</code> entities
+<li><code>releases</code> (array of UUIDs): references to <code>release</code> entities
 that this file represents a manifestation of. Note that a single file can
 contain multiple release references (eg, a PDF containing a full issue with
 many articles), and that a release will often have multiple files (differing
@@ -362,7 +341,6 @@ interfaces. Eg, &quot;Grace Hopper&quot;</li>
 <li><code>given_name</code> (string): Also known as &quot;first name&quot;. Eg, &quot;Grace&quot;.</li>
 <li><code>surname</code> (string): Also known as &quot;last name&quot;. Eg, &quot;Hooper&quot;.</li>
 <li><code>orcid</code> (string): external identifier, as registered with ORCID.</li>
-<li><code>wikidata_qid</code> (string): external linking identifier to a Wikidata entity.</li>
 </ul>
 <h3 id="extra-fields"><a class="header" href="#extra-fields"><code>extra</code> Fields</a></h3>
 <p>All are optional.</p>
@@ -538,10 +516,10 @@ them as such so they aren't re-imported. Uses same vocabulary as File entity.</l
 journal articles. Subtitle may also be appended to the <code>title</code> instead of
 populating this field.</li>
 <li><code>original_title</code> (string): the full original language title, if <code>title</code> is translated</li>
-<li><code>work_id</code> (UUID; required): the (single) work that this release
+<li><code>work</code> (UUID; required): the (single) work that this release
 is grouped under. If not specified in a creation (<code>POST</code>) action, the API
 will auto-generate a work.</li>
-<li><code>container_id</code> (UUID): a (single) container that this release is
+<li><code>container</code> (UUID): a (single) container that this release is
 part of. When expanded the <code>container</code> field contains the full <code>container</code>
 entity.</li>
 <li><code>release_type</code> (string, controlled set): represents the medium or form-factor
@@ -555,11 +533,7 @@ publicly available. Blank if only year is known.</li>
 <li><code>release_year</code> (integer): year when this release was first made
 publicly available; should match <code>release_date</code> if both are known.</li>
 <li><code>withdrawn_status</code> (optional, string, controlled set):</li>
-<li><code>withdrawn_date</code> (optional, string, ISO date format): when this release was withdrawn.
-Blank if only year is known.</li>
-<li><code>withdrawn_year</code> (optional, integer): year when this release was withdrawn; should
-match <code>withdrawn_date</code> if both are known.</li>
-<li><code>ext_ids</code> (key/value object of string-to-string mappings): external
+<li><code>extids</code> (key/value object of string-to-string mappings): external
 identifiers. At least an empty <code>ext_ids</code> object is always required for
 release entities, so individual identifiers can be accessed directly.</li>
 <li><code>volume</code> (string): optionally, stores the specific volume of a serial
@@ -601,7 +575,7 @@ author. Authorship order has significance in many fields. Non-author
 contributions (illustration, translation, editorship) may or may not be
 ordered, depending on context, but index numbers should be unique per
 release (aka, there should not be &quot;first author&quot; and &quot;first translator&quot;)</li>
-<li><code>creator_id</code> (UUID): if known, a reference to a specific <code>creator</code></li>
+<li><code>creator</code> (UUID): if known, a reference to a specific <code>creator</code></li>
 <li><code>raw_name</code> (string): the name of the contributor, as attributed in the
 text of this work. If the <code>creator_id</code> is linked, this may be different
 from the <code>display_name</code>; if a creator is not linked, this field is
@@ -655,11 +629,13 @@ the <code>lang</code> field of release for format and vocabulary.</li>
 </li>
 </ul>
 <h3 id="external-identifiers-ext_ids"><a class="header" href="#external-identifiers-ext_ids">External Identifiers (<code>ext_ids</code>)</a></h3>
-<p>The <code>ext_ids</code> object name-spaces external identifiers and makes it easier to
+<p>The <code>extids</code> object name-spaces external identifiers and makes it easier to
 add new identifiers to the schema in the future.</p>
 <p>Many identifier fields must match an internal regex (string syntax constraint)
 to ensure they are properly formatted, though these checks aren't always
 complete or correct in more obscure cases.</p>
+
+<p>external ids are a triple of release ID, ID type, and ID Value. ID types can be:</p>
 <ul>
 <li><code>doi</code> (string): full DOI number, lower-case. Example: &quot;10.1234/abcde.789&quot;.
 See section below for more about DOIs specifically</li>

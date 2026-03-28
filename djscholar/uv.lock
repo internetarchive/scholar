@@ -65,6 +65,31 @@ wheels = [
 ]
 
 [[package]]
+name = "citeproc-py"
+version = "0.9.0"
+source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "lxml" },
+]
+sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/citeproc-py/0.9.0/citeproc_py-0.9.0.tar.gz", hash = "sha256:58781d8a563e87ca7cceb43d08beaca10dcdf9f3cf77ddf3b17894071edc27c8" }
+wheels = [
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/citeproc-py/0.9.0/citeproc_py-0.9.0-py3-none-any.whl", hash = "sha256:4737a2adbbb8ba13e2abd6c24c29095b7d0c36722e7d377f7b046323bfc4d4f9" },
+]
+
+[[package]]
+name = "citeproc-py-styles"
+version = "0.1.5"
+source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "lxml" },
+    { name = "six" },
+]
+sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/citeproc-py-styles/0.1.5/citeproc_py_styles-0.1.5.tar.gz", hash = "sha256:20a82e22b4eb814039449ba83be8c142a385e6f6f17f5b70b1b33b3fd1f8e619" }
+wheels = [
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/citeproc-py-styles/0.1.5/citeproc_py_styles-0.1.5-py2.py3-none-any.whl", hash = "sha256:2d15558d82fc447daf49a0861f01b51ee9dbc0d2f1872ac87fb6545867620433" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -139,6 +164,8 @@ name = "djscholar"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "citeproc-py" },
+    { name = "citeproc-py-styles" },
     { name = "django" },
     { name = "django-ninja" },
     { name = "elasticsearch" },
@@ -165,6 +192,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "citeproc-py", specifier = "==0.9.0" },
+    { name = "citeproc-py-styles", specifier = "==0.1.5" },
     { name = "django", specifier = "==5.1.5" },
     { name = "django-ninja", specifier = "==1.4.0" },
     { name = "elasticsearch", specifier = "==7.13.4" },
@@ -334,6 +363,68 @@ dependencies = [
 sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/jinja2/3.1.6/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d" }
 wheels = [
     { url = "https://nexus.us.archive.org/repository/pypi-group/packages/jinja2/3.1.6/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67" },
+]
+
+[[package]]
+name = "lxml"
+version = "6.0.2"
+source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2.tar.gz", hash = "sha256:cd79f3367bd74b317dda655dc8fcfa304d9eb6e4fb06b7168c5cf27f96e0cd62" }
+wheels = [
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:9b33d21594afab46f37ae58dfadd06636f154923c4e8a4d754b0127554eb2e77" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:6c8963287d7a4c5c9a432ff487c52e9c5618667179c18a204bdedb27310f022f" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:1941354d92699fb5ffe6ed7b32f9649e43c2feb4b97205f75866f7d21aa91452" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:bb2f6ca0ae2d983ded09357b84af659c954722bbf04dea98030064996d156048" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:eb2a12d704f180a902d7fa778c6d71f36ceb7b0d317f34cdc76a5d05aa1dd1df" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-manylinux_2_26_i686.manylinux_2_28_i686.whl", hash = "sha256:6ec0e3f745021bfed19c456647f0298d60a24c9ff86d9d051f52b509663feeb1" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:846ae9a12d54e368933b9759052d6206a9e8b250291109c48e350c1f1f49d916" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ef9266d2aa545d7374938fb5c484531ef5a2ec7f2d573e62f8ce722c735685fd" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-manylinux_2_31_armv7l.whl", hash = "sha256:4077b7c79f31755df33b795dc12119cb557a0106bfdab0d2c2d97bd3cf3dffa6" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:a7c5d5e5f1081955358533be077166ee97ed2571d6a66bdba6ec2f609a715d1a" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:8f8d0cbd0674ee89863a523e6994ac25fd5be9c8486acfc3e5ccea679bad2679" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-musllinux_1_2_armv7l.whl", hash = "sha256:2cbcbf6d6e924c28f04a43f3b6f6e272312a090f269eff68a2982e13e5d57659" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-musllinux_1_2_ppc64le.whl", hash = "sha256:dfb874cfa53340009af6bdd7e54ebc0d21012a60a4e65d927c2e477112e63484" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-musllinux_1_2_riscv64.whl", hash = "sha256:fb8dae0b6b8b7f9e96c26fdd8121522ce5de9bb5538010870bd538683d30e9a2" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:358d9adae670b63e95bc59747c72f4dc97c9ec58881d4627fe0120da0f90d314" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-win32.whl", hash = "sha256:e8cd2415f372e7e5a789d743d133ae474290a90b9023197fd78f32e2dc6873e2" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-win_amd64.whl", hash = "sha256:b30d46379644fbfc3ab81f8f82ae4de55179414651f110a1514f0b1f8f6cb2d7" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp313-cp313-win_arm64.whl", hash = "sha256:13dcecc9946dca97b11b7c40d29fba63b55ab4170d3c0cf8c0c164343b9bfdcf" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-macosx_10_13_universal2.whl", hash = "sha256:b0c732aa23de8f8aec23f4b580d1e52905ef468afb4abeafd3fec77042abb6fe" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-macosx_10_13_x86_64.whl", hash = "sha256:4468e3b83e10e0317a89a33d28f7aeba1caa4d1a6fd457d115dd4ffe90c5931d" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:abd44571493973bad4598a3be7e1d807ed45aa2adaf7ab92ab7c62609569b17d" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:370cd78d5855cfbffd57c422851f7d3864e6ae72d0da615fca4dad8c45d375a5" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:901e3b4219fa04ef766885fb40fa516a71662a4c61b80c94d25336b4934b71c0" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-manylinux_2_26_i686.manylinux_2_28_i686.whl", hash = "sha256:a4bf42d2e4cf52c28cc1812d62426b9503cdb0c87a6de81442626aa7d69707ba" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:b2c7fdaa4d7c3d886a42534adec7cfac73860b89b4e5298752f60aa5984641a0" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:98a5e1660dc7de2200b00d53fa00bcd3c35a3608c305d45a7bbcaf29fa16e83d" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-manylinux_2_31_armv7l.whl", hash = "sha256:dc051506c30b609238d79eda75ee9cab3e520570ec8219844a72a46020901e37" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:8799481bbdd212470d17513a54d568f44416db01250f49449647b5ab5b5dccb9" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:9261bb77c2dab42f3ecd9103951aeca2c40277701eb7e912c545c1b16e0e4917" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-musllinux_1_2_armv7l.whl", hash = "sha256:65ac4a01aba353cfa6d5725b95d7aed6356ddc0a3cd734de00124d285b04b64f" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-musllinux_1_2_ppc64le.whl", hash = "sha256:b22a07cbb82fea98f8a2fd814f3d1811ff9ed76d0fc6abc84eb21527596e7cc8" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:d759cdd7f3e055d6bc8d9bec3ad905227b2e4c785dc16c372eb5b5e83123f48a" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:945da35a48d193d27c188037a05fec5492937f66fb1958c24fc761fb9d40d43c" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-win32.whl", hash = "sha256:be3aaa60da67e6153eb15715cc2e19091af5dc75faef8b8a585aea372507384b" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-win_amd64.whl", hash = "sha256:fa25afbadead523f7001caf0c2382afd272c315a033a7b06336da2637d92d6ed" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314-win_arm64.whl", hash = "sha256:063eccf89df5b24e361b123e257e437f9e9878f425ee9aae3144c77faf6da6d8" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-macosx_10_13_universal2.whl", hash = "sha256:6162a86d86893d63084faaf4ff937b3daea233e3682fb4474db07395794fa80d" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-macosx_10_13_x86_64.whl", hash = "sha256:414aaa94e974e23a3e92e7ca5b97d10c0cf37b6481f50911032c69eeb3991bba" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:48461bd21625458dd01e14e2c38dd0aea69addc3c4f960c30d9f59d7f93be601" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:25fcc59afc57d527cfc78a58f40ab4c9b8fd096a9a3f964d2781ffb6eb33f4ed" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:5179c60288204e6ddde3f774a93350177e08876eaf3ab78aa3a3649d43eb7d37" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-manylinux_2_26_i686.manylinux_2_28_i686.whl", hash = "sha256:967aab75434de148ec80597b75062d8123cadf2943fb4281f385141e18b21338" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:d100fcc8930d697c6561156c6810ab4a508fb264c8b6779e6e61e2ed5e7558f9" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2ca59e7e13e5981175b8b3e4ab84d7da57993eeff53c07764dcebda0d0e64ecd" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-manylinux_2_31_armv7l.whl", hash = "sha256:957448ac63a42e2e49531b9d6c0fa449a1970dbc32467aaad46f11545be9af1d" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:b7fc49c37f1786284b12af63152fe1d0990722497e2d5817acfe7a877522f9a9" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:e19e0643cc936a22e837f79d01a550678da8377d7d801a14487c10c34ee49c7e" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-musllinux_1_2_armv7l.whl", hash = "sha256:1db01e5cf14345628e0cbe71067204db658e2fb8e51e7f33631f5f4735fefd8d" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-musllinux_1_2_ppc64le.whl", hash = "sha256:875c6b5ab39ad5291588aed6925fac99d0097af0dd62f33c7b43736043d4a2ec" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-musllinux_1_2_riscv64.whl", hash = "sha256:cdcbed9ad19da81c480dfd6dd161886db6096083c9938ead313d94b30aadf272" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:80dadc234ebc532e09be1975ff538d154a7fa61ea5031c03d25178855544728f" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-win32.whl", hash = "sha256:da08e7bb297b04e893d91087df19638dc7a6bb858a954b0cc2b9f5053c922312" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-win_amd64.whl", hash = "sha256:252a22982dca42f6155125ac76d3432e548a7625d56f5a273ee78a5057216eca" },
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/lxml/6.0.2/lxml-6.0.2-cp314-cp314t-win_arm64.whl", hash = "sha256:bb4c1847b303835d89d785a18801a883436cdfd5dc3d62947f9c49e24f0f5a2c" },
 ]
 
 [[package]]

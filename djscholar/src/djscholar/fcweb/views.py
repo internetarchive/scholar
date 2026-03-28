@@ -24,6 +24,7 @@ from djscholar.fcapi.services import webcaptures as webcapture_svc
 from djscholar.fcapi.services import works as work_svc
 from djscholar.fcapi.services import changelog as changelog_svc
 from djscholar.fcweb import graphics
+from djscholar.fcweb import csl as csl_mod
 
 
 def _get_jinja_env():
@@ -804,6 +805,7 @@ def work_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "ident": str(work_uuid),
     })
 
+
 # -- Underscore redirects (legacy URLs) --------------------------------------
 # TODO remember what these were for
 
@@ -819,8 +821,56 @@ editor_underscore_view = _stub
 
 # -- Release export formats --------------------------------------------------
 
-release_bibtex = _stub
-release_citeproc = _stub
+def _release_csl_data(ident: str):
+    """Shared helper to load release data needed for CSL rendering."""
+    release_uuid = resolve_ident(ident)
+    release = release_svc.get(release_uuid)
+    contribs = release_svc.get_contribs(release_uuid)
+    extids = release_svc.get_extids(release_uuid)
+    container = release.container
+    return release, contribs, extids, container
+
+
+def release_bibtex(request: HttpRequest, ident: str) -> HttpResponse:
+    try:
+        release, contribs, extids, container = _release_csl_data(ident)
+    except EntityNotFound:
+        raise Http404(f"release not found: {ident}")
+    except ValueError as e:
+        return HttpResponse(str(e), status=400, content_type="text/plain")
+
+    try:
+        csl = csl_mod.release_to_csl(release, contribs, extids, container)
+    except ValueError as e:
+        return HttpResponse(str(e), status=400, content_type="text/plain")
+
+    bibtex = csl_mod.citeproc_csl(csl, "bibtex")
+    return HttpResponse(bibtex, content_type="text/plain")
+
+
+def release_citeproc(request: HttpRequest, ident: str) -> HttpResponse:
+    style = request.GET.get("style", "harvard1")
+
+    try:
+        release, contribs, extids, container = _release_csl_data(ident)
+    except EntityNotFound:
+        raise Http404(f"release not found: {ident}")
+    except ValueError as e:
+        return HttpResponse(str(e), status=400, content_type="text/plain")
+
+    try:
+        csl = csl_mod.release_to_csl(release, contribs, extids, container)
+    except ValueError as e:
+        return HttpResponse(str(e), status=400, content_type="text/plain")
+
+    try:
+        cite = csl_mod.citeproc_csl(csl, style)
+    except Exception as e:
+        return HttpResponse(str(e), status=400, content_type="text/plain")
+
+    if style == "csl-json":
+        return HttpResponse(cite, content_type="application/json")
+    return HttpResponse(cite, content_type="text/plain")
 
 # -- References (HTML) -------------------------------------------------------
 

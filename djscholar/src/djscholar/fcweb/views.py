@@ -169,9 +169,6 @@ def file_lookup(request: HttpRequest) -> HttpResponse:
 
 # -- Helpers -----------------------------------------------------------------
 
-
-
-
 def _release_preservation(files, extids):
     """Compute preservation status for a release.
 

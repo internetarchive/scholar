@@ -5,9 +5,9 @@ They will be implemented incrementally.
 """
 
 import datetime
+import uuid
 from urllib.parse import urlencode
 
-from django.db import models
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, Http404
 from django.template import engines
 from django.urls import reverse
@@ -170,27 +170,6 @@ def file_lookup(request: HttpRequest) -> HttpResponse:
 # -- Helpers -----------------------------------------------------------------
 
 
-METADATA_SKIP_FIELDS = {"id", "extra", "legacy_rev", "source", "hidden_reason", "hidden_when"}
-
-
-def _entity_schema_metadata(entity: models.Model) -> dict:
-    """Extract model field values as an ordered dict for the metadata view.
-
-    Skips internal fields (id, extra, legacy_rev, etc.) and None values.
-    """
-    result = {}
-    for field in entity._meta.get_fields():
-        if not hasattr(field, "attname"):
-            # skip reverse relations, M2M, etc.
-            continue
-        name = field.attname
-        if name in METADATA_SKIP_FIELDS:
-            continue
-        value = getattr(entity, name)
-        if value is None:
-            continue
-        result[name] = value
-    return result
 
 
 def _release_preservation(files, extids):
@@ -275,7 +254,7 @@ def release_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
         "release": release,
         "authors": authors,
         "contribs": contribs,
-        "metadata": _entity_schema_metadata(release),
+        "metadata": release_svc.schema_metadata(release),
         "extra": release.extra,
         "ident": str(release_uuid),
     })
@@ -474,7 +453,7 @@ def container_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
 
     return _render(request, "fcweb/container_view_metadata.html", {
         "container": container,
-        "metadata": _entity_schema_metadata(container),
+        "metadata": container_svc.schema_metadata(container),
         "extra": container.extra,
         "ident": str(container_uuid),
     })
@@ -609,7 +588,7 @@ def creator_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
 
     return _render(request, "fcweb/creator_view_metadata.html", {
         "creator": creator,
-        "metadata": _entity_schema_metadata(creator),
+        "metadata": creator_svc.schema_metadata(creator),
         "extra": creator.extra,
         "ident": str(creator_uuid),
     })
@@ -658,7 +637,7 @@ def file_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
 
     return _render(request, "fcweb/file_view_metadata.html", {
         "file": file,
-        "metadata": _entity_schema_metadata(file),
+        "metadata": file_svc.schema_metadata(file),
         "extra": file.extra,
         "ident": str(file_uuid),
     })
@@ -712,7 +691,7 @@ def fileset_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
 
     return _render(request, "fcweb/fileset_view_metadata.html", {
         "fileset": fileset,
-        "metadata": _entity_schema_metadata(fileset),
+        "metadata": fileset_svc.schema_metadata(fileset),
         "extra": fileset.extra,
         "ident": str(fs_uuid),
     })
@@ -768,7 +747,7 @@ def webcapture_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
 
     return _render(request, "fcweb/webcapture_view_metadata.html", {
         "webcapture": webcapture,
-        "metadata": _entity_schema_metadata(webcapture),
+        "metadata": webcapture_svc.schema_metadata(webcapture),
         "extra": webcapture.extra,
         "ident": str(wc_uuid),
     })
@@ -802,7 +781,7 @@ def work_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
 
     return _render(request, "fcweb/work_view_metadata.html", {
         "work": work,
-        "metadata": _entity_schema_metadata(work),
+        "metadata": work_svc.schema_metadata(work),
         "extra": work.extra,
         "ident": str(work_uuid),
     })
@@ -1104,62 +1083,62 @@ def page_about(request: HttpRequest) -> HttpResponse:
 def page_guide(request: HttpRequest) -> HttpResponse:
     return _render(request, "fcweb/guide.html")
 
-# -- Revision views ----------------------------------------------------------
-# TODO these are no longer useful as we're dropping the notion of revisions;
-# however, these should attempt to redirect to detail pages as we're able.
-# container_revision_view = _stub
-# container_revision_view_metadata = _stub
-# creator_revision_view = _stub
-# creator_revision_view_metadata = _stub
-# file_revision_view = _stub
-# file_revision_view_metadata = _stub
-# fileset_revision_view = _stub
-# fileset_revision_view_metadata = _stub
-# webcapture_revision_view = _stub
-# webcapture_revision_view_metadata = _stub
-# release_revision_view = _stub
-# release_revision_view_metadata = _stub
-# release_revision_view_contribs = _stub
-# release_revision_view_references = _stub
-# work_revision_view = _stub
-# work_revision_view_metadata = _stub
+# -- Revision views (redirect to entity detail page) -------------------------
 
-# -- Editgroup entity views --------------------------------------------------
-# TODO the editgroup concept is also dropped. I'm not sure that there is a
-# great way to redirect these -- they will likely just 404.
-# container_editgroup_view = _stub
-# container_editgroup_view_metadata = _stub
-# creator_editgroup_view = _stub
-# creator_editgroup_view_metadata = _stub
-# file_editgroup_view = _stub
-# file_editgroup_view_metadata = _stub
-# fileset_editgroup_view = _stub
-# fileset_editgroup_view_metadata = _stub
-# webcapture_editgroup_view = _stub
-# webcapture_editgroup_view_metadata = _stub
-# release_editgroup_view = _stub
-# release_editgroup_view_metadata = _stub
-# release_editgroup_view_contribs = _stub
-# release_editgroup_view_references = _stub
-# work_editgroup_view = _stub
-# work_editgroup_view_metadata = _stub
+_REVISION_ENTITY_MAP = {
+    "container": (container_svc.get_by_legacy_rev, "container_view"),
+    "creator": (creator_svc.get_by_legacy_rev, "creator_view"),
+    "file": (file_svc.get_by_legacy_rev, "file_view"),
+    "fileset": (fileset_svc.get_by_legacy_rev, "fileset_view"),
+    "webcapture": (webcapture_svc.get_by_legacy_rev, "webcapture_view"),
+    "release": (release_svc.get_by_legacy_rev, "release_view"),
+    "work": (work_svc.get_by_legacy_rev, "work_view"),
+}
 
-# -- Editgroup / editor views ------------------------------------------------
-# TODO the editgroup concept is also dropped. I'm not sure that there is a
-# great way to redirect these -- they will likely just 404.
-# editgroup_view = _stub
-# editgroup_diff_view = _stub
-# editor_view = _stub
-# editor_editgroups = _stub
-# editor_annotations = _stub
-# editor_username_redirect = _stub
 
-# -- Entity history ----------------------------------------------------------
-# TODO 404 or 301?
-# container_history = _stub
-# creator_history = _stub
-# file_history = _stub
-# fileset_history = _stub
-# webcapture_history = _stub
-# release_history = _stub
-# work_history = _stub
+def _revision_redirect(request: HttpRequest, rev_id: str, entity_type: str) -> HttpResponse:
+    get_by_legacy_rev, view_name = _REVISION_ENTITY_MAP[entity_type]
+    try:
+        rev_uuid = uuid.UUID(rev_id)
+    except ValueError:
+        raise Http404(f"invalid revision id: {rev_id}")
+    try:
+        entity = get_by_legacy_rev(rev_uuid)
+    except EntityNotFound:
+        raise Http404(f"no {entity_type} with revision {rev_id}")
+    return HttpResponseRedirect(
+        reverse(f"fcweb:{view_name}", kwargs={"ident": str(entity.id)}))
+
+
+def container_revision_view(request, rev_id):
+    return _revision_redirect(request, rev_id, "container")
+
+
+def creator_revision_view(request, rev_id):
+    return _revision_redirect(request, rev_id, "creator")
+
+
+def file_revision_view(request, rev_id):
+    return _revision_redirect(request, rev_id, "file")
+
+
+def fileset_revision_view(request, rev_id):
+    return _revision_redirect(request, rev_id, "fileset")
+
+
+def webcapture_revision_view(request, rev_id):
+    return _revision_redirect(request, rev_id, "webcapture")
+
+
+def release_revision_view(request, rev_id):
+    return _revision_redirect(request, rev_id, "release")
+
+
+def work_revision_view(request, rev_id):
+    return _revision_redirect(request, rev_id, "work")
+
+
+# -- Entity history (410 Gone) -----------------------------------------------
+
+def entity_history_view(request: HttpRequest, **kwargs) -> HttpResponse:
+    return HttpResponse("entity history is not supported", status=410)

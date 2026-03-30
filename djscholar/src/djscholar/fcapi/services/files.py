@@ -4,7 +4,7 @@ from django.db.models import QuerySet
 
 from djscholar.fcapi import models as m
 from djscholar.fcapi.fcid import fcid2uuid
-from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import EntityNotFound, _entity_schema_metadata
 
 LOOKUP_FIELDS = {"sha1", "sha256", "md5"}
 
@@ -29,6 +29,17 @@ def lookup(id_type: str, id_value: str) -> m.File:
         raise EntityNotFound("file",
                              f"no file found with {id_type} of {id_value}")
     return results[0]
+
+
+def get_by_legacy_rev(rev: UUID) -> m.File:
+    try:
+        return m.File.objects.get(legacy_rev=rev)
+    except m.File.DoesNotExist:
+        raise EntityNotFound("file", f"no file with legacy_rev {rev}")
+
+
+def schema_metadata(entity: m.File) -> dict:
+    return _entity_schema_metadata(entity)
 
 
 def get_releases(ident: UUID) -> QuerySet:

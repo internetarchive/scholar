@@ -4,7 +4,7 @@ from django.db.models import Q, QuerySet
 
 from djscholar.fcapi import models as m
 from djscholar.fcapi.fcid import fcid2uuid
-from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import EntityNotFound, _entity_schema_metadata
 
 LOOKUP_FIELDS = {"issnl", "issne", "issnp", "wikidata_qid"}
 
@@ -37,6 +37,17 @@ def lookup(id_type: str, id_value: str) -> m.Container:
         raise EntityNotFound("container",
                              f"no container found with {id_type} of {id_value}")
     return results[0]
+
+
+def get_by_legacy_rev(rev: UUID) -> m.Container:
+    try:
+        return m.Container.objects.get(legacy_rev=rev)
+    except m.Container.DoesNotExist:
+        raise EntityNotFound("container", f"no container with legacy_rev {rev}")
+
+
+def schema_metadata(entity: m.Container) -> dict:
+    return _entity_schema_metadata(entity)
 
 
 def get_releases(ident: UUID) -> QuerySet:

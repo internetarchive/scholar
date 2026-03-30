@@ -5,7 +5,7 @@ from django.db.models import Q, QuerySet
 
 from djscholar.fcapi import models as m
 from djscholar.fcapi.fcid import fcid2uuid
-from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import EntityNotFound, _entity_schema_metadata
 
 
 def get(ident: UUID) -> m.Release:
@@ -27,6 +27,17 @@ def lookup(id_type: str, id_value: str) -> m.Release:
         raise EntityNotFound("release",
                              f"no release found with {id_type} of {id_value}")
     return results[0]
+
+
+def get_by_legacy_rev(rev: UUID) -> m.Release:
+    try:
+        return m.Release.objects.get(legacy_rev=rev)
+    except m.Release.DoesNotExist:
+        raise EntityNotFound("release", f"no release with legacy_rev {rev}")
+
+
+def schema_metadata(entity: m.Release) -> dict:
+    return _entity_schema_metadata(entity)
 
 
 def get_container(ident: UUID) -> m.Container:

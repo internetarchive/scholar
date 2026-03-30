@@ -4,7 +4,7 @@ from django.db.models import QuerySet
 
 from djscholar.fcapi import models as m
 from djscholar.fcapi.fcid import fcid2uuid
-from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import EntityNotFound, _entity_schema_metadata
 
 LOOKUP_FIELDS = {"orcid"}
 
@@ -28,6 +28,17 @@ def lookup(id_type: str, id_value: str) -> m.Creator:
         raise EntityNotFound("creator",
                              f"no creator found with {id_type} of {id_value}")
     return results[0]
+
+
+def get_by_legacy_rev(rev: UUID) -> m.Creator:
+    try:
+        return m.Creator.objects.get(legacy_rev=rev)
+    except m.Creator.DoesNotExist:
+        raise EntityNotFound("creator", f"no creator with legacy_rev {rev}")
+
+
+def schema_metadata(entity: m.Creator) -> dict:
+    return _entity_schema_metadata(entity)
 
 
 def get_releases(ident: UUID) -> QuerySet:

@@ -4,7 +4,7 @@ from django.db.models import QuerySet
 
 from djscholar.fcapi import models as m
 from djscholar.fcapi.fcid import fcid2uuid
-from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import EntityNotFound, _entity_schema_metadata
 
 
 def get(ident: UUID) -> m.Fileset:
@@ -18,6 +18,17 @@ def lookup(id_type: str, id_value: str) -> m.Fileset:
     if id_type == "legacy_ident":
         return get(fcid2uuid(id_value))
     raise ValueError(f"unsupported fileset lookup type: {id_type}")
+
+
+def get_by_legacy_rev(rev: UUID) -> m.Fileset:
+    try:
+        return m.Fileset.objects.get(legacy_rev=rev)
+    except m.Fileset.DoesNotExist:
+        raise EntityNotFound("fileset", f"no fileset with legacy_rev {rev}")
+
+
+def schema_metadata(entity: m.Fileset) -> dict:
+    return _entity_schema_metadata(entity)
 
 
 def get_release(ident: UUID) -> m.Release | None:

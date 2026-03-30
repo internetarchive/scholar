@@ -39,8 +39,10 @@ def _render(request: HttpRequest, template_name: str,
     return HttpResponse(html, status=status)
 
 
-def _stub(request: HttpRequest, **kwargs) -> HttpResponse:
-    return HttpResponse("not yet implemented", status=501)
+# some stubs remain but it's stuff we decided to not ship as part of the
+# fatcat2 launch
+# def _stub(request: HttpRequest, **kwargs) -> HttpResponse:
+#     return HttpResponse("not yet implemented", status=501)
 
 
 # -- Index & search ----------------------------------------------------------
@@ -806,18 +808,55 @@ def work_view_metadata(request: HttpRequest, ident: str) -> HttpResponse:
     })
 
 
-# -- Underscore redirects (legacy URLs) --------------------------------------
-# TODO remember what these were for
+# -- Underscore redirects (legacy URLs like /release_IDENT → /release/IDENT) --
 
-container_underscore_view = _stub
-file_underscore_view = _stub
-creator_underscore_view = _stub
-release_underscore_view = _stub
-webcapture_underscore_view = _stub
-work_underscore_view = _stub
-fileset_underscore_view = _stub
-editgroup_underscore_view = _stub
-editor_underscore_view = _stub
+
+def _underscore_redirect(request: HttpRequest, ident: str, view_name: str) -> HttpResponse:
+    return HttpResponseRedirect(reverse(f"fcweb:{view_name}", kwargs={"ident": ident}))
+
+
+def container_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return _underscore_redirect(request, ident, "container_view")
+
+
+def file_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return _underscore_redirect(request, ident, "file_view")
+
+
+def creator_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return _underscore_redirect(request, ident, "creator_view")
+
+
+def release_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return _underscore_redirect(request, ident, "release_view")
+
+
+def webcapture_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return _underscore_redirect(request, ident, "webcapture_view")
+
+
+def work_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return _underscore_redirect(request, ident, "work_view")
+
+
+def fileset_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return _underscore_redirect(request, ident, "fileset_view")
+
+
+def editgroup_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return HttpResponse("editgroups are not supported", status=410)
+
+
+def editor_underscore_view(request: HttpRequest, ident: str) -> HttpResponse:
+    return HttpResponse("editor profiles are not supported", status=410)
+
+
+def editgroup_view(request: HttpRequest, **kwargs) -> HttpResponse:
+    return HttpResponse("editgroups are not supported", status=410)
+
+
+def editor_view(request: HttpRequest, **kwargs) -> HttpResponse:
+    return HttpResponse("editor profiles are not supported", status=410)
 
 # -- Release export formats --------------------------------------------------
 
@@ -872,22 +911,27 @@ def release_citeproc(request: HttpRequest, ident: str) -> HttpResponse:
         return HttpResponse(cite, content_type="application/json")
     return HttpResponse(cite, content_type="text/plain")
 
+
 # -- References (HTML) -------------------------------------------------------
 
-openlibrary_view_refs_inbound = _stub
-wikipedia_view_refs_outbound = _stub
+# dropped; part of refcat but only ever linked to in guide.
+# openlibrary_view_refs_inbound = _stub
+# wikipedia_view_refs_outbound = _stub
 
 # -- References (JSON, CORS) -------------------------------------------------
 
-release_view_refs_outbound_json = _stub
-release_view_refs_inbound_json = _stub
-openlibrary_view_refs_inbound_json = _stub
-wikipedia_view_refs_outbound_json = _stub
-reference_match_json = _stub
+# dropped. unclear these were used by anyone.
+# release_view_refs_outbound_json = _stub
+# release_view_refs_inbound_json = _stub
+# openlibrary_view_refs_inbound_json = _stub
+# wikipedia_view_refs_outbound_json = _stub
 
-# -- Reference match (HTML) --------------------------------------------------
+# -- Reference match --------------------------------------------------
 
-reference_match = _stub
+# dropped. this was exposed at /reference/match but not linked from anywhere.
+# it depends on grobid access and has been broken in prod for some time.
+# reference_match = _stub
+# reference_match_json = _stub
 
 # -- Stats / changelog -------------------------------------------------------
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/temporal"
@@ -46,14 +45,7 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 	}
 	defer c.Close()
 
-	every := viper.GetString(fmt.Sprintf("%s.every", in.Upstream))
-	if every == "" {
-		return fmt.Errorf("%s.every needs to be set in config", in.Upstream)
-	}
-	duration, err := time.ParseDuration(every)
-	if err != nil {
-		return fmt.Errorf("could not parse %s.every: %w", in.Upstream, err)
-	}
+	every := viper.GetDuration(fmt.Sprintf("%s.every", in.Upstream))
 
 	scheduleID := fmt.Sprintf("%s_schedule_%s", in.Upstream, uuid.New())
 	workflowID := fmt.Sprintf("%s_%s", in.Upstream, uuid.New())
@@ -64,7 +56,7 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 		ID: scheduleID,
 		Spec: client.ScheduleSpec{
 			Intervals: []client.ScheduleIntervalSpec{
-				{Every: duration},
+				{Every: every},
 			},
 		},
 		Action: &client.ScheduleWorkflowAction{

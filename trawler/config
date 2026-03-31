@@ -29,15 +29,13 @@ data_dir = "./data"
 [crossref]
 internal_task_queue = "crossref_crawl_internal"
 external_task_queue = "crossref_crawl_external"
-every = "24h"
-#every = "120s"
+every = "86400s"
 scholkit_s3_bucket = "scholkit"
 
 [pubmed]
 internal_task_queue = "pubmed_crawl_internal"
 external_task_queue = "pubmed_crawl_external"
-every = "24h"
-#every = "120s"
+every = "86400s"
 scholkit_s3_bucket = "scholkit"
 
 [fatcat1]

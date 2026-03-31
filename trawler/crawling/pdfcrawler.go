@@ -114,10 +114,7 @@ func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) 
 
 	attempts := 0
 	retries := viper.GetInt("wayback.retries")
-	backoff, err := time.ParseDuration(viper.GetString("wayback.backoff"))
-	if err != nil {
-		panic(err)
-	}
+	backoff := viper.GetDuration("wayback.backoff")
 
 	var resp *http.Response
 	var wbErr error

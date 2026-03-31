@@ -54,6 +54,10 @@ var releaseTypeMap = map[string]string{
 	"proceedings-article": "paper-conference",
 	"report":              "report",
 
+	// NB this appeared in data for 2026-03-30 and was unsupported so I added it
+	// and guessed at the mapping.
+	"report-component": "component",
+
 	// considering switching to ignored types pending Jefferson convo/research
 
 	// looking at releases with no types and "crossref" in the extra_json in

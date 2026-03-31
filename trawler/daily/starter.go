@@ -10,13 +10,14 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/temporal"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
+	temporalsentry "github.com/uphold/temporal-sentry-interceptor"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/worker"
 )
 
 func StartOneOff(in DailyCrawlWorkflowInput) error {
-	// TODO start the crawl workflow manually, accept arguments from CLI
 	ctx := context.Background()
 	c, err := temporal.SetupTemporal(ctx)
 	if err != nil {
@@ -107,7 +108,13 @@ func StartWorker(d WorkerDetails) error {
 	}
 	defer c.Close()
 
-	w := worker.New(c, viper.GetString(fmt.Sprintf("%s.%s_task_queue", d.Upstream, d.Access)), worker.Options{})
+	w := worker.New(c,
+		viper.GetString(fmt.Sprintf("%s.%s_task_queue", d.Upstream, d.Access)),
+		worker.Options{
+			Interceptors: []interceptor.WorkerInterceptor{
+				temporalsentry.New(),
+			},
+		})
 
 	if d.Access == "external" {
 		w.RegisterActivity(ScholkitScrapeActivity)

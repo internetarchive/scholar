@@ -11,6 +11,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cmd/doajcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/pubmedcmd"
+	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -28,7 +29,7 @@ var rootCmd = &cobra.Command{
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if err := viper.ReadInConfig(); err != nil {
 			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-				// Config file not found; ignore error if desired
+				return fmt.Errorf("config file not found")
 			} else {
 				if err != nil { // Handle errors reading the config file
 					return fmt.Errorf("fatal error config file: %w", err)
@@ -36,6 +37,14 @@ var rootCmd = &cobra.Command{
 			}
 		}
 		log.Printf("trawler version %s", version)
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn: viper.GetString("sentry.dsn"),
+		})
+
+		if err != nil {
+			return fmt.Errorf("could not initialize sentry: %w", err)
+		}
+
 		return nil
 	},
 	Version: version,

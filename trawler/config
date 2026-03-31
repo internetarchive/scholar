@@ -4,6 +4,9 @@
 # - /etc/trawler/config
 # - $HOME/.config/trawler/config
 # - .
+[sentry]
+dsn = "https://b917e17fa01e2aee8a07bcc6a933a5d0@sentry.archive.org/75"
+
 [harvesting]
 batch_size = 10000
 chunk_size = 102400

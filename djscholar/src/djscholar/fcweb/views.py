@@ -1027,14 +1027,11 @@ def container_ident_preservation_by_type(request: HttpRequest, ident: str) -> Ht
 
 def coverage_search(request: HttpRequest) -> HttpResponse:
     q = request.GET.get("q")
-    recent = bool(request.GET.get("recent"))
 
     if not q:
         return _render(request, "fcweb/coverage_search.html", {
             "q": "",
-            "recent": recent,
         })
-
 
     es_error = None
     coverage_stats = None
@@ -1043,26 +1040,20 @@ def coverage_search(request: HttpRequest) -> HttpResponse:
     date_histogram_svg = None
 
     try:
-        coverage_stats = fc_search.get_coverage_stats(q, recent=recent)
+        coverage_stats = fc_search.get_coverage_stats(q)
     except Exception as e:
         es_error = str(e)
 
     if coverage_stats and coverage_stats["total"] > 1:
         coverage_type_preservation = fc_search.get_coverage_preservation_by_type(
-            q, recent=recent,
+            q,
         )
-        if recent:
-            date_data = fc_search.get_coverage_preservation_by_date(q)
-            if date_data:
-                date_histogram_svg = graphics.preservation_by_date_histogram(date_data)
-        else:
-            year_data = fc_search.get_coverage_preservation_by_year(q)
-            if year_data:
-                year_histogram_svg = graphics.preservation_by_year_histogram(year_data)
+        year_data = fc_search.get_coverage_preservation_by_year(q)
+        if year_data:
+            year_histogram_svg = graphics.preservation_by_year_histogram(year_data)
 
     return _render(request, "fcweb/coverage_search.html", {
         "q": q,
-        "recent": recent,
         "es_error": es_error,
         "coverage_stats": coverage_stats,
         "coverage_type_preservation": coverage_type_preservation,

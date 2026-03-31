@@ -54,9 +54,6 @@
     <form class="search-form" role="search" action="{{ url('fcweb:coverage_search') }}" method="get">
       <input type="text" placeholder="Query..." name="q" value="{{ q }}" aria-label="visualize preservation coverage">
       <button>Search</button>
-      {% if recent %}
-        <input type="hidden" name="recent" value="true">
-      {% endif %}
     </form>
   </div>
 </div>

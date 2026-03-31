@@ -454,7 +454,7 @@ class TestBuildResultBasic:
 
     def test_fatcat_url(self):
         result = _build_result(_make_hit(biblio={"release_ident": "r1234"}))
-        assert result["fatcat_url"] == "https://scholar.archive.org/fatcat/release/r1234"
+        assert result["fatcat_url"] == "https://scholar.archive.org/_sd/fatcat/release/r1234"
 
     def test_fatcat_url_missing_ident(self):
         result = _build_result(_make_hit(biblio={}))

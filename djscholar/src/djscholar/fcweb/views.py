@@ -954,9 +954,12 @@ def changelog_view(request: HttpRequest) -> HttpResponse:
     except (ValueError, TypeError):
         offset = 0
 
-    total = changelog_svc.recent_count(entity_type, start_date)
+    source = request.GET.get("source", "").strip() or None
+
+    total = changelog_svc.recent_count(entity_type, start_date, source=source)
     entries = changelog_svc.recent(
         entity_type, start_date, limit=_CHANGELOG_PAGE_SIZE, offset=offset,
+        source=source,
     )
 
     return _render(request, "fcweb/changelog.html", {
@@ -971,6 +974,7 @@ def changelog_view(request: HttpRequest) -> HttpResponse:
         "total": total,
         "offset": offset,
         "page_size": _CHANGELOG_PAGE_SIZE,
+        "source_filter": source,
     })
 
 

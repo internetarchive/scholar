@@ -25,6 +25,7 @@ def recent(
     window: datetime.timedelta = datetime.timedelta(days=1),
     limit: int = 50,
     offset: int = 0,
+    source: str | None = None,
 ) -> list[m.Entity]:
     """Return entities updated within a window ending at date+1day, newest first.
 
@@ -42,6 +43,9 @@ def recent(
 
     qs = model.objects.filter(updated__range=[begin_dt, end_dt]).order_by("-updated")
 
+    if source:
+        qs = qs.filter(source=source)
+
     if model is m.File:
         qs = qs.prefetch_related(
             Prefetch("releases", queryset=m.Release.objects.only("id", "title"))
@@ -54,6 +58,7 @@ def recent_count(
     entity_type: str,
     date: datetime.date,
     window: datetime.timedelta = datetime.timedelta(days=1),
+    source: str | None = None,
 ) -> int:
     """Return total count of entities updated within the window."""
     model = ENTITY_MODELS.get(entity_type)
@@ -65,4 +70,7 @@ def recent_count(
     end_dt = start_dt + datetime.timedelta(days=1)
     begin_dt = start_dt - window
 
-    return model.objects.filter(updated__range=[begin_dt, end_dt]).count()
+    qs = model.objects.filter(updated__range=[begin_dt, end_dt])
+    if source:
+        qs = qs.filter(source=source)
+    return qs.count()

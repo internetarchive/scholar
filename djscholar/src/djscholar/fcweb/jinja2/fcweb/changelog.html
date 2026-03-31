@@ -42,13 +42,14 @@
 {% endblock %}
 
 {% block body %}
+{% set src_qs = "&source=" ~ source_filter|urlencode if source_filter else "" %}
 <h1>Changelog</h1>
 
 <div class="date-nav">
-  <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ prev_date }}">&laquo; {{ prev_date }}</a>
+  <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ prev_date }}{{ src_qs }}">&laquo; {{ prev_date }}</a>
   <span class="current-date">{{ date }}</span>
   {% if next_date <= today %}
-    <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ next_date }}">{{ next_date }} &raquo;</a>
+    <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ next_date }}{{ src_qs }}">{{ next_date }} &raquo;</a>
   {% else %}
     <span style="color: #999;">{{ next_date }} &raquo;</span>
   {% endif %}
@@ -56,9 +57,16 @@
 
 <div class="changelog-tabs">
   {% for key, label in entity_labels.items() %}
-    <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ key }}&date={{ date }}"{% if key == entity_type %} class="active"{% endif %}>{{ label }}</a>
+    <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ key }}&date={{ date }}{{ src_qs }}"{% if key == entity_type %} class="active"{% endif %}>{{ label }}</a>
   {% endfor %}
 </div>
+
+{% if source_filter %}
+<div style="background: #fef9e7; border: 1px solid #f0d27a; padding: 0.5rem 1rem; margin-bottom: 1rem; border-radius: 4px; display: flex; align-items: center; gap: 0.5rem;">
+  <span>Filtered by source: <strong>{{ source_filter }}</strong></span>
+  <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}" style="color: #c0392b; text-decoration: none; font-weight: bold; font-size: 1.1rem;" title="Clear filter">&times;</a>
+</div>
+{% endif %}
 
 {% if entries %}
 <table>
@@ -95,7 +103,13 @@
       </td>
       <td style="white-space: nowrap; font-size: 0.85rem;">{{ entry.updated.strftime('%H:%M:%S') }}</td>
       <td style="white-space: nowrap; font-size: 0.85rem;">{{ entry.created.strftime('%Y-%m-%d') }}</td>
-      <td><code style="font-size: 0.8rem;">{{ entry.source or "-" }}</code></td>
+      <td>
+        {% if entry.source %}
+          <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&source={{ entry.source|urlencode }}"><code style="font-size: 0.8rem;">{{ entry.source }}</code></a>
+        {% else %}
+          <code style="font-size: 0.8rem;">-</code>
+        {% endif %}
+      </td>
     </tr>
   {% endfor %}
   </tbody>
@@ -106,7 +120,7 @@
 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; font-size: 0.9rem;">
   <div>
     {% if prev_offset >= 0 %}
-      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&offset={{ prev_offset }}">&laquo; Newer</a>
+      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&offset={{ prev_offset }}{{ src_qs }}">&laquo; Newer</a>
     {% endif %}
   </div>
   <div style="color: #555;">
@@ -114,7 +128,7 @@
   </div>
   <div>
     {% if next_offset < total %}
-      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&offset={{ next_offset }}">Older &raquo;</a>
+      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&offset={{ next_offset }}{{ src_qs }}">Older &raquo;</a>
     {% endif %}
   </div>
 </div>

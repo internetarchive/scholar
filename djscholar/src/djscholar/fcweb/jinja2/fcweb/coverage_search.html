@@ -58,19 +58,6 @@
         <input type="hidden" name="recent" value="true">
       {% endif %}
     </form>
-    <div class="coverage-checkbox">
-      <label>
-        <input type="checkbox" name="recent" value="true"
-          {% if recent %}checked{% endif %}
-          onchange="
-            var url = new URL(window.location);
-            if (this.checked) { url.searchParams.set('recent', 'true'); }
-            else { url.searchParams.delete('recent'); }
-            window.location = url;
-          ">
-        Recent Publications Only
-      </label>
-    </div>
   </div>
 </div>
 

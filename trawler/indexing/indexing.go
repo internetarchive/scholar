@@ -171,6 +171,42 @@ func IndexContainer(cid uuid.UUID) error {
 	return DoElasticIndex(client, viper.GetString("indexing.fatcat_container_ix"), d.LegacyIdent, bs)
 }
 
+// ElasticDocExists checks whether a document exists in an Elasticsearch index
+// by querying for an exact match on the given field/value pair.
+func ElasticDocExists(client *http.Client, index string, field string, value string) (bool, error) {
+	u := fmt.Sprintf("%s/%s/_count",
+		viper.GetString("indexing.elasticsearch_url"),
+		index)
+
+	query := fmt.Sprintf(`{"query":{"term":{%q:%q}}}`, field, value)
+
+	req, err := http.NewRequest("POST", u, strings.NewReader(query))
+	if err != nil {
+		return false, fmt.Errorf("could not prepare elasticsearch count request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("elasticsearch count request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("elasticsearch count failed: '%s'", body)
+	}
+
+	var result struct {
+		Count int `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("could not decode elasticsearch count response: %w", err)
+	}
+
+	return result.Count > 0, nil
+}
+
 func DoElasticIndex(client *http.Client, index string, docID string, doc []byte) error {
 	u := fmt.Sprintf("%s/%s/_doc/%s",
 		viper.GetString("indexing.elasticsearch_url"),

@@ -371,26 +371,30 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	// either by carving up this into smaller activities or some check to see if
 	// we have the file in elasticsearch yet.
 
-	if fileID != nil {
-		l.Info(fmt.Sprintf("ignoring known file %q for %q", file.Sha256, release.ID))
-		return out, nil
+	if fileID == nil {
+		fileID, err = fatcat2.CreateFile(client, &file)
+		if err != nil {
+			return out, fmt.Errorf("file creation failed: %w", err)
+		}
+		out.Releases.Acquired++
 	}
 
-	_, err = fatcat2.CreateFile(client, &file)
+	fileInES, err := indexing.ElasticDocExists(client,
+		viper.GetString("indexing.fatcat_file_ix"), "sha1", file.Sha1)
 	if err != nil {
-		return out, fmt.Errorf("file creation failed: %w", err)
+		return out, fmt.Errorf("fatcat_file existence check failed: %w", err)
 	}
-	out.Releases.Acquired++
-
-	fileDoc := indexing.PrepareFatcatFileDoc(file)
-	bs, err := json.Marshal(fileDoc)
-	if err != nil {
-		return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
-	}
-	err = indexing.DoElasticIndex(client,
-		viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
-	if err != nil {
-		return out, fmt.Errorf("failed to index file: %w", err)
+	if !fileInES {
+		fileDoc := indexing.PrepareFatcatFileDoc(file)
+		bs, err := json.Marshal(fileDoc)
+		if err != nil {
+			return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
+		}
+		err = indexing.DoElasticIndex(client,
+			viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
+		if err != nil {
+			return out, fmt.Errorf("failed to index file: %w", err)
+		}
 	}
 
 	pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
@@ -407,27 +411,34 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		container = &c
 	}
 
-	esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
-		HttpClient: client,
-		Release:    *release,
-		File:       &file,
-		PdfText:    pdfContent.PdfText,
-		GrobidXML:  pdfContent.GrobidXML,
-		Container:  container,
-	})
-
-	bs, err = json.Marshal(esDoc)
+	fulltextInES, err := indexing.ElasticDocExists(client,
+		viper.GetString("indexing.fulltext_ix"), "fulltext.file_sha1", file.Sha1)
 	if err != nil {
-		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
+		return out, fmt.Errorf("scholar_fulltext existence check failed: %w", err)
 	}
+	if !fulltextInES {
+		esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
+			HttpClient: client,
+			Release:    *release,
+			File:       &file,
+			PdfText:    pdfContent.PdfText,
+			GrobidXML:  pdfContent.GrobidXML,
+			Container:  container,
+		})
 
-	err = indexing.DoElasticIndex(client,
-		viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
-	if err != nil {
-		return out, fmt.Errorf("indexing fulltext failed: %w", err)
+		ftbs, err := json.Marshal(esDoc)
+		if err != nil {
+			return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
+		}
+
+		err = indexing.DoElasticIndex(client,
+			viper.GetString("indexing.fulltext_ix"), esDoc.Key, ftbs)
+		if err != nil {
+			return out, fmt.Errorf("indexing fulltext failed: %w", err)
+		}
+
+		out.Releases.Ingested++
 	}
-
-	out.Releases.Ingested++
 
 	return out, nil
 }

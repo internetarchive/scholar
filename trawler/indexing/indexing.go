@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -223,16 +224,17 @@ func DoElasticIndex(client *http.Client, index string, docID string, doc []byte)
 	if err != nil {
 		return fmt.Errorf("failed to POST elasticsearch: %w", err)
 	}
+	var body string
+	bs, err := io.ReadAll(resp.Body)
+	if err == nil {
+		body = string(bs)
+	}
 
 	if resp.StatusCode > 299 || resp.StatusCode < 200 {
-		var body string
-		bs, err := io.ReadAll(resp.Body)
-		if err == nil {
-			body = string(bs)
-		}
-
 		return fmt.Errorf("elasticsearch failed to index: '%s'", body)
 	}
+
+	slog.Info("es index response", "status", resp.StatusCode, "body", body)
 
 	return nil
 }

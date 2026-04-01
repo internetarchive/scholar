@@ -415,6 +415,8 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		container = &c
 	}
 
+	slog.Info("preparing full text es doc", "rid", release.ID, "xmlLen", len(pdfContent.GrobidXML), "pdfTextLen", len(pdfContent.PdfText))
+
 	esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
 		HttpClient: client,
 		Release:    *release,
@@ -428,6 +430,8 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	if err != nil {
 		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
 	}
+
+	slog.Info("doing index", "rid", release.ID, "docKey", esDoc.Key, "ftLen", len(esDoc.Fulltext.Body))
 
 	err = indexing.DoElasticIndex(client,
 		viper.GetString("indexing.fulltext_ix"), esDoc.Key, ftbs)

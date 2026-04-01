@@ -366,11 +366,6 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	// TODO we could verify that the existing file is attached to the release ID
 	// we're working with...
 
-	// TODO at this moment it's unknowable whether we have already extracted
-	// content from this PDF and indexed it. I'd like to fix that at some point
-	// either by carving up this into smaller activities or some check to see if
-	// we have the file in elasticsearch yet.
-
 	if fileID == nil {
 		fileID, err = fatcat2.CreateFile(client, &file)
 		if err != nil {
@@ -397,6 +392,15 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		}
 	}
 
+	fulltextInES, err := indexing.ElasticDocExists(client,
+		viper.GetString("indexing.fulltext_ix"), "fulltext.file_sha1", file.Sha1)
+	if err != nil {
+		return out, fmt.Errorf("scholar_fulltext existence check failed: %w", err)
+	}
+	if fulltextInES {
+		return out, nil
+	}
+
 	pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
 	if err != nil {
 		return out, fmt.Errorf("blobproc processing failed: %w", err)
@@ -411,34 +415,27 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		container = &c
 	}
 
-	fulltextInES, err := indexing.ElasticDocExists(client,
-		viper.GetString("indexing.fulltext_ix"), "fulltext.file_sha1", file.Sha1)
+	esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
+		HttpClient: client,
+		Release:    *release,
+		File:       &file,
+		PdfText:    pdfContent.PdfText,
+		GrobidXML:  pdfContent.GrobidXML,
+		Container:  container,
+	})
+
+	ftbs, err := json.Marshal(esDoc)
 	if err != nil {
-		return out, fmt.Errorf("scholar_fulltext existence check failed: %w", err)
+		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
 	}
-	if !fulltextInES {
-		esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
-			HttpClient: client,
-			Release:    *release,
-			File:       &file,
-			PdfText:    pdfContent.PdfText,
-			GrobidXML:  pdfContent.GrobidXML,
-			Container:  container,
-		})
 
-		ftbs, err := json.Marshal(esDoc)
-		if err != nil {
-			return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
-		}
-
-		err = indexing.DoElasticIndex(client,
-			viper.GetString("indexing.fulltext_ix"), esDoc.Key, ftbs)
-		if err != nil {
-			return out, fmt.Errorf("indexing fulltext failed: %w", err)
-		}
-
-		out.Releases.Ingested++
+	err = indexing.DoElasticIndex(client,
+		viper.GetString("indexing.fulltext_ix"), esDoc.Key, ftbs)
+	if err != nil {
+		return out, fmt.Errorf("indexing fulltext failed: %w", err)
 	}
+
+	out.Releases.Ingested++
 
 	return out, nil
 }

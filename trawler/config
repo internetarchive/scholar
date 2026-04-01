@@ -239,7 +239,7 @@ s3bucket = "sandcrawler"
 
 [indexing]
 elasticsearch_url = "https://scholar.archive.org/_es"
-fulltext_ix = "qa_scholar_fulltext"
-fatcat_container_ix = "qa_fatcat_container"
-fatcat_release_ix = "qa_fatcat_release"
-fatcat_file_ix = "qa_fatcat_file"
+fulltext_ix = "scholar_fulltext"
+fatcat_container_ix = "fatcat_container"
+fatcat_release_ix = "fatcat_release"
+fatcat_file_ix = "fatcat_file"

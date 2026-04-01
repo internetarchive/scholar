@@ -351,7 +351,7 @@ def _build_result(hit):
         "work_ident": source.get("work_ident", ""),
         "work_uuid": fcid2uuid(source["work_ident"]) if source.get("work_ident") else "",
         "release_stage": biblio.get("release_stage", ""),
-        "fatcat_url": f"https://scholar.archive.org/_sd/fatcat/release/{biblio['release_ident']}" if biblio.get("release_ident") else "",
+        "fatcat_url": f"https://scholar.archive.org/_sd/fatcat/release/{fcid2uuid(biblio['release_ident'])}" if biblio.get("release_ident") else "",
     }
 
 

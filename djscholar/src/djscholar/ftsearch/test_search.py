@@ -454,8 +454,8 @@ class TestBuildResultBasic:
         assert result["release_stage"] == "submitted"
 
     def test_fatcat_url(self):
-        result = _build_result(_make_hit(biblio={"release_ident": "r1234"}))
-        assert result["fatcat_url"] == "https://scholar.archive.org/_sd/fatcat/release/r1234"
+        result = _build_result(_make_hit(biblio={"release_ident": "aaaaaaaaaaaaaaaaaaaaaaaaae"}))
+        assert result["fatcat_url"] == "https://scholar.archive.org/_sd/fatcat/release/00000000-0000-0000-0000-000000000001"
 
     def test_fatcat_url_missing_ident(self):
         result = _build_result(_make_hit(biblio={}))

@@ -483,6 +483,10 @@ func ReleaseFiles(c *http.Client, rid uuid.UUID) ([]File, error) {
 		return out, fmt.Errorf("could not read release '%s' files: %w", rid.String(), err)
 	}
 
+	if resp.StatusCode != 200 {
+		return out, fmt.Errorf("fc2 /release/%s/files returned %d: %s", rid.String(), resp.StatusCode, bs)
+	}
+
 	var p payload
 	err = json.Unmarshal(bs, &p)
 	if err != nil {
@@ -511,6 +515,10 @@ func GetRelease(c *http.Client, id uuid.UUID) (Release, error) {
 		return out, fmt.Errorf("could not read release '%s': %w", id.String(), err)
 	}
 
+	if resp.StatusCode != 200 {
+		return out, fmt.Errorf("fc2 /release/%s returned %d: %s", id.String(), resp.StatusCode, bs)
+	}
+
 	err = json.Unmarshal(bs, &out)
 	if err != nil {
 		return out, fmt.Errorf("could not unmarshal release '%s': %w", id.String(), err)
@@ -535,6 +543,10 @@ func GetFile(c *http.Client, id uuid.UUID) (File, error) {
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return out, fmt.Errorf("could not read file '%s': %w", id.String(), err)
+	}
+
+	if resp.StatusCode != 200 {
+		return out, fmt.Errorf("fc2 /file/%s returned %d: %s", id.String(), resp.StatusCode, bs)
 	}
 
 	err = json.Unmarshal(bs, &out)
@@ -562,6 +574,10 @@ func GetContainer(c *http.Client, id uuid.UUID) (Container, error) {
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return out, fmt.Errorf("could not read container '%s': %w", id.String(), err)
+	}
+
+	if resp.StatusCode != 200 {
+		return out, fmt.Errorf("fc2 /container/%s returned %d: %s", id.String(), resp.StatusCode, bs)
 	}
 
 	err = json.Unmarshal(bs, &out)

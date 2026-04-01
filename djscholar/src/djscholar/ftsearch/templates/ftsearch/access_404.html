@@ -58,9 +58,9 @@
           <code><a href="https://archive.org/download{{ archiveorg_path }}">https://archive.org/download{{ archiveorg_path }}</a></code>
         </li>
       {% endif %}
-      {% if work_ident %}
-        <li><a href="{% url 'ftsearch:work' work_ident %}">Scholar landing page</a></li>
-        <li><a href="https://scholar.archive.org/_sd/fatcat/work/{{ work_ident }}">Fatcat work page</a></li>
+      {% if work_uuid %}
+        <li><a href="{% url 'ftsearch:work' work_uuid %}">Scholar landing page</a></li>
+        <li><a href="https://scholar.archive.org/_sd/fatcat/work/{{ work_uuid }}">Fatcat work page</a></li>
       {% endif %}
     </ul>
   </div>

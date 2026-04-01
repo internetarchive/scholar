@@ -1,16 +1,17 @@
 import logging
 import re
 import urllib.parse
+import uuid
 
 from django.conf import settings
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect, render, resolve_url
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from elasticsearch.exceptions import RequestError, TransportError
 
 import djscholar.es as es
-from djscholar.fcapi.fcid import fcid2uuid
+from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import works as work_svc
@@ -88,7 +89,8 @@ def random_paper(request: HttpRequest) -> HttpResponse:
     work_ident = hits[0]["_source"].get("work_ident", "")
     if not work_ident:
         return redirect("ftsearch:home")
-    return redirect("ftsearch:work", work_ident=work_ident)
+    work_uuid = fcid2uuid(work_ident)
+    return redirect("ftsearch:work", work_uuid=work_uuid)
 
 
 DATE_FILTERS = {
@@ -347,6 +349,7 @@ def _build_result(hit):
         "pmid": biblio.get("pmid", ""),
         "doaj_id": biblio.get("doaj_id", ""),
         "work_ident": source.get("work_ident", ""),
+        "work_uuid": fcid2uuid(source["work_ident"]) if source.get("work_ident") else "",
         "release_stage": biblio.get("release_stage", ""),
         "fatcat_url": f"https://scholar.archive.org/_sd/fatcat/release/{biblio['release_ident']}" if biblio.get("release_ident") else "",
     }
@@ -459,7 +462,8 @@ def search(request: HttpRequest) -> HttpResponse:
     }, status=status_code)
 
 
-def work(request: HttpRequest, work_ident: str) -> HttpResponse:
+def work(request: HttpRequest, work_uuid: str) -> HttpResponse:
+    work_ident = uuid2fcid(uuid.UUID(str(work_uuid)))
     data = es.client().search(
         index=settings.ES_INDEX,
         body={
@@ -473,6 +477,12 @@ def work(request: HttpRequest, work_ident: str) -> HttpResponse:
         raise Http404
     result = _build_result(hits[0])
     return render(request, "ftsearch/work.html", {"result": result})
+
+
+def work_legacy(request: HttpRequest, work_ident: str) -> HttpResponse:
+    """Redirect old fatcat-ident URLs to the canonical UUID URL."""
+    work_uuid = fcid2uuid(work_ident)
+    return redirect(resolve_url("ftsearch:work", work_uuid=work_uuid), permanent=True)
 
 
 def _get_es_doc(work_ident: str):
@@ -499,8 +509,13 @@ def _get_access_options(source: dict) -> list:
 def _access_redirect_fallback(request, work_ident, *, original_url=None, archiveorg_path=None):
     """Fall back to the fatcat DB when ES doesn't have a match."""
     def _404():
+        try:
+            work_uuid = fcid2uuid(work_ident)
+        except Exception:
+            work_uuid = None
         return render(request, "ftsearch/access_404.html", {
             "work_ident": work_ident,
+            "work_uuid": work_uuid,
             "original_url": original_url,
             "archiveorg_path": archiveorg_path,
         }, status=404)

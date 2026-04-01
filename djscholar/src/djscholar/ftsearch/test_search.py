@@ -398,7 +398,7 @@ class TestRewriteIdQuery:
         assert _rewrite_id_query('doi:"10.1234/foo"') == 'doi:"10.1234/foo"'
 
 
-def _make_hit(biblio=None, fulltext=None, access=None, highlight=None, work_ident="abc123"):
+def _make_hit(biblio=None, fulltext=None, access=None, highlight=None, work_ident="aaaaaaaaaaaaaaaaaaaaaaaaae"):
     """Build a minimal ES hit dict for _build_result tests."""
     source = {"work_ident": work_ident, "biblio": biblio or {}}
     if fulltext is not None:
@@ -418,7 +418,8 @@ class TestBuildResultBasic:
         assert result["authors"] == []
         assert result["year"] is None
         assert result["journal"] == ""
-        assert result["work_ident"] == "abc123"
+        assert result["work_ident"] == "aaaaaaaaaaaaaaaaaaaaaaaaae"
+        assert result["work_uuid"] == "00000000-0000-0000-0000-000000000001"
         assert result["ext_ids"] == []
         assert result["highlights"] == []
 

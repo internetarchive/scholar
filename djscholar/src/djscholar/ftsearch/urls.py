@@ -32,7 +32,8 @@ urlpatterns = [
     path("search", views.search, name="search"),
 
     # Work detail and access redirects
-    path("work/<str:work_ident>", views.work, name="work"),
+    path("work/<uuid:work_uuid>", views.work, name="work"),
+    path("work/<str:work_ident>", views.work_legacy, name="work_legacy"),
     path(
         "work/<str:work_ident>/access/wayback/<path:url>",
         views.access_redirect_wayback,

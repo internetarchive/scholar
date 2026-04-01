@@ -1,6 +1,5 @@
 from uuid import UUID
 
-from django.db import transaction
 from django.db.models import Q, QuerySet
 
 from djscholar.fcapi import models as m

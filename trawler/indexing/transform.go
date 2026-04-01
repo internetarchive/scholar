@@ -3,6 +3,7 @@ package indexing
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -522,7 +523,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 		out.Fulltext.Acknowledgement = gdoc.Acknowledgement
 		out.Fulltext.Annex = gdoc.Annex
 	} else {
-		// TODO logging would be nice
+		slog.Warn("grobid XML parsing failed", "file_sha1", ictx.File.Sha1, "err", err)
 	}
 
 	if out.Fulltext.Language == "" {
@@ -582,7 +583,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 		seenLangs = append(seenLangs, a.Language)
 	}
 
-	if len(out.Abstracts) == 0 && len(gdoc.Abstract) > 0 {
+	if len(out.Abstracts) == 0 && gdoc != nil && len(gdoc.Abstract) > 0 {
 		out.Abstracts = append(out.Abstracts, ScholarAbstractV1{
 			Language: gdoc.LanguageCode,
 			Body:     cleaning.CleanString(cleaning.DeTag(gdoc.Abstract)),

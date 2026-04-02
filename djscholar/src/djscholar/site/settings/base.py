@@ -151,3 +151,9 @@ ES_INDEX = "scholar_fulltext"
 ES_FATCAT_RELEASE_INDEX = "fatcat_release"
 ES_FATCAT_CONTAINER_INDEX = "fatcat_container"
 ES_FATCAT_REF_INDEX = "fatcat_ref"
+
+# Maximum request body size (bytes). The trawler's fatcat2.CreateRelease
+# enforces a matching limit so oversized payloads are caught before they
+# reach Django.  Default would be 2.5 MB; we allow up to 10 MB for
+# citation-heavy releases.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024

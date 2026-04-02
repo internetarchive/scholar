@@ -20,6 +20,11 @@ import (
 	"github.com/spf13/viper"
 )
 
+// maxReleasePayloadBytes is the maximum serialized JSON size we'll POST when
+// creating a release.  Coordinated with Django's DATA_UPLOAD_MAX_MEMORY_SIZE
+// (currently 10 MB).
+const maxReleasePayloadBytes = 10 * 1024 * 1024
+
 type LegacyData struct {
 	Ident    uuid.UUID
 	Revision uuid.UUID
@@ -435,6 +440,13 @@ func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 	fc2key := viper.GetString("fatcat2.key")
 
 	bs, err := json.Marshal(r)
+	if err != nil {
+		return nil, fmt.Errorf("release marshal failed: %w", err)
+	}
+
+	if len(bs) > maxReleasePayloadBytes {
+		return nil, fmt.Errorf("release payload too large: %d bytes (max %d)", len(bs), maxReleasePayloadBytes)
+	}
 
 	body := bytes.NewBuffer(bs)
 	req, err := http.NewRequest("POST", fc2url+"/release", body)

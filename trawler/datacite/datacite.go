@@ -23,6 +23,12 @@ const minAbstractLength = 10
 const maxAbstractLength = 32000
 const maxPublisherLength = 80
 
+// maxRawLineBytes is the threshold above which a raw datacite JSON line is
+// skipped before even attempting to unmarshal it.  Normal records are a few
+// KB; anything over 256 MB is pathological (e.g. GBIF's kingdom-Animalia
+// citation with 2 billion entries).
+const maxRawLineBytes = 256 * 1024 * 1024
+
 // --- Lookup tables ---
 
 // unknownMarkersLower is the set of lowercase strings that signal missing or
@@ -964,6 +970,14 @@ func ProcessLine(ctx context.Context, client *http.Client, source string, lineb 
 	l := activity.GetLogger(ctx)
 
 	var release *fatcat2.Release
+
+	if len(lineb) > maxRawLineBytes {
+		l.Warn("datacite: skipping oversized raw record",
+			"raw_bytes", len(lineb),
+			"max_bytes", maxRawLineBytes)
+		out.Releases.Skipped++
+		return out, release, nil
+	}
 
 	var doc dataciteDoc
 	if err := json.Unmarshal(lineb, &doc); err != nil {

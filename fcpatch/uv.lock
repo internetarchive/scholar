@@ -1,0 +1,69 @@
+version = 1
+revision = 3
+requires-python = ">=3.13"
+
+[[package]]
+name = "fcpatch"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "psycopg", extra = ["binary"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "psycopg", extras = ["binary"], specifier = ">=3.2.5" }]
+
+[[package]]
+name = "psycopg"
+version = "3.3.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg/3.3.3/psycopg-3.3.3.tar.gz", hash = "sha256:5e9a47458b3c1583326513b2556a2a9473a1001a56c9efe9e587245b43148dd9" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg/3.3.3/psycopg-3.3.3-py3-none-any.whl", hash = "sha256:f96525a72bcfade6584ab17e89de415ff360748c766f0106959144dcbb38c698" },
+]
+
+[package.optional-dependencies]
+binary = [
+    { name = "psycopg-binary", marker = "implementation_name != 'pypy'" },
+]
+
+[[package]]
+name = "psycopg-binary"
+version = "3.3.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:05f32239aec25c5fb15f7948cffdc2dc0dac098e48b80a140e4ba32b572a2e7d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:7c84f9d214f2d1de2fafebc17fa68ac3f6561a59e291553dfc45ad299f4898c1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:e77957d2ba17cada11be09a5066d93026cdb61ada7c8893101d7fe1c6e1f3925" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:42961609ac07c232a427da7c87a468d3c82fee6762c220f38e37cfdacb2b178d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ae07a3114313dd91fce686cab2f4c44af094398519af0e0f854bc707e1aeedf1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:d257c58d7b36a621dcce1d01476ad8b60f12d80eb1406aee4cf796f88b2ae482" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:07c7211f9327d522c9c47560cae00a4ecf6687f4e02d779d035dd3177b41cb12" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-musllinux_1_2_ppc64le.whl", hash = "sha256:8e7e9eca9b363dbedeceeadd8be97149d2499081f3c52d141d7cd1f395a91f83" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-musllinux_1_2_riscv64.whl", hash = "sha256:cb85b1d5702877c16f28d7b92ba030c1f49ebcc9b87d03d8c10bf45a2f1c7508" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:4d4606c84d04b80f9138d72f1e28c6c02dc5ae0c7b8f3f8aaf89c681ce1cd1b1" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp313-cp313-win_amd64.whl", hash = "sha256:74eae563166ebf74e8d950ff359be037b85723d99ca83f57d9b244a871d6c13b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:497852c5eaf1f0c2d88ab74a64a8097c099deac0c71de1cbcf18659a8a04a4b2" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:258d1ea53464d29768bf25930f43291949f4c7becc706f6e220c515a63a24edd" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:111c59897a452196116db12e7f608da472fbff000693a21040e35fc978b23430" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:17bb6600e2455993946385249a3c3d0af52cd70c1c1cdbf712e9d696d0b0bf1b" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:642050398583d61c9856210568eb09a8e4f2fe8224bf3be21b67a370e677eead" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:533efe6dc3a7cba5e2a84e38970786bb966306863e45f3db152007e9f48638a6" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:5958dbf28b77ce2033482f6cb9ef04d43f5d8f4b7636e6963d5626f000efb23e" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-musllinux_1_2_ppc64le.whl", hash = "sha256:a6af77b6626ce92b5817bf294b4d45ec1a6161dba80fc2d82cdffdd6814fd023" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:47f06fcbe8542b4d96d7392c476a74ada521c5aebdb41c3c0155f6595fc14c8d" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:e7800e6c6b5dc4b0ca7cc7370f770f53ac83886b76afda0848065a674231e856" },
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/psycopg-binary/3.3.3/psycopg_binary-3.3.3-cp314-cp314-win_amd64.whl", hash = "sha256:165f22ab5a9513a3d7425ffb7fcc7955ed8ccaeef6d37e369d6cc1dff1582383" },
+]
+
+[[package]]
+name = "tzdata"
+version = "2025.3"
+source = { registry = "http://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "http://nexus.us.archive.org/repository/pypi-group/packages/tzdata/2025.3/tzdata-2025.3.tar.gz", hash = "sha256:de39c2ca5dc7b0344f2eba86f49d614019d29f060fc4ebc8a417896a620b56a7" }
+wheels = [
+    { url = "http://nexus.us.archive.org/repository/pypi-group/packages/tzdata/2025.3/tzdata-2025.3-py2.py3-none-any.whl", hash = "sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1" },
+]

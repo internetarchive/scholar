@@ -25,7 +25,7 @@ ENTITY_TYPES = ["container", "creator", "work", "release", "file", "fileset", "w
 DEFAULT_BATCH_SIZE = 100
 
 logger = logging.getLogger("fcpatch")
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 _handler = logging.StreamHandler(sys.stdout)
 _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logger.addHandler(_handler)
@@ -469,7 +469,6 @@ def _insert_entity(new_cur, entity_type: str, rows: list[dict], stats: Stats) ->
     """Insert main entity rows, return set of IDs that were actually inserted."""
     sql = INSERT_ENTITY_SQL[entity_type]
     inserted = set()
-    total = len(rows)
     for i, row in enumerate(rows, 1):
         params = _json_params(row)
         new_cur.execute("SAVEPOINT entity_ins")
@@ -496,7 +495,6 @@ def _insert_children(new_cur, child_type: str, rows: list[dict], parent_ids: set
                      parent_key: str, stats: Stats) -> None:
     """Insert child rows whose parent was newly inserted."""
     sql = INSERT_CHILD_SQL[child_type]
-    total = len(rows)
     for i, row in enumerate(rows, 1):
         if str(row[parent_key]) not in parent_ids:
             continue

@@ -11,6 +11,7 @@ Run with uv from the project root:
 import argparse
 import dataclasses
 import logging
+import math
 import os
 import sys
 
@@ -488,9 +489,6 @@ def _insert_entity(new_cur, entity_type: str, rows: list[dict], stats: Stats) ->
             new_cur.execute("ROLLBACK TO SAVEPOINT entity_ins")
             logger.warning("%s %s: skipped (FK violation)", entity_type, row["id"])
             stats.skipped += 1
-        if i % 10 == 0:
-            logger.info("%s: %d/%d processed (%d inserted, %d skipped)",
-                        entity_type, i, total, stats.inserted, stats.skipped)
     return inserted
 
 
@@ -513,9 +511,6 @@ def _insert_children(new_cur, child_type: str, rows: list[dict], parent_ids: set
             logger.warning("%s: skipped child row (FK violation)", child_type)
         except psycopg.errors.UniqueViolation:
             new_cur.execute("ROLLBACK TO SAVEPOINT child_ins")
-        if i % 10 == 0:
-            logger.info("%s: %d/%d processed (%d inserted, %d skipped)",
-                        child_type, i, total, stats.inserted, stats.skipped)
 
 
 def _batched(lst: list, n: int):
@@ -638,8 +633,10 @@ def migrate_entity_type(entity_type: str, old_conn, new_conn,
     if not idents:
         return [entity_stats] + list(child_stats.values())
 
+    total_batches = math.ceil(len(idents) / batch_size)
+
     for batch_num, batch in enumerate(_batched(idents, batch_size), 1):
-        logger.info("%s: batch %d (%d idents)", entity_type, batch_num, len(batch))
+        logger.info("%s: batch %d/%d (%d idents)", entity_type, batch_num, total_batches, len(batch))
         _migrate_batch(old_conn, new_conn, entity_type, batch,
                        entity_stats, child_stats, commit=True)
 

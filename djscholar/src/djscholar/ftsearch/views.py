@@ -1,22 +1,46 @@
+import datetime
 import logging
 import re
 import urllib.parse
 import uuid
 
 from django.conf import settings
+from django.db import IntegrityError
+from django.db.models import F, Sum
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render, resolve_url
+from django.utils import timezone
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from elasticsearch.exceptions import RequestError, TransportError
 
 import djscholar.es as es
 from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
+from djscholar.fcapi.models import File
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import works as work_svc
+from djscholar.ftsearch.models import DailyAccessStat
 
 logger = logging.getLogger(__name__)
+
+
+def _record_access(access_type: str):
+    """Increment today's access counter for the given type."""
+    today = datetime.date.today()
+    rows = DailyAccessStat.objects.filter(
+        date=today, access_type=access_type,
+    ).update(count=F("count") + 1)
+    if rows == 0:
+        try:
+            DailyAccessStat.objects.create(
+                date=today, access_type=access_type, count=1,
+            )
+        except IntegrityError:
+            # Race: another request created it first
+            DailyAccessStat.objects.filter(
+                date=today, access_type=access_type,
+            ).update(count=F("count") + 1)
 
 
 def webhealth(request: HttpRequest) -> HttpResponse:
@@ -52,6 +76,80 @@ def about(request: HttpRequest) -> HttpResponse:
 
 def help(request: HttpRequest) -> HttpResponse:
     return render(request, "ftsearch/help.html")
+
+
+STATS_PERIODS = {
+    "last_7d": ("Last 7 days", datetime.timedelta(days=7)),
+    "last_30d": ("Last 30 days", datetime.timedelta(days=30)),
+    "last_90d": ("Last 90 days", datetime.timedelta(days=90)),
+    "last_365d": ("Last year", datetime.timedelta(days=365)),
+    "all_time": ("All time", None),
+}
+STATS_PERIOD_LABELS = [
+    ("last_7d", "Last 7 days"),
+    ("last_30d", "Last 30 days"),
+    ("last_90d", "Last 90 days"),
+    ("last_365d", "Last year"),
+    ("all_time", "All time"),
+]
+DEFAULT_STATS_PERIOD = "last_30d"
+
+_FULLTEXT_ACCESS_TYPES = ["wayback", "ia_file", "ia_sim"]
+
+
+def _es_fulltext_count(since_iso=None):
+    """Count docs in scholar_fulltext that have PDF access.
+
+    If since_iso is provided, only count docs indexed on or after that date.
+    """
+    filters = [{"terms": {"access.access_type": _FULLTEXT_ACCESS_TYPES}}]
+    if since_iso:
+        filters.append({"range": {"doc_index_ts": {"gte": since_iso}}})
+    try:
+        resp = es.client().count(
+            index=settings.ES_INDEX,
+            body={"query": {"bool": {"filter": filters}}},
+        )
+        return resp["count"]
+    except Exception:
+        return None
+
+
+def stats(request: HttpRequest) -> HttpResponse:
+    period_key = request.GET.get("period", DEFAULT_STATS_PERIOD)
+    if period_key not in STATS_PERIODS:
+        period_key = DEFAULT_STATS_PERIOD
+
+    period_label, delta = STATS_PERIODS[period_key]
+
+    # -- PDFs In --
+    if delta is not None:
+        since = timezone.now() - delta
+        files_created = File.objects.filter(created__gte=since).count()
+        es_indexed = _es_fulltext_count(since_iso=since.isoformat())
+        access_qs = DailyAccessStat.objects.filter(date__gte=since.date())
+    else:
+        files_created = File.objects.count()
+        es_indexed = _es_fulltext_count()
+        access_qs = DailyAccessStat.objects.all()
+
+    es_total = _es_fulltext_count()
+
+    # -- PDFs Out --
+    access_rows = access_qs.values("access_type").annotate(total=Sum("count"))
+    access_by_type = {row["access_type"]: row["total"] for row in access_rows}
+    total_access = sum(access_by_type.values()) if access_by_type else 0
+
+    return render(request, "ftsearch/stats.html", {
+        "period": period_key,
+        "period_label": period_label,
+        "period_labels": STATS_PERIOD_LABELS,
+        "files_created": files_created,
+        "es_indexed": es_indexed,
+        "es_total": es_total,
+        "access_by_type": access_by_type,
+        "total_access": total_access,
+    })
 
 
 def random_paper(request: HttpRequest) -> HttpResponse:
@@ -294,6 +392,32 @@ def _build_es_body(q, offset, page_size, date_filter, type_filter, access_filter
     return body
 
 
+_WAYBACK_URL_RE = re.compile(r'^https?://web\.archive\.org/web/\d{14}/(.*)')
+_IA_FILE_URL_RE = re.compile(r'^https?://archive\.org/download/([^/]+)/(.*)')
+
+
+def _rewrite_access_url(access_url: str, work_ident: str) -> str:
+    """Rewrite external access URLs to route through our redirect views.
+
+    This ensures PDF accesses are tracked via DailyAccessStat. URLs that
+    don't match wayback or ia_file patterns are returned unchanged.
+    """
+    if not access_url or not work_ident:
+        return access_url
+
+    m = _WAYBACK_URL_RE.match(access_url)
+    if m:
+        original_url = m.group(1)
+        return f"/_sd/work/{work_ident}/access/wayback/{original_url}"
+
+    m = _IA_FILE_URL_RE.match(access_url)
+    if m:
+        item, file_path = m.group(1), m.group(2)
+        return f"/_sd/work/{work_ident}/access/ia_file/{item}/{file_path}"
+
+    return access_url
+
+
 def _build_result(hit):
     source = hit["_source"]
     biblio = source.get("biblio", {})
@@ -315,6 +439,14 @@ def _build_result(hit):
 
     fulltext = source.get("fulltext", {})
     access_url = fulltext.get("access_url", "")
+    work_ident = source.get("work_ident", "")
+
+    # Extract capture year from wayback URL before rewriting (/web/YYYYMMDD.../)
+    capture_match = re.search(r"/web/(\d{4})", access_url)
+    capture_year = capture_match.group(1) if capture_match else ""
+
+    # Rewrite wayback/ia_file URLs to route through our redirect views for tracking
+    access_url = _rewrite_access_url(access_url, work_ident)
 
     # Format file size for display
     size_bytes = fulltext.get("size_bytes")
@@ -324,10 +456,6 @@ def _build_result(hit):
         size_label = f"{size_bytes // 1_000} kB"
     else:
         size_label = ""
-
-    # Extract capture year from wayback URL (/web/YYYYMMDD.../)
-    capture_match = re.search(r"/web/(\d{4})", access_url)
-    capture_year = capture_match.group(1) if capture_match else ""
 
     return {
         "title": biblio.get("title", "(untitled)"),
@@ -534,6 +662,7 @@ def _access_redirect_fallback(request, work_ident, *, original_url=None, archive
             and access_url.endswith(original_url)
         ):
             timestamp = access_url.split("/")[4]
+            _record_access("wayback")
             return redirect(
                 f"https://web.archive.org/web/{timestamp}id_/{original_url}"
             )
@@ -542,6 +671,7 @@ def _access_redirect_fallback(request, work_ident, *, original_url=None, archive
             and "://archive.org/" in access_url
             and archiveorg_path in access_url
         ):
+            _record_access("ia_file")
             return redirect(access_url)
 
     return _404()
@@ -577,6 +707,7 @@ def access_redirect_wayback(request: HttpRequest, work_ident: str, url: str) -> 
         ):
             timestamp = opt["access_url"].split("/")[4]
             if len(timestamp) == 14 and timestamp.isdigit():
+                _record_access("wayback")
                 return redirect(
                     f"https://web.archive.org/web/{timestamp}id_/{original_url}"
                 )
@@ -607,6 +738,7 @@ def access_redirect_ia_file(request: HttpRequest, work_ident: str, item: str, fi
 
     for opt in _get_access_options(source):
         if opt.get("access_type") == "ia_file" and opt.get("access_url") == access_url:
+            _record_access("ia_file")
             return redirect(access_url)
 
     return _access_redirect_fallback(

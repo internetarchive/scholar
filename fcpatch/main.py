@@ -24,7 +24,7 @@ ENTITY_TYPES = ["container", "creator", "work", "release", "file", "fileset", "w
 DEFAULT_BATCH_SIZE = 100
 
 logger = logging.getLogger("fcpatch")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 _handler = logging.StreamHandler(sys.stdout)
 _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logger.addHandler(_handler)

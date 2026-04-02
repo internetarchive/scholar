@@ -1,0 +1,131 @@
+{% extends "ftsearch/base.html" %}
+{% load humanize %}
+
+{% block title %}Stats - Internet Archive Scholar{% endblock %}
+
+{% block styles %}
+    .stats-content {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+      flex: 1;
+      line-height: 1.6;
+    }
+
+    .stats-content h1 {
+      margin-bottom: 1.5rem;
+    }
+
+    .stats-content h3 {
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    .period-selector {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .period-selector a {
+      padding: 0.4rem 0.8rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      color: #555;
+      text-decoration: none;
+      font-size: 0.875rem;
+    }
+
+    .period-selector a:hover {
+      border-color: #333;
+      color: #333;
+    }
+
+    .period-selector a.active {
+      background: #333;
+      border-color: #333;
+      color: #fff;
+    }
+
+    .stat-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .stat-card {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 1.25rem;
+    }
+
+    .stat-card .stat-value {
+      font-size: 2rem;
+      font-weight: 600;
+      color: #333;
+      line-height: 1.2;
+    }
+
+    .stat-card .stat-label {
+      font-size: 0.875rem;
+      color: #777;
+      margin-top: 0.25rem;
+    }
+
+    .stat-card .stat-unavailable {
+      font-size: 1.25rem;
+      color: #bbb;
+    }
+{% endblock %}
+
+{% block content %}
+  <div class="stats-content">
+    <h1>Stats</h1>
+
+    <div class="period-selector">
+      {% for key, label in period_labels %}
+        <a href="?period={{ key }}" class="{% if key == period %}active{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+
+    <h3>PDFs In</h3>
+    <div class="stat-cards">
+      <div class="stat-card">
+        <div class="stat-value">{{ files_created|intcomma }}</div>
+        <div class="stat-label">Files ingested ({{ period_label|lower }})</div>
+      </div>
+      <div class="stat-card">
+        {% if es_indexed is not None %}
+          <div class="stat-value">{{ es_indexed|intcomma }}</div>
+        {% else %}
+          <div class="stat-unavailable">unavailable</div>
+        {% endif %}
+        <div class="stat-label">Indexed with fulltext access ({{ period_label|lower }})</div>
+      </div>
+      <div class="stat-card">
+        {% if es_total is not None %}
+          <div class="stat-value">{{ es_total|intcomma }}</div>
+        {% else %}
+          <div class="stat-unavailable">unavailable</div>
+        {% endif %}
+        <div class="stat-label">Total searchable with fulltext access</div>
+      </div>
+    </div>
+
+    <h3>PDFs Out</h3>
+    <div class="stat-cards">
+      <div class="stat-card">
+        <div class="stat-value">{{ total_access|intcomma }}</div>
+        <div class="stat-label">Total PDF accesses ({{ period_label|lower }})</div>
+      </div>
+      {% for atype, count in access_by_type.items %}
+        <div class="stat-card">
+          <div class="stat-value">{{ count|intcomma }}</div>
+          <div class="stat-label">{{ atype }} accesses</div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}

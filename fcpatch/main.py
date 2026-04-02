@@ -712,7 +712,7 @@ def migrate(args) -> None:
         if args.dry_run:
             logger.info("DRY RUN: will process one batch per entity type and rollback")
         else:
-            logger.info("batch size: %d idents per commit", args.batch_size)
+            logger.info("batch size: %d idents per commit", int(args.batch_size))
 
         for entity_type in MIGRATION_ORDER:
             if args.entity_type and args.entity_type != entity_type:
@@ -720,12 +720,12 @@ def migrate(args) -> None:
             if args.dry_run:
                 stats = dry_run_entity_type(
                     entity_type, old_conn, new_conn,
-                    args.from_date, args.to_date, args.batch_size
+                    args.from_date, args.to_date, int(args.batch_size)
                 )
             else:
                 stats = migrate_entity_type(
                     entity_type, old_conn, new_conn,
-                    args.from_date, args.to_date, args.batch_size,
+                    args.from_date, args.to_date, int(args.batch_size),
                 )
             all_stats.extend(stats)
 

@@ -272,13 +272,12 @@ def get_container_releases(request, ident: UUID) -> list[ReleaseSchema]:
 @v2api.post("/container", auth=api_auth)
 def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     """Create a new container."""
-    with transaction.atomic():
-        cs = m.Container.objects.select_for_update().filter(id=container_in.id)
-        if len(cs) != 0:
-            return v2api.create_response(request,
-                                         f"container with id {container_in.id} already exists",
-                                         status=HTTPStatus.UNPROCESSABLE_ENTITY)
-        m.Container(**container_in.dict()).save()
+    if m.Container.objects.filter(id=container_in.id).exists():
+        return v2api.create_response(request,
+                                     f"container with id {container_in.id} already exists",
+                                     status=HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    m.Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=HTTPStatus.CREATED)
 
 
@@ -355,12 +354,12 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     contribs = data.pop("contribs")
     abstracts = data.pop("abstracts")
     citations = data.pop("citations")
+
+    if m.Release.objects.filter(id=release_in.id).exists():
+        return v2api.create_response(request,
+                                     f"release with id {release_in.id} already exists",
+                                     status=HTTPStatus.UNPROCESSABLE_ENTITY)
     with transaction.atomic():
-        rs = m.Release.objects.select_for_update().filter(id=release_in.id)
-        if len(rs) != 0:
-            return v2api.create_response(request,
-                                         f"release with id {release_in.id} already exists",
-                                         status=HTTPStatus.UNPROCESSABLE_ENTITY)
         work_id = release_in.work_id
         if work_id is None:
             work = m.Work()

@@ -76,7 +76,7 @@ var typeMap = map[string]map[string]string{
 		"musical_score": "musical_score", "pamphlet": "pamphlet",
 		"paper-conference": "paper-conference", "patent": "patent",
 		"personal_communication": "personal_communication",
-		"post": "post", "post-weblog": "post-weblog", "report": "report",
+		"post":                   "post", "post-weblog": "post-weblog", "report": "report",
 		"review-book": "review-book", "review": "review", "song": "song",
 		"speech": "speech", "thesis": "thesis", "treaty": "treaty", "webpage": "webpage",
 	},
@@ -102,7 +102,6 @@ var typeMap = map[string]map[string]string{
 var containerTypeMap = map[string]string{
 	"Journal": "journal", "Series": "journal", "Book Series": "book-series",
 }
-
 
 // --- Struct definitions ---
 
@@ -166,14 +165,14 @@ type dataciteSubject struct {
 }
 
 type dataciteContainer struct {
-	Type           string `json:"type"`
-	Identifier     string `json:"identifier"`
-	IdentifierType string `json:"identifierType"`
-	Title          string `json:"title"`
-	Volume         string `json:"volume"`
-	Issue          string `json:"issue"`
-	FirstPage      string `json:"firstPage"`
-	LastPage       string `json:"lastPage"`
+	Type           string      `json:"type"`
+	Identifier     string      `json:"identifier"`
+	IdentifierType string      `json:"identifierType"`
+	Title          string      `json:"title"`
+	Volume         json.Number `json:"volume"`
+	Issue          string      `json:"issue"`
+	FirstPage      string      `json:"firstPage"`
+	LastPage       string      `json:"lastPage"`
 }
 
 type dataciteDoc struct {
@@ -710,7 +709,7 @@ func dataciteToFc(doc *dataciteDoc, source string) *fatcat2.Release {
 
 	// Volume, issue, pages from container
 	container := a.Container
-	volume := cleaning.CleanString(strings.TrimSpace(container.Volume))
+	volume := cleaning.CleanString(strings.TrimSpace(container.Volume.String()))
 	issue := cleaning.CleanString(strings.TrimSpace(container.Issue))
 	if volume != "" {
 		release.Volume = volume

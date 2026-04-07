@@ -5,9 +5,10 @@ description = "Incremental migration from fatcat_prod to fatcat2"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "diskcache>=5.6.3",
     "psycopg[binary]>=3.2.5",
 ]
 
 [[tool.uv.index]]
-url = "http://nexus.us.archive.org/repository/pypi-group/simple"
+url = "https://nexus.us.archive.org/repository/pypi-group/simple"
 default = true

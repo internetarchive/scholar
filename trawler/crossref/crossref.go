@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -648,7 +647,7 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 			return nil, err
 		}
 
-		slog.Info("walt whitman stink paper", "reljson", string(reljson))
+		fmt.Printf("walt whitman stink paper %s\n", string(reljson))
 	}
 
 	// TODO CreateRelease needs to return the fully hydrated release with things like work id set, not just the ID

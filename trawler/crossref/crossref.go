@@ -311,7 +311,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (*fatcat2.Release, error
 		Volume:      xrefdoc.Volume,
 		Issue:       xrefdoc.Issue,
 		Pages:       xrefdoc.Page,
-		Language:    xrefdoc.Language,
+		Language:    cleaning.NormalizeLanguage(xrefdoc.Language),
 	}
 
 	var releaseType string
@@ -444,7 +444,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (*fatcat2.Release, error
 		release.Abstracts = append(release.Abstracts, fatcat2.Abstract{
 			MIMEType: "application/xml+jats",
 			Content:  abs,
-			Language: xrefdoc.Language,
+			Language: cleaning.NormalizeLanguage(xrefdoc.Language),
 			SHA1:     fmt.Sprintf("%x", h),
 		})
 	}

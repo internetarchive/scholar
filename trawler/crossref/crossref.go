@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -641,11 +642,27 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 
 	release.ContainerID = containerID
 
+	if release.DOI() == "10.14232/sn.2025.2" {
+		reljson, err := json.Marshal(release)
+		if err != nil {
+			return nil, err
+		}
+
+		slog.Info("walt whitman stink paper", "reljson", string(reljson))
+	}
+
 	// TODO CreateRelease needs to return the fully hydrated release with things like work id set, not just the ID
 	id, err := fatcat2.CreateRelease(client, release)
 	if err != nil {
 		return nil, err
 	}
+
+	// for a particular DOI we create, see no error, then fail to get 10.14232/sn.2025.2
+	// i don't think it's replication lag because it's *still* not there and
+	// other releases have since been created.
+
+	// CreateRelease returns the id and no error in case of a 422; but I don't
+	// think that's relevant because the id is not in the db.
 
 	r, err := fatcat2.GetRelease(client, *id)
 	if err != nil {

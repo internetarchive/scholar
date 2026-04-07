@@ -204,7 +204,37 @@ FILE_URLS_GET = """
     AND fi.redirect_id IS NULL
 """
 
+RELEASE_ABSTRACTS_GET = """
+  SELECT
+    ra.abstract_sha1 AS sha1,
+    ra.mimetype,
+    ra.lang AS language,
+    (SELECT content
+     FROM abstracts a
+     WHERE ra.abstract_sha1 = a.sha1) AS content
+  FROM release_ident ri
+  JOIN release_rev_abstract ra ON ri.rev_id = ra.release_rev
+  WHERE ri.id = %s
+    AND ri.is_live = true
+    AND ri.redirect_id IS NULL
+"""
+
 LEGACY_EXTID_COLS = ["doi", "pmid", "pmcid", "wikidata_qid", "core_id"]
+
+
+def handle_abstracts(old_conn: psycopg.Connection,
+                     new_conn: psycopg.Connection,
+                     cache: diskcache.Cache,
+                     rid: uuid.UUID) -> None:
+    with old_conn.cursor() as old_cur, new_conn.cursor() as new_cur:
+        abstracts = old_cur.execute(RELEASE_ABSTRACTS_GET, [rid]).fetchall()
+        for ab in abstracts:
+            new_cur.execute("""
+                INSERT INTO fcapi_releaseabstract (
+                release_id, sha1, mimetype, language, content)
+                VALUES (%s, %s, %s, %s, %s)
+            """, [rid, ab["sha1"], ab["mimetype"], ab["language"], ab["content"]])
+        logger.info(f"{str(rid)}: inserted {len(abstracts)} abstracts")
 
 
 def handle(old_conn: psycopg.Connection,
@@ -213,7 +243,12 @@ def handle(old_conn: psycopg.Connection,
            line: str) -> None:
     rid = uuid.UUID(line.strip())
     if cache.get(str(rid)) is not None:
-        logger.info(f"{rid}: found in cache, skipping")
+        if cache.get(str(rid) + "_abstracts") is None:
+            logger.info(f"{str(rid)}: needs abstracts")
+            handle_abstracts(old_conn, new_conn, cache, rid)
+            cache.set(str(rid) + "_abstracts", True)
+            logger.info(f"{str(rid)}: abstracts added")
+        logger.info(f"{rid}: found in cache, skipping ahead")
         return
 
     with old_conn.cursor() as old_cur, new_conn.cursor() as new_cur:
@@ -385,6 +420,9 @@ def handle(old_conn: psycopg.Connection,
                           INSERT INTO fcapi_fileurl (rel, url, file_id)
                           VALUES (%s, %s, %s)
                         """, [url["rel"], url["url"], f["id"]])
+
+            handle_abstracts(old_conn, new_conn, cache, rid)
+            cache.set(str(rid) + "_abstracts", True)
 
     cache.set(str(rid), "done")
     logger.info(f"{rid}: done")

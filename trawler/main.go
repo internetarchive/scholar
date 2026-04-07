@@ -9,6 +9,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cmd/crossrefcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/datacitecmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/doajcmd"
+	"git.archive.org/webgroup/scholar/trawler/cmd/fccmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/pubmedcmd"
 	"github.com/getsentry/sentry-go"
@@ -59,6 +60,7 @@ func init() {
 	rootCmd.AddCommand(crossrefcmd.Cmd)
 	rootCmd.AddCommand(datacitecmd.Cmd)
 	rootCmd.AddCommand(doajcmd.Cmd)
+	rootCmd.AddCommand(fccmd.Cmd)
 	rootCmd.AddCommand(indexcmd.IndexCmd)
 	rootCmd.AddCommand(pubmedcmd.Cmd)
 }

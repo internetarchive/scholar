@@ -641,15 +641,6 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 
 	release.ContainerID = containerID
 
-	if release.DOI() == "10.14232/sn.2025.2" {
-		reljson, err := json.Marshal(release)
-		if err != nil {
-			return nil, err
-		}
-
-		fmt.Printf("walt whitman stink paper %s\n", string(reljson))
-	}
-
 	// TODO CreateRelease needs to return the fully hydrated release with things like work id set, not just the ID
 	id, err := fatcat2.CreateRelease(client, release)
 	if err != nil {

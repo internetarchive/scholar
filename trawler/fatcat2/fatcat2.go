@@ -461,7 +461,7 @@ func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 		return nil, fmt.Errorf("release POST failed for '%#v': %w", r, err)
 	}
 
-	if resp.StatusCode == 422 {
+	if resp.StatusCode == 409 {
 		// release already exists, likely a retry; treat as success
 		return &r.ID, nil
 	}

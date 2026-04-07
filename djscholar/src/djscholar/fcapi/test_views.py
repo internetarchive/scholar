@@ -390,7 +390,7 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         self.assertEqual(len(es), 1)
 
         response = client.post("/release", data=data, headers=self.auth_headers)
-        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.assertEqual(response.status_code, HTTPStatus.CONFLICT)
 
     def test_create_without_work(self):
         entity = ReleaseFactory.build()
@@ -819,7 +819,7 @@ class TestContainerRoutes(EntityCRUDTestCase):
         self.assertEqual(len(cs), 1)
 
         response = client.post(self.create, data=data, headers=self.auth_headers)
-        self.assertEqual(response.status_code, HTTPStatus.UNPROCESSABLE_ENTITY)
+        self.assertEqual(response.status_code, HTTPStatus.CONFLICT)
 
     def test_bulk_create(self):
         cs = [v.ContainerSchema.from_orm(ContainerFactory.build()) for _ in range(100)]

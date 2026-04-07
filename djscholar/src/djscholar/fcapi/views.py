@@ -275,7 +275,7 @@ def create_container(request, container_in: ContainerSchema) -> HttpResponse:
     if m.Container.objects.filter(id=container_in.id).exists():
         return v2api.create_response(request,
                                      f"container with id {container_in.id} already exists",
-                                     status=HTTPStatus.UNPROCESSABLE_ENTITY)
+                                     status=HTTPStatus.CONFLICT)
 
     m.Container(**container_in.dict()).save()
     return v2api.create_response(request, "container created", status=HTTPStatus.CREATED)
@@ -358,7 +358,7 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
     if m.Release.objects.filter(id=release_in.id).exists():
         return v2api.create_response(request,
                                      f"release with id {release_in.id} already exists",
-                                     status=HTTPStatus.UNPROCESSABLE_ENTITY)
+                                     status=HTTPStatus.CONFLICT)
     with transaction.atomic():
         work_id = release_in.work_id
         if work_id is None:

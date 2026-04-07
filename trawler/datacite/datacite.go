@@ -29,6 +29,29 @@ const maxPublisherLength = 80
 // citation with 2 billion entries).
 const maxRawLineBytes = 256 * 1024 * 1024
 
+// flexibleString unmarshals a JSON value that may be either a string or a
+// number into a Go string. This was added because datacite types its volume
+// field inconsistently -- sometimes it's a string, sometimes it's a numeric
+// literal.
+type flexibleString string
+
+func (f *flexibleString) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*f = flexibleString(s)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err != nil {
+		return err
+	}
+	*f = flexibleString(n.String())
+	return nil
+}
+
 // --- Lookup tables ---
 
 // unknownMarkersLower is the set of lowercase strings that signal missing or
@@ -165,14 +188,14 @@ type dataciteSubject struct {
 }
 
 type dataciteContainer struct {
-	Type           string      `json:"type"`
-	Identifier     string      `json:"identifier"`
-	IdentifierType string      `json:"identifierType"`
-	Title          string      `json:"title"`
-	Volume         json.Number `json:"volume"`
-	Issue          string      `json:"issue"`
-	FirstPage      string      `json:"firstPage"`
-	LastPage       string      `json:"lastPage"`
+	Type           string         `json:"type"`
+	Identifier     string         `json:"identifier"`
+	IdentifierType string         `json:"identifierType"`
+	Title          string         `json:"title"`
+	Volume         flexibleString `json:"volume"`
+	Issue          string         `json:"issue"`
+	FirstPage      string         `json:"firstPage"`
+	LastPage       string         `json:"lastPage"`
 }
 
 type dataciteDoc struct {
@@ -709,7 +732,7 @@ func dataciteToFc(doc *dataciteDoc, source string) *fatcat2.Release {
 
 	// Volume, issue, pages from container
 	container := a.Container
-	volume := cleaning.CleanString(strings.TrimSpace(container.Volume.String()))
+	volume := cleaning.CleanString(strings.TrimSpace(string(container.Volume)))
 	issue := cleaning.CleanString(strings.TrimSpace(container.Issue))
 	if volume != "" {
 		release.Volume = volume

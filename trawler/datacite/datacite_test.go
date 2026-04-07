@@ -1,6 +1,7 @@
 package datacite
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -805,6 +806,37 @@ func TestParseContribs(t *testing.T) {
 			t.Errorf("expected 0 contribs, got %d", len(got))
 		}
 	})
+}
+
+// --- flexibleString ---
+
+func TestFlexibleString(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"string value", `{"volume":"42"}`, "42"},
+		{"number value", `{"volume":42}`, "42"},
+		{"float value", `{"volume":3.5}`, "3.5"},
+		{"null value", `{"volume":null}`, ""},
+		{"missing field", `{}`, ""},
+		{"empty string", `{"volume":""}`, ""},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var container struct {
+				Volume flexibleString `json:"volume"`
+			}
+			if err := json.Unmarshal([]byte(c.input), &container); err != nil {
+				t.Fatalf("unmarshal error: %v", err)
+			}
+			if string(container.Volume) != c.want {
+				t.Errorf("got %q, want %q", string(container.Volume), c.want)
+			}
+		})
+	}
 }
 
 // --- dataciteLicenseSlug ---

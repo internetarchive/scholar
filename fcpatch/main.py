@@ -222,44 +222,8 @@ RELEASE_ABSTRACTS_GET = """
 LEGACY_EXTID_COLS = ["doi", "pmid", "pmcid", "wikidata_qid", "core_id"]
 
 
-def handle_abstracts(old_conn: psycopg.Connection,
-                     new_conn: psycopg.Connection,
-                     cache: diskcache.Cache,
-                     rid: uuid.UUID) -> None:
-    with old_conn.cursor() as old_cur, new_conn.cursor() as new_cur:
-        abstracts = old_cur.execute(RELEASE_ABSTRACTS_GET, [rid]).fetchall()
-        for ab in abstracts:
-            new_cur.execute("""
-                INSERT INTO fcapi_releaseabstract (
-                release_id, sha1, mimetype, language, content)
-                VALUES (%s, %s, %s, %s, %s)
-            """, [rid, ab["sha1"], ab["mimetype"], ab["language"], ab["content"]])
-        logger.info(f"{str(rid)}: inserted {len(abstracts)} abstracts")
-
-
-def handle(old_conn: psycopg.Connection,
-           new_conn: psycopg.Connection,
-           cache: diskcache.Cache,
-           line: str) -> None:
-    rid = uuid.UUID(line.strip())
-    if cache.get(str(rid)) is not None:
-        if cache.get(str(rid) + "_abstracts") is None:
-            logger.info(f"{str(rid)}: needs abstracts")
-            handle_abstracts(old_conn, new_conn, cache, rid)
-            cache.set(str(rid) + "_abstracts", True)
-            logger.info(f"{str(rid)}: abstracts added")
-        logger.info(f"{rid}: found in cache, skipping ahead")
-        return
-
-    with old_conn.cursor() as old_cur, new_conn.cursor() as new_cur:
-        row = new_cur.execute("""
-          SELECT 1 as found FROM fcapi_release
-          WHERE id = %s""", [rid]).fetchone()
-        if row is not None:
-            cache.set(str(rid), "done")
-            logger.info(f"{rid}: found in db, skipping")
-            return
-
+def get_release_data(old_conn: psycopg.Connection, rid: uuid.UUID) -> dict[str, any] | None:
+    with old_conn.cursor() as old_cur:
         logger.info(f"{rid}: fetching old release")
 
         release = old_cur.execute(RELEASE_GET, [rid]).fetchone()
@@ -301,132 +265,170 @@ def handle(old_conn: psycopg.Connection,
         for f in files:
             file_urls[f["id"]] = old_cur.execute(FILE_URLS_GET, [f["id"]]).fetchall()
 
+        abstracts = old_cur.execute(RELEASE_ABSTRACTS_GET, [rid]).fetchall()
         logger.info(f"{rid}: inserting ({len(contribs)} contribs, {len(creators)} creators, "
-                    f"{len(extids)} extids, {len(refs)} refs, {len(files)} files)")
+                    f"{len(extids)} extids, {len(refs)} refs, {len(abstracts)} "
+                    f"abstracts, {len(files)} files)")
 
-        with new_conn.transaction():
+        return {
+                'release': release,
+                'work': work,
+                'container': container,
+                'creators': creators,
+                'extids': extids,
+                'contribs': contribs,
+                'files': files,
+                'abstracts': abstracts,
+                'refs': refs,
+                'file_urls': file_urls,
+                }
+
+
+def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
+    release = data['release']
+    rid = release['id']
+    work = data['work']
+    container = data['container']
+    creators = data['creators']
+    extids = data['extids']
+    files = data['files']
+    abstracts = data['abstracts']
+    refs = data['refs']
+    contribs = data['contribs']
+    file_urls = data['file_urls']
+
+    new_cur.execute("""
+        INSERT INTO fcapi_work (id, legacy_rev, source, extra)
+        VALUES (%(id)s, %(legacy_rev)s, %(source)s, %(extra)s)
+        ON CONFLICT (id) DO NOTHING
+    """, {**work, "extra": Jsonb(work["extra"]) if work["extra"] is not None else None})
+
+    if container:
+        new_cur.execute("""
+            INSERT INTO fcapi_container (
+            id, legacy_rev, name, extra, container_type, publisher,
+            issnl, issne, issnp, wikidata_qid, source)
+            VALUES (
+            %(id)s, %(legacy_rev)s, %(name)s, %(extra)s, %(container_type)s,
+            %(publisher)s, %(issnl)s, %(issne)s, %(issnp)s,
+            %(wikidata_qid)s, %(source)s)
+            ON CONFLICT (id) DO NOTHING
+        """, {**container, "extra": Jsonb(
+            container["extra"]) if container["extra"] is not None else None})
+
+    for creator in creators.values():
+        new_cur.execute("""
+            INSERT INTO fcapi_creator (
+            id, legacy_rev, display_name, given_name, surname,
+            orcid, source, extra)
+            VALUES (
+            %(id)s, %(legacy_rev)s, %(display_name)s, %(given_name)s,
+            %(surname)s, %(orcid)s, %(source)s, %(extra)s)
+            ON CONFLICT (id) DO NOTHING
+        """, {**creator, "extra": Jsonb(creator["extra"]) if creator["extra"] is not None else None})
+
+    new_cur.execute("""
+        INSERT INTO fcapi_release (
+        id, legacy_rev, extra, source, title, original_title, subtitle,
+        release_type, release_stage, release_date, release_year,
+        volume, issue, pages, number, version, publisher, language,
+        license_slug, withdrawn_status, work_id, container_id,
+        legacy_doi, legacy_pmid, legacy_pmcid, legacy_wikidata_qid,
+        legacy_core_id, refs)
+        VALUES (
+        %(id)s, %(legacy_rev)s, %(extra)s, %(source)s, %(title)s,
+        %(original_title)s, %(subtitle)s, %(release_type)s,
+        %(release_stage)s, %(release_date)s, %(release_year)s,
+        %(volume)s, %(issue)s, %(pages)s, %(number)s, %(version)s,
+        %(publisher)s, %(language)s, %(license_slug)s,
+        %(withdrawn_status)s, %(work_id)s, %(container_id)s,
+        %(legacy_doi)s, %(legacy_pmid)s, %(legacy_pmcid)s,
+        %(legacy_wikidata_qid)s, %(legacy_core_id)s, %(refs)s)
+    """, {
+        **release,
+        "extra": Jsonb(release["extra"]) if release["extra"] is not None else None,
+        "refs": Jsonb(release["refs"]) if release["refs"] is not None else None,
+    })
+
+    for extid in extids:
+        new_cur.execute("""
+            INSERT INTO fcapi_releaseextid (release_id, id_type, id_value)
+            VALUES (%s, %s, %s)
+        """, [rid, extid["id_type"], extid["id_value"]])
+
+    for col in LEGACY_EXTID_COLS:
+        val = release.get(f"legacy_{col}")
+        if val:
             new_cur.execute("""
-              INSERT INTO fcapi_work (id, legacy_rev, source, extra)
-              VALUES (%(id)s, %(legacy_rev)s, %(source)s, %(extra)s)
-              ON CONFLICT (id) DO NOTHING
-            """, {**work, "extra": Jsonb(work["extra"]) if work["extra"] is not None else None})
+                INSERT INTO fcapi_releaseextid (release_id, id_type, id_value)
+                VALUES (%s, %s, %s)
+            """, [rid, col, str(val)])
 
-            if container:
+    for contrib in contribs:
+        new_cur.execute("""
+            INSERT INTO fcapi_releasecontrib (
+            release_id, raw_name, given_name, surname, creator_id,
+            role, raw_affiliation, position, extra)
+            VALUES (
+            %(release_id)s, %(raw_name)s, %(given_name)s, %(surname)s,
+            %(creator_id)s, %(role)s, %(raw_affiliation)s,
+            %(position)s, %(extra)s)
+        """, {
+            **contrib,
+            "release_id": rid,
+            "extra": Jsonb(contrib["extra"]) if contrib["extra"] is not None else None,
+        })
+
+    for ref in refs:
+        new_cur.execute("""
+            INSERT INTO fcapi_releaseref (position, release_id, target_release_id)
+            VALUES (%s, %s, %s)
+        """, [ref["position"], rid, ref["target_release_id"]])
+
+    for f in files:
+        inserted = new_cur.execute("""
+            INSERT INTO fcapi_file (
+            id, legacy_rev, source, size_bytes, sha1, sha256,
+            mimetype, md5, extra)
+            VALUES (
+            %(id)s, %(legacy_rev)s, %(source)s, %(size_bytes)s,
+            %(sha1)s, %(sha256)s, %(mimetype)s, %(md5)s, %(extra)s)
+            ON CONFLICT (id) DO NOTHING
+            RETURNING id
+        """, {**f, "extra": Jsonb(f["extra"]) if f["extra"] is not None else None}).fetchone()
+
+        new_cur.execute("""
+            INSERT INTO fcapi_releasefile (release_id, file_id)
+            VALUES (%s, %s)
+            ON CONFLICT (file_id, release_id) DO NOTHING
+        """, [rid, f["id"]])
+
+        if inserted is not None:
+            for url in file_urls[f["id"]]:
                 new_cur.execute("""
-                  INSERT INTO fcapi_container (
-                    id, legacy_rev, name, extra, container_type, publisher,
-                    issnl, issne, issnp, wikidata_qid, source)
-                  VALUES (
-                    %(id)s, %(legacy_rev)s, %(name)s, %(extra)s, %(container_type)s,
-                    %(publisher)s, %(issnl)s, %(issne)s, %(issnp)s,
-                    %(wikidata_qid)s, %(source)s)
-                  ON CONFLICT (id) DO NOTHING
-                """, {**container,
-                      "extra": Jsonb(
-                          container["extra"]) if container["extra"] is not None else None})
+                    INSERT INTO fcapi_fileurl (rel, url, file_id)
+                    VALUES (%s, %s, %s)
+                """, [url["rel"], url["url"], f["id"]])
 
-            for creator in creators.values():
-                new_cur.execute("""
-                  INSERT INTO fcapi_creator (
-                    id, legacy_rev, display_name, given_name, surname,
-                    orcid, source, extra)
-                  VALUES (
-                    %(id)s, %(legacy_rev)s, %(display_name)s, %(given_name)s,
-                    %(surname)s, %(orcid)s, %(source)s, %(extra)s)
-                  ON CONFLICT (id) DO NOTHING
-                """, {**creator,
-                      "extra": Jsonb(creator["extra"]) if creator["extra"] is not None else None})
+    for ab in abstracts:
+        new_cur.execute("""
+            INSERT INTO fcapi_releaseabstract (
+            release_id, sha1, mimetype, language, content)
+            VALUES (%s, %s, %s, %s, %s)
+        """, [rid, ab["sha1"], ab["mimetype"], ab["language"], ab["content"]])
 
-            new_cur.execute("""
-              INSERT INTO fcapi_release (
-                id, legacy_rev, extra, source, title, original_title, subtitle,
-                release_type, release_stage, release_date, release_year,
-                volume, issue, pages, number, version, publisher, language,
-                license_slug, withdrawn_status, work_id, container_id,
-                legacy_doi, legacy_pmid, legacy_pmcid, legacy_wikidata_qid,
-                legacy_core_id, refs)
-              VALUES (
-                %(id)s, %(legacy_rev)s, %(extra)s, %(source)s, %(title)s,
-                %(original_title)s, %(subtitle)s, %(release_type)s,
-                %(release_stage)s, %(release_date)s, %(release_year)s,
-                %(volume)s, %(issue)s, %(pages)s, %(number)s, %(version)s,
-                %(publisher)s, %(language)s, %(license_slug)s,
-                %(withdrawn_status)s, %(work_id)s, %(container_id)s,
-                %(legacy_doi)s, %(legacy_pmid)s, %(legacy_pmcid)s,
-                %(legacy_wikidata_qid)s, %(legacy_core_id)s, %(refs)s)
-            """, {
-                **release,
-                "extra": Jsonb(release["extra"]) if release["extra"] is not None else None,
-                "refs": Jsonb(release["refs"]) if release["refs"] is not None else None,
-            })
-
-            for extid in extids:
-                new_cur.execute("""
-                  INSERT INTO fcapi_releaseextid (release_id, id_type, id_value)
-                  VALUES (%s, %s, %s)
-                """, [rid, extid["id_type"], extid["id_value"]])
-
-            for col in LEGACY_EXTID_COLS:
-                val = release.get(f"legacy_{col}")
-                if val:
-                    new_cur.execute("""
-                      INSERT INTO fcapi_releaseextid (release_id, id_type, id_value)
-                      VALUES (%s, %s, %s)
-                    """, [rid, col, str(val)])
-
-            for contrib in contribs:
-                new_cur.execute("""
-                  INSERT INTO fcapi_releasecontrib (
-                    release_id, raw_name, given_name, surname, creator_id,
-                    role, raw_affiliation, position, extra)
-                  VALUES (
-                    %(release_id)s, %(raw_name)s, %(given_name)s, %(surname)s,
-                    %(creator_id)s, %(role)s, %(raw_affiliation)s,
-                    %(position)s, %(extra)s)
-                """, {
-                    **contrib,
-                    "release_id": rid,
-                    "extra": Jsonb(contrib["extra"]) if contrib["extra"] is not None else None,
-                })
-
-            for ref in refs:
-                new_cur.execute("""
-                  INSERT INTO fcapi_releaseref (position, release_id, target_release_id)
-                  VALUES (%s, %s, %s)
-                """, [ref["position"], rid, ref["target_release_id"]])
-
-            for f in files:
-                inserted = new_cur.execute("""
-                  INSERT INTO fcapi_file (
-                    id, legacy_rev, source, size_bytes, sha1, sha256,
-                    mimetype, md5, extra)
-                  VALUES (
-                    %(id)s, %(legacy_rev)s, %(source)s, %(size_bytes)s,
-                    %(sha1)s, %(sha256)s, %(mimetype)s, %(md5)s, %(extra)s)
-                  ON CONFLICT (id) DO NOTHING
-                  RETURNING id
-                """, {**f,
-                      "extra": Jsonb(f["extra"]) if f["extra"] is not None else None}).fetchone()
-
-                new_cur.execute("""
-                  INSERT INTO fcapi_releasefile (release_id, file_id)
-                  VALUES (%s, %s)
-                  ON CONFLICT (file_id, release_id) DO NOTHING
-                """, [rid, f["id"]])
-
-                if inserted is not None:
-                    for url in file_urls[f["id"]]:
-                        new_cur.execute("""
-                          INSERT INTO fcapi_fileurl (rel, url, file_id)
-                          VALUES (%s, %s, %s)
-                        """, [url["rel"], url["url"], f["id"]])
-
-            handle_abstracts(old_conn, new_conn, cache, rid)
-            cache.set(str(rid) + "_abstracts", True)
-
-    cache.set(str(rid), "done")
-    logger.info(f"{rid}: done")
     return
+
+
+def handle_batch(old_conn, new_conn, cache, batch):
+    # TODO could parallelize this
+    batch_data = [get_release_data(old_conn, rid) for rid in batch]
+    with new_conn.cursor() as new_cur, new_conn.transaction():
+        for bd in batch_data:
+            if bd is None:
+                logger.warning("got nil batch data")
+                continue
+            insert_release_data(new_cur, bd)
 
 
 def main() -> None:
@@ -440,14 +442,49 @@ def main() -> None:
         "--new-db-url",
         default=os.environ.get("FCPATCH_NEW_DB_URL", "postgresql:///fatcat2"),
         help="Connection URL for fc2 (default: $FCPATCH_NEW_DB_URL)")
+    parser.add_argument(
+        "--batch",
+        default=1,
+        help="specify batch size; 1 is equivalent to no batching")
 
     args = parser.parse_args()
     old_conn = psycopg.connect(args.old_db_url, row_factory=dict_row)
     new_conn = psycopg.connect(args.new_db_url, row_factory=dict_row, autocommit=True)
     cache = diskcache.Cache("fcpatch")
 
+    batch_len: int = int(args.batch)
+
+    batch = []
     for line in sys.stdin:
-        handle(old_conn, new_conn, cache, line)
+        rid = uuid.UUID(line.strip())
+
+        if cache.get(str(rid)) is not None:
+            logger.info(f"{rid}: found in cache, skipping ahead")
+            continue
+
+        with new_conn.cursor() as new_cur:
+            row = new_cur.execute("""
+                SELECT 1 as found FROM fcapi_release
+                WHERE id = %s""", [rid]).fetchone()
+            if row is not None:
+                cache.set(str(rid), True)
+                logger.info(f"{rid}: found in db, skipping")
+                continue
+
+        batch.append(rid)
+        if len(batch) == batch_len:
+            logger.info("handling batch")
+            handle_batch(old_conn, new_conn, cache, batch)
+            for brid in batch:
+                cache.set(str(brid), True)
+            batch = []
+
+    if len(batch) > 0:
+        logger.info("handling batch")
+        handle_batch(old_conn, new_conn, cache, batch)
+        for brid in batch:
+            cache.set(str(brid), True)
+        batch = []
 
 
 if __name__ == "__main__":

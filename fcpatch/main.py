@@ -223,68 +223,87 @@ LEGACY_EXTID_COLS = ["doi", "pmid", "pmcid", "wikidata_qid", "core_id"]
 
 
 def get_release_data(old_conn: psycopg.Connection, rid: uuid.UUID) -> dict[str, any] | None:
-    with old_conn.cursor() as old_cur:
-        logger.info(f"{rid}: fetching old release")
+    logger.info(f"{rid}: fetching old release")
 
-        release = old_cur.execute(RELEASE_GET, [rid]).fetchone()
-        if release is None:
-            logger.warn(f"{rid}: not found in fatcat1")
-            return
+    # phase 1: release must come first; everything else depends on it
+    release = old_conn.execute(RELEASE_GET, [rid]).fetchone()
+    if release is None:
+        logger.warn(f"{rid}: not found in fatcat1")
+        return None
 
-        wid = release["work_id"]
-        work = old_cur.execute(WORK_GET, [wid]).fetchone()
-        if work is None:
-            logger.warn(f"{rid}: work {wid} not found in fatcat1")
-            return
+    legacy_rev = release["legacy_rev"]
+    wid = release["work_id"]
+    con_id = release["container_id"]
 
-        con_id = release["container_id"]
-        container = None
-        if con_id:
-            container = old_cur.execute(CONTAINER_GET, [con_id]).fetchone()
-            if container is None:
-                logger.warn(f"{rid}: container {con_id} not found in fatcat1")
-                return
+    # phase 2: pipeline all independent queries (1 round-trip instead of 7)
+    with old_conn.pipeline():
+        work_cur = old_conn.execute(WORK_GET, [wid])
+        container_cur = old_conn.execute(CONTAINER_GET, [con_id]) if con_id else None
+        extids_cur = old_conn.execute(RELEASE_EXTIDS_GET, [legacy_rev])
+        contribs_cur = old_conn.execute(RELEASE_CONTRIBS_GET, [legacy_rev])
+        refs_cur = old_conn.execute(RELEASE_REFS_GET, [legacy_rev])
+        files_cur = old_conn.execute(RELEASE_FILES_GET, [rid])
+        abstracts_cur = old_conn.execute(RELEASE_ABSTRACTS_GET, [rid])
 
-        legacy_rev = release["legacy_rev"]
+        work = work_cur.fetchone()
+        container = container_cur.fetchone() if container_cur else None
+        extids = extids_cur.fetchall()
+        contribs = contribs_cur.fetchall()
+        refs = refs_cur.fetchall()
+        files = files_cur.fetchall()
+        abstracts = abstracts_cur.fetchall()
 
-        extids = old_cur.execute(RELEASE_EXTIDS_GET, [legacy_rev]).fetchall()
-        contribs = old_cur.execute(RELEASE_CONTRIBS_GET, [legacy_rev]).fetchall()
-        refs = old_cur.execute(RELEASE_REFS_GET, [legacy_rev]).fetchall()
-        files = old_cur.execute(RELEASE_FILES_GET, [rid]).fetchall()
+    if work is None:
+        logger.warn(f"{rid}: work {wid} not found in fatcat1")
+        return None
 
-        creators = {}
-        for contrib in contribs:
-            cid = contrib.get("creator_id")
-            if not cid or cid in creators:
-                continue
-            creator = old_cur.execute(CREATOR_GET, [cid]).fetchone()
-            if creator:
-                creators[cid] = creator
+    if con_id and container is None:
+        logger.warn(f"{rid}: container {con_id} not found in fatcat1")
+        return None
 
-        file_urls = {}
-        for f in files:
-            file_urls[f["id"]] = old_cur.execute(FILE_URLS_GET, [f["id"]]).fetchall()
+    # phase 3: pipeline per-contrib creator and per-file URL queries
+    creator_ids = list({c["creator_id"] for c in contribs if c.get("creator_id")})
+    file_ids = [f["id"] for f in files]
 
-        abstracts = old_cur.execute(RELEASE_ABSTRACTS_GET, [rid]).fetchall()
-        logger.info(f"{rid}: inserting ({len(contribs)} contribs, {len(creators)} creators, "
-                    f"{len(extids)} extids, {len(refs)} refs, {len(abstracts)} "
-                    f"abstracts, {len(files)} files)")
+    creators = {}
+    file_urls = {}
 
-        return {
-                'release': release,
-                'work': work,
-                'container': container,
-                'creators': creators,
-                'extids': extids,
-                'contribs': contribs,
-                'files': files,
-                'abstracts': abstracts,
-                'refs': refs,
-                'file_urls': file_urls,
-                }
+    if creator_ids or file_ids:
+        with old_conn.pipeline():
+            creator_curs = {cid: old_conn.execute(CREATOR_GET, [cid]) for cid in creator_ids}
+            file_url_curs = {fid: old_conn.execute(FILE_URLS_GET, [fid]) for fid in file_ids}
+
+            for cid, cur in creator_curs.items():
+                creator = cur.fetchone()
+                if creator:
+                    creators[cid] = creator
+
+            for fid, cur in file_url_curs.items():
+                file_urls[fid] = cur.fetchall()
+
+    logger.info(f"{rid}: fetched ({len(contribs)} contribs, {len(creators)} creators, "
+                f"{len(extids)} extids, {len(refs)} refs, {len(abstracts)} "
+                f"abstracts, {len(files)} files)")
+
+    return {
+            'release': release,
+            'work': work,
+            'container': container,
+            'creators': creators,
+            'extids': extids,
+            'contribs': contribs,
+            'files': files,
+            'abstracts': abstracts,
+            'refs': refs,
+            'file_urls': file_urls,
+            }
 
 
-def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
+def insert_release_main(new_conn: psycopg.Connection,
+                        data: dict[str, any]) -> list[tuple[psycopg.Cursor, uuid.UUID]]:
+    """Insert everything except file URLs. Returns list of (cursor, file_id) for
+    file inserts that used RETURNING, so the caller can check which files were
+    newly inserted and pipeline the file URL inserts separately."""
     release = data['release']
     rid = release['id']
     work = data['work']
@@ -295,16 +314,15 @@ def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
     abstracts = data['abstracts']
     refs = data['refs']
     contribs = data['contribs']
-    file_urls = data['file_urls']
 
-    new_cur.execute("""
+    new_conn.execute("""
         INSERT INTO fcapi_work (id, legacy_rev, source, extra)
         VALUES (%(id)s, %(legacy_rev)s, %(source)s, %(extra)s)
         ON CONFLICT (id) DO NOTHING
     """, {**work, "extra": Jsonb(work["extra"]) if work["extra"] is not None else None})
 
     if container:
-        new_cur.execute("""
+        new_conn.execute("""
             INSERT INTO fcapi_container (
             id, legacy_rev, name, extra, container_type, publisher,
             issnl, issne, issnp, wikidata_qid, source)
@@ -317,7 +335,7 @@ def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
             container["extra"]) if container["extra"] is not None else None})
 
     for creator in creators.values():
-        new_cur.execute("""
+        new_conn.execute("""
             INSERT INTO fcapi_creator (
             id, legacy_rev, display_name, given_name, surname,
             orcid, source, extra)
@@ -327,7 +345,7 @@ def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
             ON CONFLICT (id) DO NOTHING
         """, {**creator, "extra": Jsonb(creator["extra"]) if creator["extra"] is not None else None})
 
-    new_cur.execute("""
+    new_conn.execute("""
         INSERT INTO fcapi_release (
         id, legacy_rev, extra, source, title, original_title, subtitle,
         release_type, release_stage, release_date, release_year,
@@ -351,7 +369,7 @@ def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
     })
 
     for extid in extids:
-        new_cur.execute("""
+        new_conn.execute("""
             INSERT INTO fcapi_releaseextid (release_id, id_type, id_value)
             VALUES (%s, %s, %s)
         """, [rid, extid["id_type"], extid["id_value"]])
@@ -359,13 +377,13 @@ def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
     for col in LEGACY_EXTID_COLS:
         val = release.get(f"legacy_{col}")
         if val:
-            new_cur.execute("""
+            new_conn.execute("""
                 INSERT INTO fcapi_releaseextid (release_id, id_type, id_value)
                 VALUES (%s, %s, %s)
             """, [rid, col, str(val)])
 
     for contrib in contribs:
-        new_cur.execute("""
+        new_conn.execute("""
             INSERT INTO fcapi_releasecontrib (
             release_id, raw_name, given_name, surname, creator_id,
             role, raw_affiliation, position, extra)
@@ -380,13 +398,14 @@ def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
         })
 
     for ref in refs:
-        new_cur.execute("""
+        new_conn.execute("""
             INSERT INTO fcapi_releaseref (position, release_id, target_release_id)
             VALUES (%s, %s, %s)
         """, [ref["position"], rid, ref["target_release_id"]])
 
+    file_curs = []
     for f in files:
-        inserted = new_cur.execute("""
+        cur = new_conn.execute("""
             INSERT INTO fcapi_file (
             id, legacy_rev, source, size_bytes, sha1, sha256,
             mimetype, md5, extra)
@@ -395,40 +414,52 @@ def insert_release_data(new_cur: psycopg.Cursor, data: dict[str, any]) -> None:
             %(sha1)s, %(sha256)s, %(mimetype)s, %(md5)s, %(extra)s)
             ON CONFLICT (id) DO NOTHING
             RETURNING id
-        """, {**f, "extra": Jsonb(f["extra"]) if f["extra"] is not None else None}).fetchone()
+        """, {**f, "extra": Jsonb(f["extra"]) if f["extra"] is not None else None})
+        file_curs.append((cur, f["id"]))
 
-        new_cur.execute("""
+        new_conn.execute("""
             INSERT INTO fcapi_releasefile (release_id, file_id)
             VALUES (%s, %s)
             ON CONFLICT (file_id, release_id) DO NOTHING
         """, [rid, f["id"]])
 
-        if inserted is not None:
-            for url in file_urls[f["id"]]:
-                new_cur.execute("""
-                    INSERT INTO fcapi_fileurl (rel, url, file_id)
-                    VALUES (%s, %s, %s)
-                """, [url["rel"], url["url"], f["id"]])
-
     for ab in abstracts:
-        new_cur.execute("""
+        new_conn.execute("""
             INSERT INTO fcapi_releaseabstract (
             release_id, sha1, mimetype, language, content)
             VALUES (%s, %s, %s, %s, %s)
         """, [rid, ab["sha1"], ab["mimetype"], ab["language"], ab["content"]])
 
-    return
+    return file_curs
 
 
 def handle_batch(old_conn, new_conn, cache, batch):
-    # TODO could parallelize this
     batch_data = [get_release_data(old_conn, rid) for rid in batch]
-    with new_conn.cursor() as new_cur, new_conn.transaction():
+
+    with new_conn.transaction(), new_conn.pipeline():
+        # phase 1: buffer all inserts for the entire batch (except file URLs)
+        all_file_curs = []
         for bd in batch_data:
             if bd is None:
                 logger.warning("got nil batch data")
                 continue
-            insert_release_data(new_cur, bd)
+            file_curs = insert_release_main(new_conn, bd)
+            all_file_curs.append((bd['file_urls'], file_curs))
+
+        # phase 2: first fetch flushes the pipeline; check which files were new
+        file_url_inserts = []
+        for file_urls, file_curs in all_file_curs:
+            for cur, fid in file_curs:
+                if cur.fetchone() is not None:
+                    file_url_inserts.extend(
+                        (url["rel"], url["url"], fid) for url in file_urls.get(fid, []))
+
+        # phase 3: buffer file URL inserts; flushed on pipeline exit
+        for rel, url, fid in file_url_inserts:
+            new_conn.execute("""
+                INSERT INTO fcapi_fileurl (rel, url, file_id)
+                VALUES (%s, %s, %s)
+            """, [rel, url, fid])
 
 
 def main() -> None:

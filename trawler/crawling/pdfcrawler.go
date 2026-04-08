@@ -806,7 +806,7 @@ func (c PDFCrawler) findNextLink(URL string, content io.Reader) (*FindLinkResult
 			subdoc, err = goquery.NewDocumentFromReader(
 				strings.NewReader(selection.Text()))
 		})
-		if err == nil {
+		if err == nil && subdoc != nil {
 			attr, ok := subdoc.Find("a").Attr("href")
 			if ok {
 				return newPDFLinkResult(URL, attr, "mycore-receive"), nil

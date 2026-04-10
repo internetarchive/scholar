@@ -16,7 +16,6 @@ from elasticsearch.exceptions import RequestError, TransportError
 
 import djscholar.es as es
 from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
-from djscholar.fcapi.models import File
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import works as work_svc
@@ -97,22 +96,34 @@ DEFAULT_STATS_PERIOD = "last_30d"
 _FULLTEXT_ACCESS_TYPES = ["wayback", "ia_file", "ia_sim"]
 
 
-def _es_fulltext_count(since_iso=None):
-    """Count docs in scholar_fulltext that have PDF access.
+def _es_count(index, filters=None, since_iso=None):
+    """Count docs in an ES index, optionally filtered by doc_index_ts range.
 
-    If since_iso is provided, only count docs indexed on or after that date.
+    Extra filter clauses can be passed via filters.
     """
-    filters = [{"terms": {"access.access_type": _FULLTEXT_ACCESS_TYPES}}]
+    all_filters = list(filters or [])
     if since_iso:
-        filters.append({"range": {"doc_index_ts": {"gte": since_iso}}})
+        all_filters.append({"range": {"doc_index_ts": {"gte": since_iso}}})
     try:
-        resp = es.client().count(
-            index=settings.ES_INDEX,
-            body={"query": {"bool": {"filter": filters}}},
-        )
+        body = {"query": {"bool": {"filter": all_filters}}} if all_filters else None
+        resp = es.client().count(index=index, body=body)
         return resp["count"]
     except Exception:
         return None
+
+
+def _es_fulltext_count(since_iso=None):
+    """Count docs in scholar_fulltext that have PDF access."""
+    return _es_count(
+        settings.ES_INDEX,
+        filters=[{"terms": {"access.access_type": _FULLTEXT_ACCESS_TYPES}}],
+        since_iso=since_iso,
+    )
+
+
+def _es_file_count(since_iso=None):
+    """Count file records in the fatcat_file ES index."""
+    return _es_count(settings.ES_FATCAT_FILE_INDEX, since_iso=since_iso)
 
 
 def stats(request: HttpRequest) -> HttpResponse:
@@ -122,18 +133,19 @@ def stats(request: HttpRequest) -> HttpResponse:
 
     period_label, delta = STATS_PERIODS[period_key]
 
-    # -- PDFs In --
+    since_iso = None
     if delta is not None:
         since = timezone.now() - delta
-        files_created = File.objects.filter(created__gte=since).count()
-        es_indexed = _es_fulltext_count(since_iso=since.isoformat())
+        since_iso = since.isoformat()
         access_qs = DailyAccessStat.objects.filter(date__gte=since.date())
     else:
-        files_created = File.objects.count()
-        es_indexed = _es_fulltext_count()
         access_qs = DailyAccessStat.objects.all()
 
-    es_total = _es_fulltext_count()
+    # -- PDFs In --
+    files_ingested = _es_file_count(since_iso=since_iso)
+    files_indexed = _es_fulltext_count(since_iso=since_iso)
+    files_total = _es_file_count()
+    files_searchable = _es_fulltext_count()
 
     # -- PDFs Out --
     access_rows = access_qs.values("access_type").annotate(total=Sum("count"))
@@ -144,9 +156,10 @@ def stats(request: HttpRequest) -> HttpResponse:
         "period": period_key,
         "period_label": period_label,
         "period_labels": STATS_PERIOD_LABELS,
-        "files_created": files_created,
-        "es_indexed": es_indexed,
-        "es_total": es_total,
+        "files_ingested": files_ingested,
+        "files_indexed": files_indexed,
+        "files_total": files_total,
+        "files_searchable": files_searchable,
         "access_by_type": access_by_type,
         "total_access": total_access,
     })

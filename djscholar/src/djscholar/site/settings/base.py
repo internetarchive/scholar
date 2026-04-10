@@ -151,6 +151,7 @@ ES_INDEX = "scholar_fulltext"
 ES_FATCAT_RELEASE_INDEX = "fatcat_release"
 ES_FATCAT_CONTAINER_INDEX = "fatcat_container"
 ES_FATCAT_REF_INDEX = "fatcat_ref"
+ES_FATCAT_FILE_INDEX = "fatcat_file"
 
 # Maximum request body size (bytes). The trawler's fatcat2.CreateRelease
 # enforces a matching limit so oversized payloads are caught before they

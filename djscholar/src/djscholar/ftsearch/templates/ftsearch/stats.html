@@ -78,6 +78,23 @@
       font-size: 1.25rem;
       color: #bbb;
     }
+
+    .stat-card .stat-change {
+      font-size: 0.8rem;
+      margin-top: 0.2rem;
+    }
+
+    .stat-card .stat-change.positive {
+      color: #2a7a2a;
+    }
+
+    .stat-card .stat-change.negative {
+      color: #b33;
+    }
+
+    .stat-card .stat-change.neutral {
+      color: #999;
+    }
 {% endblock %}
 
 {% block content %}
@@ -95,6 +112,11 @@
       <div class="stat-card">
         {% if files_ingested is not None %}
           <div class="stat-value">{{ files_ingested|intcomma }}</div>
+          {% if pct_ingested is not None %}
+            <div class="stat-change {% if pct_ingested > 0 %}positive{% elif pct_ingested < 0 %}negative{% else %}neutral{% endif %}">
+              {% if pct_ingested > 0 %}+{% endif %}{{ pct_ingested }}% vs prior period
+            </div>
+          {% endif %}
         {% else %}
           <div class="stat-unavailable">unavailable</div>
         {% endif %}
@@ -103,6 +125,11 @@
       <div class="stat-card">
         {% if files_indexed is not None %}
           <div class="stat-value">{{ files_indexed|intcomma }}</div>
+          {% if pct_indexed is not None %}
+            <div class="stat-change {% if pct_indexed > 0 %}positive{% elif pct_indexed < 0 %}negative{% else %}neutral{% endif %}">
+              {% if pct_indexed > 0 %}+{% endif %}{{ pct_indexed }}% vs prior period
+            </div>
+          {% endif %}
         {% else %}
           <div class="stat-unavailable">unavailable</div>
         {% endif %}
@@ -130,6 +157,11 @@
     <div class="stat-cards">
       <div class="stat-card">
         <div class="stat-value">{{ total_access|intcomma }}</div>
+        {% if pct_access is not None %}
+          <div class="stat-change {% if pct_access > 0 %}positive{% elif pct_access < 0 %}negative{% else %}neutral{% endif %}">
+            {% if pct_access > 0 %}+{% endif %}{{ pct_access }}% vs prior period
+          </div>
+        {% endif %}
         <div class="stat-label">Total PDF accesses ({{ period_label|lower }})</div>
       </div>
       {% for atype, count in access_by_type.items %}

@@ -96,14 +96,19 @@ DEFAULT_STATS_PERIOD = "last_30d"
 _FULLTEXT_ACCESS_TYPES = ["wayback", "ia_file", "ia_sim"]
 
 
-def _es_count(index, filters=None, since_iso=None):
+def _es_count(index, filters=None, since_iso=None, until_iso=None):
     """Count docs in an ES index, optionally filtered by doc_index_ts range.
 
     Extra filter clauses can be passed via filters.
     """
     all_filters = list(filters or [])
-    if since_iso:
-        all_filters.append({"range": {"doc_index_ts": {"gte": since_iso}}})
+    if since_iso or until_iso:
+        ts_range = {}
+        if since_iso:
+            ts_range["gte"] = since_iso
+        if until_iso:
+            ts_range["lt"] = until_iso
+        all_filters.append({"range": {"doc_index_ts": ts_range}})
     try:
         body = {"query": {"bool": {"filter": all_filters}}} if all_filters else None
         resp = es.client().count(index=index, body=body)
@@ -112,18 +117,30 @@ def _es_count(index, filters=None, since_iso=None):
         return None
 
 
-def _es_fulltext_count(since_iso=None):
+def _es_fulltext_count(since_iso=None, until_iso=None):
     """Count docs in scholar_fulltext that have PDF access."""
     return _es_count(
         settings.ES_INDEX,
         filters=[{"terms": {"access.access_type": _FULLTEXT_ACCESS_TYPES}}],
         since_iso=since_iso,
+        until_iso=until_iso,
     )
 
 
-def _es_file_count(since_iso=None):
+def _es_file_count(since_iso=None, until_iso=None):
     """Count file records in the fatcat_file ES index."""
-    return _es_count(settings.ES_FATCAT_FILE_INDEX, since_iso=since_iso)
+    return _es_count(
+        settings.ES_FATCAT_FILE_INDEX,
+        since_iso=since_iso,
+        until_iso=until_iso,
+    )
+
+
+def _pct_change(current, previous):
+    """Return percentage change from previous to current, or None."""
+    if current is None or previous is None or previous == 0:
+        return None
+    return round((current - previous) / previous * 100, 1)
 
 
 def stats(request: HttpRequest) -> HttpResponse:
@@ -134,12 +151,22 @@ def stats(request: HttpRequest) -> HttpResponse:
     period_label, delta = STATS_PERIODS[period_key]
 
     since_iso = None
+    prev_since_iso = None
+    prev_until_iso = None
     if delta is not None:
-        since = timezone.now() - delta
+        now = timezone.now()
+        since = now - delta
+        prev_since = now - delta * 2
         since_iso = since.isoformat()
+        prev_since_iso = prev_since.isoformat()
+        prev_until_iso = since_iso
         access_qs = DailyAccessStat.objects.filter(date__gte=since.date())
+        prev_access_qs = DailyAccessStat.objects.filter(
+            date__gte=prev_since.date(), date__lt=since.date(),
+        )
     else:
         access_qs = DailyAccessStat.objects.all()
+        prev_access_qs = DailyAccessStat.objects.none()
 
     # -- PDFs In --
     files_ingested = _es_file_count(since_iso=since_iso)
@@ -147,10 +174,22 @@ def stats(request: HttpRequest) -> HttpResponse:
     files_total = _es_file_count()
     files_searchable = _es_fulltext_count()
 
+    # Previous period for comparison
+    prev_ingested = _es_file_count(
+        since_iso=prev_since_iso, until_iso=prev_until_iso,
+    ) if delta else None
+    prev_indexed = _es_fulltext_count(
+        since_iso=prev_since_iso, until_iso=prev_until_iso,
+    ) if delta else None
+
     # -- PDFs Out --
     access_rows = access_qs.values("access_type").annotate(total=Sum("count"))
     access_by_type = {row["access_type"]: row["total"] for row in access_rows}
     total_access = sum(access_by_type.values()) if access_by_type else 0
+
+    prev_access_rows = prev_access_qs.values("access_type").annotate(total=Sum("count"))
+    prev_access_by_type = {row["access_type"]: row["total"] for row in prev_access_rows}
+    prev_total_access = sum(prev_access_by_type.values()) if prev_access_by_type else 0
 
     return render(request, "ftsearch/stats.html", {
         "period": period_key,
@@ -160,8 +199,11 @@ def stats(request: HttpRequest) -> HttpResponse:
         "files_indexed": files_indexed,
         "files_total": files_total,
         "files_searchable": files_searchable,
+        "pct_ingested": _pct_change(files_ingested, prev_ingested),
+        "pct_indexed": _pct_change(files_indexed, prev_indexed),
         "access_by_type": access_by_type,
         "total_access": total_access,
+        "pct_access": _pct_change(total_access, prev_total_access) if delta else None,
     })
 
 

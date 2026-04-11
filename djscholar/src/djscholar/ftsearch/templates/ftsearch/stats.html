@@ -95,6 +95,15 @@
     .stat-card .stat-change.neutral {
       color: #999;
     }
+
+    .stat-card .stat-breakdown {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.1rem 0.75rem;
+      font-size: 0.75rem;
+      color: #999;
+      margin-top: 0.3rem;
+    }
 {% endblock %}
 
 {% block content %}
@@ -130,6 +139,13 @@
               {% if pct_indexed > 0 %}+{% endif %}{{ pct_indexed }}% vs prior period
             </div>
           {% endif %}
+          {% if indexed_breakdown %}
+            <div class="stat-breakdown">
+              {% for atype, count in indexed_breakdown.items %}
+                <span>{{ atype }}: {{ count|intcomma }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
         {% else %}
           <div class="stat-unavailable">unavailable</div>
         {% endif %}
@@ -146,6 +162,13 @@
       <div class="stat-card">
         {% if files_searchable is not None %}
           <div class="stat-value">{{ files_searchable|intcomma }}</div>
+          {% if searchable_breakdown %}
+            <div class="stat-breakdown">
+              {% for atype, count in searchable_breakdown.items %}
+                <span>{{ atype }}: {{ count|intcomma }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
         {% else %}
           <div class="stat-unavailable">unavailable</div>
         {% endif %}

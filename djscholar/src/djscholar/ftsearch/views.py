@@ -127,6 +127,47 @@ def _es_fulltext_count(since_iso=None, until_iso=None):
     )
 
 
+def _es_fulltext_breakdown(since_iso=None, until_iso=None):
+    """Count docs in scholar_fulltext broken down by access type.
+
+    Returns a dict like {"wayback": 30000000, "ia_file": 8000000, ...}
+    and the total, or (None, None) on failure.
+    """
+    filters = [{"terms": {"access.access_type": _FULLTEXT_ACCESS_TYPES}}]
+    if since_iso or until_iso:
+        ts_range = {}
+        if since_iso:
+            ts_range["gte"] = since_iso
+        if until_iso:
+            ts_range["lt"] = until_iso
+        filters.append({"range": {"doc_index_ts": ts_range}})
+    try:
+        resp = es.client().search(
+            index=settings.ES_INDEX,
+            body={
+                "size": 0,
+                "query": {"bool": {"filter": filters}},
+                "aggs": {
+                    "by_access_type": {
+                        "terms": {
+                            "field": "access.access_type",
+                            "include": _FULLTEXT_ACCESS_TYPES,
+                        }
+                    }
+                },
+            },
+            track_total_hits=True,
+        )
+        total = resp["hits"]["total"]
+        total = total["value"] if isinstance(total, dict) else total
+        breakdown = {}
+        for bucket in resp["aggregations"]["by_access_type"]["buckets"]:
+            breakdown[bucket["key"]] = bucket["doc_count"]
+        return breakdown, total
+    except Exception:
+        return None, None
+
+
 def _es_file_count(since_iso=None, until_iso=None):
     """Count file records in the fatcat_file ES index."""
     return _es_count(
@@ -170,17 +211,17 @@ def stats(request: HttpRequest) -> HttpResponse:
 
     # -- PDFs In --
     files_ingested = _es_file_count(since_iso=since_iso)
-    files_indexed = _es_fulltext_count(since_iso=since_iso)
+    indexed_breakdown, files_indexed = _es_fulltext_breakdown(since_iso=since_iso)
     files_total = _es_file_count()
-    files_searchable = _es_fulltext_count()
+    searchable_breakdown, files_searchable = _es_fulltext_breakdown()
 
     # Previous period for comparison
     prev_ingested = _es_file_count(
         since_iso=prev_since_iso, until_iso=prev_until_iso,
     ) if delta else None
-    prev_indexed = _es_fulltext_count(
+    _, prev_indexed = _es_fulltext_breakdown(
         since_iso=prev_since_iso, until_iso=prev_until_iso,
-    ) if delta else None
+    ) if delta else (None, None)
 
     # -- PDFs Out --
     access_rows = access_qs.values("access_type").annotate(total=Sum("count"))
@@ -197,8 +238,10 @@ def stats(request: HttpRequest) -> HttpResponse:
         "period_labels": STATS_PERIOD_LABELS,
         "files_ingested": files_ingested,
         "files_indexed": files_indexed,
+        "indexed_breakdown": indexed_breakdown,
         "files_total": files_total,
         "files_searchable": files_searchable,
+        "searchable_breakdown": searchable_breakdown,
         "pct_ingested": _pct_change(files_ingested, prev_ingested),
         "pct_indexed": _pct_change(files_indexed, prev_indexed),
         "access_by_type": access_by_type,

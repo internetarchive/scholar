@@ -121,10 +121,12 @@
 
 {% block entity_tabs %}
       <a href="{{ url('fcweb:release_view', ident=ident) }}" class="active">Overview</a>
-      <a href="{{ url('fcweb:release_view_contribs', ident=ident) }}">Authors ({{ contribs|length }})</a>
-      <a href="{{ url('fcweb:release_view_refs_outbound', ident=ident) }}">References</a>
-      <a href="{{ url('fcweb:release_view_refs_inbound', ident=ident) }}">Cited By</a>
-      <a href="{{ url('fcweb:release_view_metadata', ident=ident) }}">Metadata</a>
+      {% if not from_es_fallback %}
+        <a href="{{ url('fcweb:release_view_contribs', ident=ident) }}">Authors ({{ contribs|length }})</a>
+        <a href="{{ url('fcweb:release_view_refs_outbound', ident=ident) }}">References</a>
+        <a href="{{ url('fcweb:release_view_refs_inbound', ident=ident) }}">Cited By</a>
+        <a href="{{ url('fcweb:release_view_metadata', ident=ident) }}">Metadata</a>
+      {% endif %}
 {% endblock %}
 
 {% block entity_main %}

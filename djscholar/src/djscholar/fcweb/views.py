@@ -6,13 +6,14 @@ They will be implemented incrementally.
 
 import datetime
 import uuid
+from types import SimpleNamespace
 from urllib.parse import urlencode
 
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, Http404
 from django.template import engines
 from django.urls import reverse
 
-from djscholar.fcapi.fcid import resolve_ident
+from djscholar.fcapi.fcid import fcid2uuid, resolve_ident
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
 from djscholar import fcsearch as fc_search
@@ -167,6 +168,7 @@ def file_lookup(request: HttpRequest) -> HttpResponse:
     return _generic_lookup(request, file_svc, _FILE_LOOKUP_PARAMS,
                            "file", "file_view")
 
+
 # -- Helpers -----------------------------------------------------------------
 
 def _release_preservation(files, extids):
@@ -199,17 +201,122 @@ def _release_preservation(files, extids):
     return "none"
 
 
+# Maps ES _source keys (LHS) to the extids dict keys the release_view.html
+# template expects (RHS, matching PG ReleaseExtId.id_type values).
+_ES_EXTID_KEYS = {
+    "doi": "doi",
+    "pmid": "pmid",
+    "pmcid": "pmcid",
+    "isbn13": "isbn13",
+    "wikidata_qid": "wikidata_qid",
+    "arxiv_id": "arxiv",
+    "jstor_id": "jstor",
+    "core_id": "core",
+    "ark_id": "ark",
+    "hdl": "hdl",
+    "doaj_id": "doaj",
+    "dblp_id": "dblp",
+    "mag_id": "mag",
+}
+
+
+def _release_view_es_context(release_uuid: uuid.UUID) -> dict | None:
+    """Build a release_view context from the fatcat_release ES index.
+
+    Stopgap for releases that have not yet been imported to Postgres from
+    the legacy fatcat1 system. Returns None if the release is not indexed.
+    """
+    src = fc_search.get_release_es(release_uuid)
+    if not src:
+        return None
+
+    work_id = None
+    if src.get("work_id"):
+        try:
+            work_id = uuid.UUID(fcid2uuid(src["work_id"]))
+        except (AssertionError, ValueError):
+            pass
+
+    release = SimpleNamespace(
+        title=src.get("title"),
+        subtitle=src.get("subtitle"),
+        original_title=src.get("original_title"),
+        release_type=src.get("release_type"),
+        release_stage=src.get("release_stage"),
+        release_year=src.get("release_year"),
+        release_date=src.get("release_date"),
+        volume=src.get("volume"),
+        issue=src.get("issue"),
+        pages=src.get("pages"),
+        number=src.get("number"),
+        version=src.get("version"),
+        publisher=src.get("publisher"),
+        language=src.get("language"),
+        withdrawn_status=src.get("withdrawn_status"),
+        work_id=work_id,
+        refs=None,
+    )
+
+    container = None
+    if src.get("container_id"):
+        try:
+            container_uuid = uuid.UUID(fcid2uuid(src["container_id"]))
+        except (AssertionError, ValueError):
+            container_uuid = None
+        if container_uuid:
+            container = SimpleNamespace(
+                id=container_uuid,
+                name=src.get("container_name"),
+                issnl=src.get("container_issnl"),
+                publisher=src.get("publisher"),
+                container_type=src.get("container_type"),
+            )
+
+    extids = {}
+    for es_key, extid_key in _ES_EXTID_KEYS.items():
+        val = src.get(es_key)
+        if val:
+            extids[extid_key] = val
+
+    contrib_names = src.get("contrib_names") or []
+    if isinstance(contrib_names, str):
+        contrib_names = [contrib_names]
+    authors = [SimpleNamespace(raw_name=name, creator=None)
+               for name in contrib_names]
+
+    return {
+        "release": release,
+        "authors": authors,
+        "contribs": authors,
+        "extids": extids,
+        "abstracts": [],
+        "files": [],
+        "webcaptures": [],
+        "container": container,
+        "ident": str(release_uuid),
+        "preservation": src.get("preservation") or "none",
+        "from_es_fallback": True,
+    }
+
+
 # -- Entity views ------------------------------------------------------------
 
 
 def release_view(request: HttpRequest, ident: str) -> HttpResponse:
     try:
         release_uuid = resolve_ident(ident)
-        release = release_svc.get(release_uuid)
-    except EntityNotFound:
-        raise Http404(f"release not found: {ident}")
     except ValueError:
         return HttpResponse(f"bad id: {ident}", status=400)
+
+    try:
+        release = release_svc.get(release_uuid)
+    except EntityNotFound:
+        # Stopgap: PG migration is ongoing, so fall back to the fatcat_release
+        # ES index if we don't have the release in PG yet.
+        ctx = _release_view_es_context(release_uuid)
+        if ctx is None:
+            raise Http404(f"release not found: {ident}")
+        return _render(request, "fcweb/release_view.html", ctx)
 
     authors = release_svc.get_authors(release_uuid)
     contribs = list(release_svc.get_contribs(release_uuid))

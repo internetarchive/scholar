@@ -50,6 +50,40 @@ class SearchHits:
     results: list[dict[str, Any]] = field(default_factory=list)
 
 
+def get_release_es(release_uuid: uuid.UUID) -> dict[str, Any] | None:
+    """Fetch a single release doc from the fatcat_release ES index by UUID.
+
+    Used as a fallback for release_view when the PG migration has not yet
+    imported the release. Returns the raw _source dict, or None if the
+    release is not indexed or ES is unreachable.
+    """
+    try:
+        client = es.client()
+    except Exception:
+        return None
+
+    legacy_ident = uuid2fcid(release_uuid)
+
+    body = {
+        "size": 1,
+        "query": {"term": {"ident": legacy_ident}},
+    }
+
+    try:
+        resp = client.search(
+            index=settings.ES_FATCAT_RELEASE_INDEX,
+            body=body,
+            request_cache=True,
+        )
+    except Exception:
+        return None
+
+    hits = resp["hits"]["hits"]
+    if not hits:
+        return None
+    return hits[0]["_source"]
+
+
 def get_container_stats(container_uuid: uuid.UUID) -> dict[str, Any] | None:
     """Fetch container-level stats from the fatcat_release ES index.
 

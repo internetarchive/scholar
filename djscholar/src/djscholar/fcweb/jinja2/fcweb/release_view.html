@@ -233,9 +233,18 @@
 {# -- No archived content -------------------------------------------------- #}
 {% if not files and not webcaptures %}
 <h3>Archived Content</h3>
-<p>There are no accessible files associated with this release. You could check
-<a href="{{ url('fcweb:work_view', ident=release.work_id) }}">other releases for this work</a> for an
-accessible version.
+{% if from_es_fallback %}
+  <p>Full release metadata is still being migrated; showing a reduced record
+  from the search index. Archived files and references will reappear once
+  the migration catches up.
+{% else %}
+  <p>There are no accessible files associated with this release.
+  {% if release.work_id %}
+    You could check
+    <a href="{{ url('fcweb:work_view', ident=release.work_id) }}">other releases for this work</a>
+    for an accessible version.
+  {% endif %}
+{% endif %}
 {% endif %}
 
 {% endblock %}
@@ -350,10 +359,12 @@ accessible version.
   {% endif %}
 
   {# -- Work entity link --------------------------------------------------- #}
+  {% if release.work_id %}
   <div class="segment segment-attached">
     <b><a href="{{ url('fcweb:work_view', ident=release.work_id) }}">Work Entity</a></b>
     <br>access all versions, variants, and formats of this work (eg, pre-prints)
   </div>
+  {% endif %}
 
   {# -- Cite This ---------------------------------------------------------- #}
   <div class="segment segment-attached">

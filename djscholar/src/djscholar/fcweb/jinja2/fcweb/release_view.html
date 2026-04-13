@@ -131,6 +131,15 @@
 
 {% block entity_main %}
 
+{% if from_es_fallback %}
+<div class="msg msg-warning">
+  <strong>Partial record:</strong> full release metadata is still being
+  migrated from the legacy fatcat system. The details below come from the
+  search index and are reduced. Archived files, references, and other tabs
+  will reappear once the migration catches up.
+</div>
+{% endif %}
+
 {# -- Publication info ----------------------------------------------------- #}
 <div class="title" itemprop="isPartOf" itemscope itemtype="http://schema.org/Periodical" itemid="#container">
   {% if release.release_stage == 'published' %}
@@ -233,19 +242,13 @@
 {% endif %}
 
 {# -- No archived content -------------------------------------------------- #}
-{% if not files and not webcaptures %}
+{% if not files and not webcaptures and not from_es_fallback %}
 <h3>Archived Content</h3>
-{% if from_es_fallback %}
-  <p>Full release metadata is still being migrated; showing a reduced record
-  from the search index. Archived files and references will reappear once
-  the migration catches up.
-{% else %}
-  <p>There are no accessible files associated with this release.
-  {% if release.work_id %}
-    You could check
-    <a href="{{ url('fcweb:work_view', ident=release.work_id) }}">other releases for this work</a>
-    for an accessible version.
-  {% endif %}
+<p>There are no accessible files associated with this release.
+{% if release.work_id %}
+  You could check
+  <a href="{{ url('fcweb:work_view', ident=release.work_id) }}">other releases for this work</a>
+  for an accessible version.
 {% endif %}
 {% endif %}
 
@@ -369,6 +372,7 @@
   {% endif %}
 
   {# -- Cite This ---------------------------------------------------------- #}
+  {% if not from_es_fallback %}
   <div class="segment segment-attached">
     <details class="accordion">
       <summary>Cite This</summary>
@@ -380,6 +384,7 @@
       </div>
     </details>
   </div>
+  {% endif %}
 
   {# -- Lookup Links ------------------------------------------------------- #}
   <div class="segment segment-attached">
@@ -408,10 +413,12 @@
   </div>
 
   {# -- Catalog record ----------------------------------------------------- #}
+  {% if not from_es_fallback %}
   <div class="segment segment-attached" style="font-size: 0.85rem;">
     <b><a href="/api/fatcat/v2/release/{{ ident }}">API JSON</a></b>
     <br>See the raw JSON for this record from fatcat's API
   </div>
+  {% endif %}
 </div>
 
 {% endblock %}

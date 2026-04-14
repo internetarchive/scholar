@@ -57,8 +57,8 @@ class Entity(models.Model):
         indexes = [
                 models.Index(fields=["updated"],
                              name="%(app_label)s_%(class)s_updated_idx"),
-                models.Index(fields=["created"],
-                             name="%(app_label)s_%(class)s_created_idx"),
+                # models.Index(fields=["created"],
+                #              name="%(app_label)s_%(class)s_created_idx"),
                 models.Index(fields=["source"],
                              name="%(app_label)s_%(class)s_source_idx"),
                 models.Index(fields=["legacy_rev"],

@@ -433,6 +433,79 @@ def insert_release_main(new_conn: psycopg.Connection,
     return file_curs
 
 
+CHANGELOG_CONTAINER_IDS_GET = """
+  SELECT DISTINCT rr.container_ident_id AS container_id
+  FROM release_edit e
+  JOIN changelog c ON c.editgroup_id = e.editgroup_id
+  JOIN release_ident ri ON ri.id = e.ident_id
+  JOIN release_rev rr ON ri.rev_id = rr.id
+  WHERE c.timestamp >= %s
+    AND c.timestamp < %s
+    AND ri.is_live = true
+    AND ri.redirect_id IS NULL
+    AND rr.container_ident_id IS NOT NULL
+"""
+
+CONTAINERS_GET = f"""
+  SELECT
+      ci.id,
+      ci.rev_id AS legacy_rev,
+      cr.name,
+      to_json(cr.extra_json) AS extra,
+      cr.container_type,
+      cr.publisher,
+      cr.issnl,
+      cr.issne,
+      cr.issnp,
+      cr.wikidata_qid,
+      '{SOURCE}' AS source
+    FROM container_ident ci
+    JOIN container_rev cr ON ci.rev_id = cr.id
+    WHERE ci.id = ANY(%s)
+      AND coalesce(trim(cr.container_type), '') != 'test'
+"""
+
+
+def get_container_ids(old_conn: psycopg.Connection,
+                      start: str, end: str) -> set[uuid.UUID]:
+    """Return distinct container ident IDs referenced by the current revisions
+    of releases that had edits in fatcat1's changelog between start (inclusive)
+    and end (exclusive). Mirrors the release-selection SQL used to drive the
+    per-release migration."""
+    rows = old_conn.execute(
+        CHANGELOG_CONTAINER_IDS_GET, [start, end]).fetchall()
+    return {row["container_id"] for row in rows}
+
+
+def migrate_containers(old_conn: psycopg.Connection,
+                       new_conn: psycopg.Connection,
+                       container_ids: list[uuid.UUID]) -> None:
+    """Fetch all containers from fc1 and insert them into fc2 in a single
+    transaction. Existing rows are left untouched."""
+    if not container_ids:
+        logger.info("no containers to migrate")
+        return
+
+    logger.info(f"fetching {len(container_ids)} containers from fc1")
+    containers = old_conn.execute(
+        CONTAINERS_GET, [list(container_ids)]).fetchall()
+    logger.info(f"inserting {len(containers)} containers into fc2")
+
+    with new_conn.transaction():
+        for container in containers:
+            new_conn.execute("""
+                INSERT INTO fcapi_container (
+                id, legacy_rev, name, extra, container_type, publisher,
+                issnl, issne, issnp, wikidata_qid, source)
+                VALUES (
+                %(id)s, %(legacy_rev)s, %(name)s, %(extra)s, %(container_type)s,
+                %(publisher)s, %(issnl)s, %(issne)s, %(issnp)s,
+                %(wikidata_qid)s, %(source)s)
+                ON CONFLICT (id) DO NOTHING
+            """, {**container, "extra": Jsonb(
+                container["extra"]) if container["extra"] is not None else None})
+
+
 def handle_batch(old_conn, new_conn, cache, batch):
     batch_data = [get_release_data(old_conn, rid) for rid in batch]
 
@@ -462,23 +535,7 @@ def handle_batch(old_conn, new_conn, cache, batch):
             """, [rel, url, fid])
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-            description="top off tool between fc1 and fc2")
-    parser.add_argument(
-        "--old-db-url",
-        default=os.environ.get("FCPATCH_OLD_DB_URL", "postgresql:///fatcat_prod"),
-        help="Connection URL for fc1 (default: $FCPATCH_OLD_DB_URL)")
-    parser.add_argument(
-        "--new-db-url",
-        default=os.environ.get("FCPATCH_NEW_DB_URL", "postgresql:///fatcat2"),
-        help="Connection URL for fc2 (default: $FCPATCH_NEW_DB_URL)")
-    parser.add_argument(
-        "--batch",
-        default=1,
-        help="specify batch size; 1 is equivalent to no batching")
-
-    args = parser.parse_args()
+def run_releases(args) -> None:
     old_conn = psycopg.connect(args.old_db_url, row_factory=dict_row)
     new_conn = psycopg.connect(args.new_db_url, row_factory=dict_row, autocommit=True)
     cache = diskcache.Cache("fcpatch")
@@ -516,6 +573,54 @@ def main() -> None:
         for brid in batch:
             cache.set(str(brid), True)
         batch = []
+
+
+def run_containers(args) -> None:
+    old_conn = psycopg.connect(args.old_db_url, row_factory=dict_row)
+    new_conn = psycopg.connect(args.new_db_url, row_factory=dict_row, autocommit=True)
+
+    logger.info(f"finding containers for releases edited in [{args.start}, {args.end})")
+    container_ids = get_container_ids(old_conn, args.start, args.end)
+    logger.info(f"found {len(container_ids)} distinct container ids")
+    migrate_containers(old_conn, new_conn, list(container_ids))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+            description="top off tool between fc1 and fc2")
+    parser.add_argument(
+        "--old-db-url",
+        default=os.environ.get("FCPATCH_OLD_DB_URL", "postgresql:///fatcat_prod"),
+        help="Connection URL for fc1 (default: $FCPATCH_OLD_DB_URL)")
+    parser.add_argument(
+        "--new-db-url",
+        default=os.environ.get("FCPATCH_NEW_DB_URL", "postgresql:///fatcat2"),
+        help="Connection URL for fc2 (default: $FCPATCH_NEW_DB_URL)")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    releases_parser = subparsers.add_parser(
+        "releases",
+        help="migrate releases (and their dependents) read as UUIDs from stdin")
+    releases_parser.add_argument(
+        "--batch",
+        default=1,
+        help="specify batch size; 1 is equivalent to no batching")
+    releases_parser.set_defaults(func=run_releases)
+
+    containers_parser = subparsers.add_parser(
+        "containers",
+        help="pre-migrate containers referenced by releases changed in a changelog window")
+    containers_parser.add_argument(
+        "--start", required=True,
+        help="inclusive lower bound on changelog timestamp (e.g. 2025-06-01)")
+    containers_parser.add_argument(
+        "--end", required=True,
+        help="exclusive upper bound on changelog timestamp (e.g. 2026-04-01)")
+    containers_parser.set_defaults(func=run_containers)
+
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":

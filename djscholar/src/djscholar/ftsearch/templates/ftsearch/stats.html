@@ -110,6 +110,51 @@
   <div class="stats-content">
     <h1>Stats</h1>
 
+    <h2>Totals</h2>
+    <div class="stat-cards">
+      <div class="stat-card">
+        {% if files_total is not None %}
+          <div class="stat-value">{{ files_total|intcomma }}</div>
+        {% else %}
+          <div class="stat-unavailable">unavailable</div>
+        {% endif %}
+        <div class="stat-label">PDFs known to Fatcat</div>
+      </div>
+      <div class="stat-card">
+        {% if files_searchable is not None %}
+          <div class="stat-value">{{ files_searchable|intcomma }}</div>
+          {% if searchable_breakdown %}
+            <div class="stat-breakdown">
+              {% for atype, count in searchable_breakdown.items %}
+                <span>{{ atype }}: {{ count|intcomma }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% else %}
+          <div class="stat-unavailable">unavailable</div>
+        {% endif %}
+        <div class="stat-label">Fulltext searchable files</div>
+      </div>
+      <div class="stat-card">
+        {% if non_dataset_releases is not None %}
+          <div class="stat-value">{{ non_dataset_releases|intcomma }}</div>
+        {% else %}
+          <div class="stat-unavailable">unavailable</div>
+        {% endif %}
+        <div class="stat-label">Non-dataset releases in fatcat</div>
+      </div>
+      <div class="stat-card">
+        {% if dataset_releases is not None %}
+          <div class="stat-value">{{ dataset_releases|intcomma }}</div>
+        {% else %}
+          <div class="stat-unavailable">unavailable</div>
+        {% endif %}
+        <div class="stat-label">Dataset releases</div>
+      </div>
+    </div>
+
+    <h2>PDFs In/Out</h2>
+
     <div class="period-selector">
       {% for key, label in period_labels %}
         <a href="?period={{ key }}" class="{% if key == period %}active{% endif %}">{{ label }}</a>
@@ -149,30 +194,7 @@
         {% else %}
           <div class="stat-unavailable">unavailable</div>
         {% endif %}
-        <div class="stat-label">Indexed with fulltext access ({{ period_label|lower }})</div>
-      </div>
-      <div class="stat-card">
-        {% if files_total is not None %}
-          <div class="stat-value">{{ files_total|intcomma }}</div>
-        {% else %}
-          <div class="stat-unavailable">unavailable</div>
-        {% endif %}
-        <div class="stat-label">Total files</div>
-      </div>
-      <div class="stat-card">
-        {% if files_searchable is not None %}
-          <div class="stat-value">{{ files_searchable|intcomma }}</div>
-          {% if searchable_breakdown %}
-            <div class="stat-breakdown">
-              {% for atype, count in searchable_breakdown.items %}
-                <span>{{ atype }}: {{ count|intcomma }}</span>
-              {% endfor %}
-            </div>
-          {% endif %}
-        {% else %}
-          <div class="stat-unavailable">unavailable</div>
-        {% endif %}
-        <div class="stat-label">Total searchable with fulltext access</div>
+        <div class="stat-label">OA files ingested ({{ period_label|lower }})</div>
       </div>
     </div>
 

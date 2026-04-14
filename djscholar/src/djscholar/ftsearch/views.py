@@ -180,6 +180,11 @@ def _es_file_count(since_iso=None, until_iso=None, filters=None):
     )
 
 
+def _es_release_count(filters=None):
+    """Count release records in the fatcat_release ES index."""
+    return _es_count(settings.ES_FATCAT_RELEASE_INDEX, filters=filters)
+
+
 def _pct_change(current, previous):
     """Return percentage change from previous to current, or None."""
     if current is None or previous is None or previous == 0:
@@ -217,6 +222,14 @@ def stats(request: HttpRequest) -> HttpResponse:
     indexed_breakdown, files_indexed = _es_fulltext_breakdown(since_iso=since_iso)
     files_total = _es_file_count(filters=[{"term": {"in_ia": True}}])
     searchable_breakdown, files_searchable = _es_fulltext_breakdown()
+    dataset_releases = _es_release_count(
+        filters=[{"term": {"release_type": "dataset"}}]
+    )
+    non_dataset_releases = _es_release_count(
+        filters=[{
+            "bool": {"must_not": [{"term": {"release_type": "dataset"}}]}
+        }]
+    )
 
     # Previous period for comparison
     prev_ingested = _es_file_count(
@@ -245,6 +258,8 @@ def stats(request: HttpRequest) -> HttpResponse:
         "files_total": files_total,
         "files_searchable": files_searchable,
         "searchable_breakdown": searchable_breakdown,
+        "non_dataset_releases": non_dataset_releases,
+        "dataset_releases": dataset_releases,
         "pct_ingested": _pct_change(files_ingested, prev_ingested),
         "pct_indexed": _pct_change(files_indexed, prev_indexed),
         "access_by_type": access_by_type,

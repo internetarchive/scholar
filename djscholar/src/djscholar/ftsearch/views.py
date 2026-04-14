@@ -78,6 +78,7 @@ def help(request: HttpRequest) -> HttpResponse:
 
 
 STATS_PERIODS = {
+    "last_1d": ("Last 1 day", datetime.timedelta(days=1)),
     "last_7d": ("Last 7 days", datetime.timedelta(days=7)),
     "last_30d": ("Last 30 days", datetime.timedelta(days=30)),
     "last_90d": ("Last 90 days", datetime.timedelta(days=90)),
@@ -85,6 +86,7 @@ STATS_PERIODS = {
     "all_time": ("All time", None),
 }
 STATS_PERIOD_LABELS = [
+    ("last_1d", "Last 1 day"),
     ("last_7d", "Last 7 days"),
     ("last_30d", "Last 30 days"),
     ("last_90d", "Last 90 days"),

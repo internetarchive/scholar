@@ -170,10 +170,11 @@ def _es_fulltext_breakdown(since_iso=None, until_iso=None):
         return None, None
 
 
-def _es_file_count(since_iso=None, until_iso=None):
+def _es_file_count(since_iso=None, until_iso=None, filters=None):
     """Count file records in the fatcat_file ES index."""
     return _es_count(
         settings.ES_FATCAT_FILE_INDEX,
+        filters=filters,
         since_iso=since_iso,
         until_iso=until_iso,
     )
@@ -214,7 +215,7 @@ def stats(request: HttpRequest) -> HttpResponse:
     # -- PDFs In --
     files_ingested = _es_file_count(since_iso=since_iso)
     indexed_breakdown, files_indexed = _es_fulltext_breakdown(since_iso=since_iso)
-    files_total = _es_file_count()
+    files_total = _es_file_count(filters=[{"term": {"in_ia": True}}])
     searchable_breakdown, files_searchable = _es_fulltext_breakdown()
 
     # Previous period for comparison

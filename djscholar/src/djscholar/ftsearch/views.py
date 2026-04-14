@@ -24,21 +24,45 @@ from djscholar.ftsearch.models import DailyAccessStat
 logger = logging.getLogger(__name__)
 
 
-def _record_access(access_type: str):
-    """Increment today's access counter for the given type."""
+# Hostname substrings that map a Referer to a coarse bucket. Order matters:
+# scholar.google.* is checked before google.* so we don't fold Scholar into
+# the generic "google" bucket. Prefix-form catches regional TLDs.
+_REFERRER_BUCKETS = (
+    ("google_scholar", ("scholar.google.",)),
+    ("google", ("google.",)),
+)
+
+
+def _classify_referrer(raw: str | None) -> str:
+    if not raw:
+        return "direct"
+    try:
+        host = (urllib.parse.urlparse(raw).hostname or "").lower()
+    except ValueError:
+        return "other"
+    for bucket, needles in _REFERRER_BUCKETS:
+        if any(n in host for n in needles):
+            return bucket
+    return "other"
+
+
+def _record_access(access_type: str, referrer: str | None = None):
+    """Increment today's access counter for the given type + referrer bucket."""
+    bucket = _classify_referrer(referrer)
     today = datetime.date.today()
     rows = DailyAccessStat.objects.filter(
-        date=today, access_type=access_type,
+        date=today, access_type=access_type, referrer_bucket=bucket,
     ).update(count=F("count") + 1)
     if rows == 0:
         try:
             DailyAccessStat.objects.create(
-                date=today, access_type=access_type, count=1,
+                date=today, access_type=access_type,
+                referrer_bucket=bucket, count=1,
             )
         except IntegrityError:
             # Race: another request created it first
             DailyAccessStat.objects.filter(
-                date=today, access_type=access_type,
+                date=today, access_type=access_type, referrer_bucket=bucket,
             ).update(count=F("count") + 1)
 
 
@@ -244,6 +268,9 @@ def stats(request: HttpRequest) -> HttpResponse:
     access_by_type = {row["access_type"]: row["total"] for row in access_rows}
     total_access = sum(access_by_type.values()) if access_by_type else 0
 
+    referrer_rows = access_qs.values("referrer_bucket").annotate(total=Sum("count"))
+    access_by_referrer = {row["referrer_bucket"]: row["total"] for row in referrer_rows}
+
     prev_access_rows = prev_access_qs.values("access_type").annotate(total=Sum("count"))
     prev_access_by_type = {row["access_type"]: row["total"] for row in prev_access_rows}
     prev_total_access = sum(prev_access_by_type.values()) if prev_access_by_type else 0
@@ -263,6 +290,7 @@ def stats(request: HttpRequest) -> HttpResponse:
         "pct_ingested": _pct_change(files_ingested, prev_ingested),
         "pct_indexed": _pct_change(files_indexed, prev_indexed),
         "access_by_type": access_by_type,
+        "access_by_referrer": access_by_referrer,
         "total_access": total_access,
         "pct_access": _pct_change(total_access, prev_total_access) if delta else None,
     })
@@ -770,6 +798,7 @@ def _access_redirect_fallback(request, work_ident, *, original_url=None, archive
     except (EntityNotFound, Exception):
         return _404()
 
+    referrer = request.META.get("HTTP_REFERER")
     access_urls = file_svc.get_work_access_urls(work_uuid)
     for access_url in access_urls:
         if (
@@ -778,7 +807,7 @@ def _access_redirect_fallback(request, work_ident, *, original_url=None, archive
             and access_url.endswith(original_url)
         ):
             timestamp = access_url.split("/")[4]
-            _record_access("wayback")
+            _record_access("wayback", referrer)
             return redirect(
                 f"https://web.archive.org/web/{timestamp}id_/{original_url}"
             )
@@ -787,7 +816,7 @@ def _access_redirect_fallback(request, work_ident, *, original_url=None, archive
             and "://archive.org/" in access_url
             and archiveorg_path in access_url
         ):
-            _record_access("ia_file")
+            _record_access("ia_file", referrer)
             return redirect(access_url)
 
     return _404()
@@ -823,7 +852,7 @@ def access_redirect_wayback(request: HttpRequest, work_ident: str, url: str) -> 
         ):
             timestamp = opt["access_url"].split("/")[4]
             if len(timestamp) == 14 and timestamp.isdigit():
-                _record_access("wayback")
+                _record_access("wayback", request.META.get("HTTP_REFERER"))
                 return redirect(
                     f"https://web.archive.org/web/{timestamp}id_/{original_url}"
                 )
@@ -854,7 +883,7 @@ def access_redirect_ia_file(request: HttpRequest, work_ident: str, item: str, fi
 
     for opt in _get_access_options(source):
         if opt.get("access_type") == "ia_file" and opt.get("access_url") == access_url:
-            _record_access("ia_file")
+            _record_access("ia_file", request.META.get("HTTP_REFERER"))
             return redirect(access_url)
 
     return _access_redirect_fallback(

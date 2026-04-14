@@ -216,5 +216,16 @@
         </div>
       {% endfor %}
     </div>
+
+    {% if access_by_referrer %}
+      <div class="stat-cards">
+        {% for bucket, count in access_by_referrer.items %}
+          <div class="stat-card">
+            <div class="stat-value">{{ count|intcomma }}</div>
+            <div class="stat-label">from {{ bucket }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
   </div>
 {% endblock %}

@@ -29,6 +29,7 @@ import (
 	"github.com/spf13/viper"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -61,7 +62,7 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 	// fetch metadata from the upstream API and store in s3
 
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
+		StartToCloseTimeout: 4 * 60 * 60 * time.Second,
 		TaskQueue:           viper.GetString(fmt.Sprintf("%s.external_task_queue", in.Upstream)),
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
@@ -158,9 +159,15 @@ type lineBatchInput struct {
 func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, error) {
 	out := counts.Counts{}
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second, // TODO tune, config maybe
-		TaskQueue: viper.GetString(
-			fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+		StartToCloseTimeout:    4 * time.Hour,
+		ScheduleToCloseTimeout: 8 * time.Hour,
+		HeartbeatTimeout:       2 * time.Minute,
+		TaskQueue:              viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+		RetryPolicy: &temporal.RetryPolicy{
+			BackoffCoefficient: 1.5,
+			InitialInterval:    30 * time.Second,
+			MaximumInterval:    90 * time.Second,
+		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 	lin := harvesting.ProcessLineInput{
@@ -190,6 +197,7 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 }
 
 func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Counts, error) {
+	activity.RecordHeartbeat(ctx, "started")
 	out := counts.Counts{}
 	l := activity.GetLogger(ctx)
 
@@ -197,6 +205,7 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	if err != nil {
 		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
 	}
+	activity.RecordHeartbeat(ctx, "got-line")
 
 	// TODO use an input/output pointer arg for release
 
@@ -219,10 +228,12 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	client := &http.Client{}
 	var release *fatcat2.Release
 
+	activity.RecordHeartbeat(ctx, "pre-process-line")
 	out, release, err = processLine(ctx, client, in.Source, lineb)
 	if err != nil {
 		return out, fmt.Errorf("%s processing failed: %w", in.Upstream, err)
 	}
+	activity.RecordHeartbeat(ctx, "post-process-line")
 
 	if release == nil {
 		return out, nil
@@ -301,6 +312,7 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	var res crawling.CrawlResult
 
 	for _, u := range urls {
+		activity.RecordHeartbeat(ctx, "top-of-crawl-loop")
 		crawler := crawling.PDFCrawler{
 			SPNClient:       spnClient,
 			CDXClient:       cdxClient,
@@ -310,6 +322,9 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
 			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
 			Logger:          slog.Default(),
+			Heartbeater: func(msg string) {
+				activity.RecordHeartbeat(ctx, msg)
+			},
 		}
 
 		res, err = crawler.Crawl(u)
@@ -363,6 +378,8 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		return out, fmt.Errorf("sha256 lookup failed: %w", err)
 	}
 
+	activity.RecordHeartbeat(ctx, "file-lookup")
+
 	// TODO we could verify that the existing file is attached to the release ID
 	// we're working with...
 
@@ -373,6 +390,8 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		}
 		out.Releases.Acquired++
 	}
+
+	activity.RecordHeartbeat(ctx, "file-created")
 
 	fileInES, err := indexing.ElasticDocExists(client,
 		viper.GetString("indexing.fatcat_file_ix"), "sha1", file.Sha1)
@@ -392,6 +411,8 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		}
 	}
 
+	activity.RecordHeartbeat(ctx, "file-indexed")
+
 	fulltextInES, err := indexing.ElasticDocExists(client,
 		viper.GetString("indexing.fulltext_ix"), "fulltext.file_sha1", file.Sha1)
 	if err != nil {
@@ -401,10 +422,19 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		return out, nil
 	}
 
-	pdfContent, err := pdf.Process(ctx, client, pdfBs, file.Sha1)
+	pdfProcessor := pdf.Processor{
+		Client: client,
+		Heartbeater: func(msg string) {
+			activity.RecordHeartbeat(ctx, msg)
+		},
+	}
+
+	activity.RecordHeartbeat(ctx, "pre-pdf-process")
+	pdfContent, err := pdfProcessor.Process(ctx, pdfBs, file.Sha1)
 	if err != nil {
 		return out, fmt.Errorf("blobproc processing failed: %w", err)
 	}
+	activity.RecordHeartbeat(ctx, "post-pdf-process")
 
 	var container *fatcat2.Container
 	if release.ContainerID != nil {
@@ -414,6 +444,7 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		}
 		container = &c
 	}
+	activity.RecordHeartbeat(ctx, "container-fetched")
 
 	slog.Info("preparing full text es doc", "rid", release.ID, "xmlLen", len(pdfContent.GrobidXML), "pdfTextLen", len(pdfContent.PdfText))
 
@@ -438,6 +469,7 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	if err != nil {
 		return out, fmt.Errorf("indexing fulltext failed: %w", err)
 	}
+	activity.RecordHeartbeat(ctx, "fulltext-indexed")
 
 	out.Releases.Ingested++
 

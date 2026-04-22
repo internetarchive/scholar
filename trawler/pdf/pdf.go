@@ -22,12 +22,23 @@ type Content struct {
 	PdfText   []byte
 }
 
+type Processor struct {
+	Client      *http.Client
+	Heartbeater func(string)
+}
+
+func (p Processor) beatHeart(msg string) {
+	if p.Heartbeater != nil {
+		p.Heartbeater(msg)
+	}
+}
+
 // Process submits pdfBs to blobproc, polls until processing completes, then
 // fetches and returns the grobid XML and pdftotext output from S3. sha1 is the
 // SHA-1 hex digest of pdfBs, used to verify the spool URL and construct S3
 // keys. Reads blobproc.endpoint, blobproc.s3bucket, and blobproc.poll_interval
 // from viper config.
-func Process(ctx context.Context, client *http.Client, pdfBs []byte, sha1 string) (Content, error) {
+func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Content, error) {
 	endpoint := viper.GetString("blobproc.endpoint")
 
 	req, err := http.NewRequest("POST", endpoint+"/spool", bytes.NewBuffer(pdfBs))
@@ -36,13 +47,14 @@ func Process(ctx context.Context, client *http.Client, pdfBs []byte, sha1 string
 	}
 	req.Header.Set("Content-Type", "application/pdf")
 
-	resp, err := client.Do(req)
+	resp, err := p.Client.Do(req)
 	if err != nil {
 		return Content{}, fmt.Errorf("blobproc request error: %w", err)
 	}
 	if resp.StatusCode != 202 {
 		return Content{}, fmt.Errorf("unexpected status from blobproc '%d'", resp.StatusCode)
 	}
+	p.beatHeart("blobproc-submitted")
 
 	loc := resp.Header.Get("Location")
 	if loc == "" {
@@ -65,8 +77,9 @@ func Process(ctx context.Context, client *http.Client, pdfBs []byte, sha1 string
 	}
 
 	for {
+		p.beatHeart("blobproc-poll")
 		time.Sleep(viper.GetDuration("blobproc.poll_interval"))
-		resp, err = client.Do(pollReq)
+		resp, err = p.Client.Do(pollReq)
 		if err != nil {
 			return Content{}, fmt.Errorf("error polling blobproc: %w", err)
 		}

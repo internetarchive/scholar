@@ -63,6 +63,7 @@ type PDFCrawler struct {
 	Blocklist       []string
 	Logger          *slog.Logger
 	crawlTrace      uuid.UUID
+	Heartbeater     func(string)
 }
 
 type CrawlResult struct {
@@ -74,6 +75,12 @@ type CrawlResult struct {
 	SnapshotUrl string
 	Mimetype    string
 	// TODO
+}
+
+func (c PDFCrawler) beatHeart(message string) {
+	if c.Heartbeater != nil {
+		c.Heartbeater(message)
+	}
 }
 
 func (c PDFCrawler) fetchWaybackRedirect(URL string, ts time.Time) (*http.Response, error) {
@@ -237,6 +244,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		// TODO the old code fetched N rows then tried to find the most recent 200
 		// response. I'm choosing to only look at the single most recent row for now.
 		var row *cdx.CDXRow
+		c.beatHeart("cdx-check-before-spn")
 		rows, err := c.CDXClient.Query(cdx.QueryParams{
 			URL:   u,
 			Limit: -1,
@@ -305,7 +313,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			loc := resp.Header.Get("Location")
 			if loc == "" {
 				c.slogInfo("empty redirect in wayback", "url", u)
-				out.FailReason = "empy-wayback-redirect"
+				out.FailReason = "empty-wayback-redirect"
 				return *out, nil
 			}
 			c.slogInfo("found redirect", "from", row.URL, "to", loc)
@@ -341,7 +349,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				loc := resp.Header.Get("Location")
 				if loc == "" {
 					c.slogInfo("empty redirect in wayback", "url", u)
-					out.FailReason = "empy-wayback-redirect"
+					out.FailReason = "empty-wayback-redirect"
 					return *out, nil
 				}
 				c.slogInfo("found redirect", "from", row.URL, "to", loc)
@@ -369,6 +377,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		} else {
 			return *out, fmt.Errorf("surprising status code %d", row.StatusCode)
 		}
+
+		c.beatHeart("got-file")
 
 		content := resp.Body
 		mimetype := resp.Header.Get("Content-Type")
@@ -430,6 +440,7 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 	spnSlotPollInterval := viper.GetDuration("crawling.spn_slot_poll_interval")
 
 	for jobID == "" {
+		c.beatHeart("spn-pre-save")
 		resp, err := c.SPNClient.Save(req)
 
 		var spne *spn.SPNError
@@ -489,6 +500,7 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 	// poll until job completes
 	var spnJobResult spn.JobStatus
 	for {
+		c.beatHeart("spn-pre-status")
 		spnJobResult, err = c.SPNClient.StatusJob(jobID)
 		if err != nil {
 			c.slogInfo("spn job status failure", "err", err.Error())
@@ -503,6 +515,7 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 
 		break
 	}
+	c.beatHeart("spn-post-job")
 
 	if spnJobResult.Status != "success" {
 		c.slogInfo("spn failure", "result", spnJobResult)
@@ -523,6 +536,7 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 	// gomment this out but put debug on in the hopes that I get that case again
 	// c.slogInfo("sleeping before CDX lookup")
 	//time.Sleep(5 * time.Second)
+	c.beatHeart("cdx-check-after-spn")
 	rows, err := c.CDXClient.Query(cdx.QueryParams{
 		From:  spnJobResult.Time,
 		To:    spnJobResult.Time,

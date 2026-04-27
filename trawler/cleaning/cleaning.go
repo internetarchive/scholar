@@ -12,14 +12,18 @@ import (
 // a lowercase DOI string. Returns an empty string if the result does not look
 // like a DOI (i.e. does not start with "10.").
 func NormalizeDOI(raw string) string {
+	if raw == "" {
+		return ""
+	}
 	d := strings.TrimSpace(raw)
+	d = strings.ToLower(strings.Split(d, " ")[0])
 	d = strings.TrimPrefix(d, "doi:")
 	d = strings.TrimPrefix(d, "https://doi.org/")
 	d = strings.TrimPrefix(d, "http://doi.org/")
 	d = strings.TrimPrefix(d, "https://dx.doi.org/")
 	d = strings.TrimPrefix(d, "http://dx.doi.org/")
 	if strings.HasPrefix(d, "10.") {
-		return strings.ToLower(d)
+		return d
 	}
 	return ""
 }

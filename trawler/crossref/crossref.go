@@ -487,7 +487,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (*fatcat2.Release, error
 
 	release.ExternalIDs = append(release.ExternalIDs, fatcat2.ExternalID{
 		Type:  "doi",
-		Value: strings.ToLower(xrefdoc.DOI),
+		Value: cleaning.NormalizeDOI(xrefdoc.DOI),
 	})
 
 	if len(xrefdoc.ISBN) > 0 {

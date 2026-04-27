@@ -165,6 +165,7 @@ func TestNormalizeDOI(t *testing.T) {
 		{"http://dx.doi.org/10.1234/test", "10.1234/test"},
 		{"  10.1234/foo  ", "10.1234/foo"},
 		{"not-a-doi", ""},
+		{"10.1145/3772318.3790508 10.1145/3772318.3790508", "10.1145/3772318.3790508"},
 		{"", ""},
 		{"https://arxiv.org/abs/2301.12345", ""},
 		{"https://example.com/10.1234/foo", ""},

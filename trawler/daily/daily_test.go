@@ -11,6 +11,15 @@ func extID(t, v string) fatcat2.ExternalID {
 	return fatcat2.ExternalID{Type: t, Value: v}
 }
 
+func newUUID() uuid.UUID {
+	uid, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+
+	return uid
+}
+
 func Test_shouldCrawlRelease(t *testing.T) {
 	cs := []struct {
 		name           string
@@ -22,7 +31,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "not paperlike",
 			release: fatcat2.Release{
-				ID:          uuid.New(),
+				ID:          newUUID(),
 				Type:        "dataset",
 				ExternalIDs: []fatcat2.ExternalID{extID("doi", "10.1234/foo")},
 			},
@@ -32,7 +41,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "paperlike but no external IDs",
 			release: fatcat2.Release{
-				ID:   uuid.New(),
+				ID:   newUUID(),
 				Type: "article-journal",
 			},
 			expectCrawl:  false,
@@ -41,7 +50,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "DOI prefix blocked",
 			release: fatcat2.Release{
-				ID:          uuid.New(),
+				ID:          newUUID(),
 				Type:        "article-journal",
 				ExternalIDs: []fatcat2.ExternalID{extID("doi", "10.6084/blocked-figshare")},
 			},
@@ -52,7 +61,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "paperlike with extid but no fulltext URLs",
 			release: fatcat2.Release{
-				ID:   uuid.New(),
+				ID:   newUUID(),
 				Type: "article-journal",
 				// pmid alone produces no fulltext URL
 				ExternalIDs: []fatcat2.ExternalID{extID("pmid", "12345678")},
@@ -63,7 +72,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "happy path via arxiv ID",
 			release: fatcat2.Release{
-				ID:          uuid.New(),
+				ID:          newUUID(),
 				Type:        "article-journal",
 				ExternalIDs: []fatcat2.ExternalID{extID("arxiv", "2301.00001")},
 			},
@@ -72,7 +81,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "happy path via DOI not on blocklist",
 			release: fatcat2.Release{
-				ID:          uuid.New(),
+				ID:          newUUID(),
 				Type:        "article-journal",
 				ExternalIDs: []fatcat2.ExternalID{extID("doi", "10.1234/ok")},
 			},
@@ -82,7 +91,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "happy path via pmcid",
 			release: fatcat2.Release{
-				ID:          uuid.New(),
+				ID:          newUUID(),
 				Type:        "article-journal",
 				ExternalIDs: []fatcat2.ExternalID{extID("pmcid", "PMC1234567")},
 			},
@@ -91,7 +100,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "book type is paperlike",
 			release: fatcat2.Release{
-				ID:          uuid.New(),
+				ID:          newUUID(),
 				Type:        "book",
 				ExternalIDs: []fatcat2.ExternalID{extID("doi", "10.1234/book")},
 			},
@@ -100,7 +109,7 @@ func Test_shouldCrawlRelease(t *testing.T) {
 		{
 			name: "second DOI prefix blocked",
 			release: fatcat2.Release{
-				ID:          uuid.New(),
+				ID:          newUUID(),
 				Type:        "article-journal",
 				ExternalIDs: []fatcat2.ExternalID{extID("doi", "10.5281/zenodo.123")},
 			},

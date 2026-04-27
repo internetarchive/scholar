@@ -343,7 +343,11 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 
 	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
 
-	fid := uuid.New()
+	fid, err := uuid.NewV7()
+	if err != nil {
+		return out, fmt.Errorf("uuid creation failed: %w", err)
+	}
+
 	file := fatcat2.File{
 		ID:       fid,
 		Releases: []fatcat2.Release{*release},

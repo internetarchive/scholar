@@ -327,7 +327,11 @@ type Creator struct {
 
 // CreateContainer creates a new container in fc2 and returns its ID
 func CreateContainer(client *http.Client, c *Container) (*uuid.UUID, error) {
-	c.ID = uuid.New()
+	var err error
+	c.ID, err = uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("uuid creation failed: %w", err)
+	}
 
 	legacy, err := lookupLegacyContainer(client, c.ISSNL)
 	if err != nil {
@@ -373,8 +377,13 @@ func CreateContainer(client *http.Client, c *Container) (*uuid.UUID, error) {
 // CreateFile creates a new file in fc2 and returns its ID
 func CreateFile(client *http.Client, f *File) (*uuid.UUID, error) {
 	if f.ID == uuid.Nil {
-		f.ID = uuid.New()
+		var err error
+		f.ID, err = uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("uuid creation failed: %w", err)
+		}
 	}
+
 	legacy, err := lookupLegacyFile(client, f.Sha1)
 	if err != nil {
 		return nil, fmt.Errorf("legacy lookup failed: %w", err)
@@ -413,14 +422,17 @@ func CreateFile(client *http.Client, f *File) (*uuid.UUID, error) {
 
 // CreateRelease creates a new release in fc2 and returns its ID
 func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
-	r.ID = uuid.New()
+	var err error
+	r.ID, err = uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("uuid creation failed: %w", err)
+	}
 
 	if len(r.ExternalIDs) == 0 {
 		panic("nothing without an external ID should get to this point")
 	}
 
 	var legacy *LegacyData
-	var err error
 	for _, eid := range r.ExternalIDs {
 		if eid.Type == "doaj" {
 			continue

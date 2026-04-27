@@ -9,6 +9,15 @@ import (
 	"github.com/google/uuid"
 )
 
+func newUUID() uuid.UUID {
+	uid, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+
+	return uid
+}
+
 // formatDate renders a *fatcat2.ReleaseDate as "YYYY-MM-DD" for comparison,
 // or "" if nil.
 func formatDate(rd *fatcat2.ReleaseDate) string {
@@ -63,11 +72,11 @@ var emptyDoc = &dataciteDoc{}
 
 func TestParseDates(t *testing.T) {
 	cases := []struct {
-		name          string
-		dates         []dataciteDate
-		wantYear      int
-		wantMonth     int
-		wantDateStr   string // "YYYY-MM-DD" or ""
+		name        string
+		dates       []dataciteDate
+		wantYear    int
+		wantMonth   int
+		wantDateStr string // "YYYY-MM-DD" or ""
 	}{
 		{
 			name:  "empty",
@@ -168,11 +177,11 @@ func TestParseDates(t *testing.T) {
 
 func TestParseTitles(t *testing.T) {
 	cases := []struct {
-		name          string
-		titles        []dataciteTitle
-		wantTitle     string
-		wantOriginal  string
-		wantSubtitle  string
+		name         string
+		titles       []dataciteTitle
+		wantTitle    string
+		wantOriginal string
+		wantSubtitle string
 	}{
 		{
 			name: "empty",
@@ -549,7 +558,7 @@ func TestBiblioHacks(t *testing.T) {
 	})
 
 	t.Run("Columbia IR IsVariantFormOf clears container and sets submitted", func(t *testing.T) {
-		cid := uuid.New()
+		cid := newUUID()
 		r := releaseWithDOI("10.7916/d8-abc-123")
 		r.Publisher = "Columbia University"
 		r.Stage = "published"
@@ -565,7 +574,7 @@ func TestBiblioHacks(t *testing.T) {
 	})
 
 	t.Run("Columbia IR without IsVariantFormOf leaves container intact", func(t *testing.T) {
-		cid := uuid.New()
+		cid := newUUID()
 		r := releaseWithDOI("10.7916/d8-abc-123")
 		r.Publisher = "Columbia University"
 		r.Stage = "published"
@@ -578,7 +587,7 @@ func TestBiblioHacks(t *testing.T) {
 	})
 
 	t.Run("Columbia check requires Columbia University publisher", func(t *testing.T) {
-		cid := uuid.New()
+		cid := newUUID()
 		r := releaseWithDOI("10.7916/d8-abc-123")
 		r.Publisher = "Other Publisher"
 		r.ContainerID = &cid
@@ -590,7 +599,7 @@ func TestBiblioHacks(t *testing.T) {
 	})
 
 	t.Run("IR prefix IsVariantFormOf clears container", func(t *testing.T) {
-		cid := uuid.New()
+		cid := newUUID()
 		r := releaseWithDOI("10.18154/rwth-2021-12345")
 		r.ContainerID = &cid
 		doc := docWithRelations("IsVariantFormOf")
@@ -601,7 +610,7 @@ func TestBiblioHacks(t *testing.T) {
 	})
 
 	t.Run("non-IR prefix DOI is unaffected", func(t *testing.T) {
-		cid := uuid.New()
+		cid := newUUID()
 		r := releaseWithDOI("10.1234/other")
 		r.ContainerID = &cid
 		doc := docWithRelations("IsVariantFormOf")

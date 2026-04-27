@@ -24,7 +24,12 @@ func StartOneOff(in DailyCrawlWorkflowInput) error {
 	}
 	defer c.Close()
 
-	workflowID := fmt.Sprintf("%s_%s", in.Upstream, uuid.New())
+	uid, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+
+	workflowID := fmt.Sprintf("%s_daily_parent_%s", in.Upstream, uid)
 
 	c.ExecuteWorkflow(ctx,
 		client.StartWorkflowOptions{
@@ -47,8 +52,14 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 
 	every := viper.GetDuration(fmt.Sprintf("%s.every", in.Upstream))
 
-	scheduleID := fmt.Sprintf("%s_schedule_%s", in.Upstream, uuid.New())
-	workflowID := fmt.Sprintf("%s_%s", in.Upstream, uuid.New())
+	scheduleID := fmt.Sprintf("%s_daily_schedule", in.Upstream)
+
+	uid, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+
+	workflowID := fmt.Sprintf("%s_daily_parent_%s", in.Upstream, uid)
 
 	workflowArgs := []any{in}
 

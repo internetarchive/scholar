@@ -22,17 +22,33 @@ type ProcessPDFParams struct {
 	Logger            *slog.Logger
 }
 
+// ProcessPDFResult collects the derivatives extracted from a PDF. Library
+// callers can use this directly (e.g. with S3 = nil) instead of (or in
+// addition to) the S3 uploads ProcessPDF performs when an S3 client is
+// configured. Any field may be empty if the corresponding step was skipped or
+// failed; consult the returned errors for details.
+type ProcessPDFResult struct {
+	SHA1Hex   string // sha1 of the input file
+	Thumbnail []byte // page-0 JPEG thumbnail
+	Text      string // extracted plain text
+	TEI       []byte // GROBID TEI XML body
+}
+
 // ProcessPDF runs the full per-file pipeline against a PDF on disk:
 // pdfextract for text + page-0 thumbnail, then GROBID for structured TEI.
-// Each derivative is uploaded to S3 (when configured) under its conventional
-// bucket/folder. The returned slice collects every error encountered; an empty
-// (or nil) slice means the run was fully successful. The caller is responsible
-// for stats accounting and removing the file from the spool.
-func ProcessPDF(ctx context.Context, p ProcessPDFParams) []error {
+// When an S3 client is configured each derivative is uploaded to its
+// conventional bucket/folder; the same data is also returned in the result so
+// callers can use ProcessPDF as a library function. The returned result is
+// always non-nil, with fields populated as they become available. The errors
+// slice collects every error encountered; an empty (or nil) slice means the
+// run was fully successful. The caller is responsible for stats accounting
+// and removing the file from the spool.
+func ProcessPDF(ctx context.Context, p ProcessPDFParams) (*ProcessPDFResult, []error) {
 	logger := p.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
+	out := &ProcessPDFResult{}
 	var errs []error
 
 	result := pdfextract.ProcessFile(ctx, p.Path, &pdfextract.Options{
@@ -51,7 +67,10 @@ func ProcessPDF(ctx context.Context, p ProcessPDFParams) []error {
 		logger.Warn("invalid sha1 in response", "sha1", result.SHA1Hex)
 		errs = append(errs, fmt.Errorf("invalid SHA1 in response: %v", result.SHA1Hex))
 	default:
+		out.SHA1Hex = result.SHA1Hex
+		out.Text = result.Text
 		if result.HasPage0Thumbnail() {
+			out.Thumbnail = result.Page0Thumbnail
 			if p.S3 == nil {
 				logger.Debug("skipping S3 put (thumbnail), S3 client not available", "sha1", result.SHA1Hex)
 			} else {
@@ -93,11 +112,11 @@ func ProcessPDF(ctx context.Context, p ProcessPDFParams) []error {
 
 	if p.Grobid == nil {
 		logger.Debug("skipping GROBID processing, GROBID client not available", "path", p.Path)
-		return errs
+		return out, errs
 	}
 	if p.Size > p.GrobidMaxFileSize {
 		logger.Warn("skipping too large file for GROBID", "path", p.Path, "size", p.Size)
-		return errs
+		return out, errs
 	}
 	gres, err := p.Grobid.ProcessPDFContext(ctx, p.Path, "processFulltextDocument", &grobidclient.Options{
 		GenerateIDs:            true,
@@ -116,6 +135,10 @@ func ProcessPDF(ctx context.Context, p ProcessPDFParams) []error {
 		logger.Warn("grobid failed", "err", gres.Err)
 		errs = append(errs, gres.Err)
 	default:
+		out.TEI = gres.Body
+		if out.SHA1Hex == "" {
+			out.SHA1Hex = gres.SHA1Hex
+		}
 		if p.S3 == nil {
 			logger.Debug("skipping S3 put (grobid), S3 client not available", "sha1", gres.SHA1Hex)
 		} else {
@@ -134,5 +157,5 @@ func ProcessPDF(ctx context.Context, p ProcessPDFParams) []error {
 			}
 		}
 	}
-	return errs
+	return out, errs
 }

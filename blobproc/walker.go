@@ -80,7 +80,7 @@ func (w *WalkFast) worker(wctx context.Context, workerName string, queue chan Pa
 				}()
 				ctx, cancel := context.WithTimeout(wctx, w.Timeout)
 				defer cancel()
-				errors := ProcessPDF(ctx, ProcessPDFParams{
+				_, errors := ProcessPDF(ctx, ProcessPDFParams{
 					Path:              path,
 					Size:              payload.FileInfo.Size(),
 					Grobid:            w.Grobid,

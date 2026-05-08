@@ -342,7 +342,7 @@ func runSequentialProcessor() error {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 		defer cancel()
-		errs := blobproc.ProcessPDF(ctx, blobproc.ProcessPDFParams{
+		_, errs := blobproc.ProcessPDF(ctx, blobproc.ProcessPDFParams{
 			Path:              path,
 			Size:              info.Size(),
 			Grobid:            grobid,

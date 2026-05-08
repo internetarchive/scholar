@@ -342,8 +342,15 @@ func runSequentialProcessor() error {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 		defer cancel()
-		if err := processSingleFile(ctx, path, info.Size(), grobid, blobStore); err != nil {
-			slog.Warn("processing failed", "err", err, "path", path)
+		errs := blobproc.ProcessPDF(ctx, blobproc.ProcessPDFParams{
+			Path:              path,
+			Size:              info.Size(),
+			Grobid:            grobid,
+			S3:                blobStore,
+			GrobidMaxFileSize: cfg.Grobid.MaxFileSize,
+		})
+		if len(errs) > 0 {
+			slog.Warn("processing finished with some errors", "path", path, "num_errors", len(errs))
 			return nil // Continue with other files
 		}
 		stats.NumOK++
@@ -383,104 +390,6 @@ func runParallelProcessor() error {
 		S3:                blobStore,
 	}
 	return walker.Run(context.Background())
-}
-
-func processSingleFile(ctx context.Context, path string, size int64, grobid *grobidclient.Grobid, blobStore *blobproc.BlobStore) error {
-	result := pdfextract.ProcessFile(ctx, path, &pdfextract.Options{
-		Dim:       pdfextract.Dim{180, 300},
-		ThumbType: "JPEG",
-	})
-	switch {
-	case result.Status != "success":
-		slog.Warn("pdfextract failed", "path", path, "status", result.Status, "err", result.Err)
-	case len(result.SHA1Hex) != blobproc.ExpectedSHA1Length:
-		slog.Warn("invalid sha1 in response", "sha1", result.SHA1Hex)
-	case result.Status == "success":
-		if result.HasPage0Thumbnail() {
-			switch {
-			case blobStore == nil:
-				slog.Debug("skipping S3 put (thumbnail), S3 client not available", "sha1", result.SHA1Hex)
-			default:
-				opts := blobproc.BlobRequestOptions{
-					Bucket:  "thumbnail",
-					Folder:  "pdf",
-					Blob:    result.Page0Thumbnail,
-					SHA1Hex: result.SHA1Hex,
-					Ext:     "180px.jpg",
-					Prefix:  "",
-				}
-				resp, err := blobStore.PutBlob(ctx, &opts)
-				if err != nil {
-					slog.Error("s3 failed (thumbnail)", "err", err, "sha1", result.SHA1Hex)
-				} else {
-					slog.Debug("s3 put ok", "bucket", resp.Bucket, "path", resp.ObjectPath)
-				}
-			}
-		}
-		if len(result.Text) > 0 {
-			switch {
-			case blobStore == nil:
-				slog.Debug("skipping S3 put (text), S3 client not available", "sha1", result.SHA1Hex)
-			default:
-				opts := blobproc.BlobRequestOptions{
-					Bucket:  "sandcrawler",
-					Folder:  "text",
-					Blob:    []byte(result.Text),
-					SHA1Hex: result.SHA1Hex,
-					Ext:     "txt",
-					Prefix:  "",
-				}
-				resp, err := blobStore.PutBlob(ctx, &opts)
-				if err != nil {
-					slog.Error("s3 failed (text)", "err", err, "sha1", result.SHA1Hex)
-				} else {
-					slog.Debug("s3 put ok", "bucket", resp.Bucket, "path", resp.ObjectPath)
-				}
-			}
-		}
-	}
-	if grobid == nil {
-		slog.Debug("skipping GROBID processing, GROBID client not available", "path", path)
-		return nil
-	}
-	if size > cfg.Grobid.MaxFileSize {
-		slog.Warn("skipping too large file for GROBID", "path", path, "size", size)
-		return nil
-	}
-	gres, err := grobid.ProcessPDFContext(ctx, path, "processFulltextDocument", &grobidclient.Options{
-		GenerateIDs:            true,
-		ConsolidateHeader:      true,
-		ConsolidateCitations:   false,
-		IncludeRawCitations:    true,
-		IncludeRawAffiliations: true,
-		TEICoordinates:         []string{"ref", "figure", "persName", "formula", "biblStruct"},
-		SegmentSentences:       true,
-	})
-	switch {
-	case err != nil || gres.Err != nil:
-		slog.Warn("grobid failed", "err", err)
-	default:
-		switch {
-		case blobStore == nil:
-			slog.Debug("skipping S3 put (grobid), S3 client not available", "sha1", gres.SHA1Hex)
-		default:
-			opts := blobproc.BlobRequestOptions{
-				Bucket:  "sandcrawler",
-				Folder:  "grobid",
-				Blob:    gres.Body,
-				SHA1Hex: gres.SHA1Hex,
-				Ext:     "tei.xml",
-				Prefix:  "",
-			}
-			resp, err := blobStore.PutBlob(ctx, &opts)
-			if err != nil {
-				slog.Error("s3 failed (grobid)", "err", err)
-				return err
-			}
-			slog.Debug("s3 put ok", "bucket", resp.Bucket, "path", resp.ObjectPath)
-		}
-	}
-	return nil
 }
 
 func runSingleFile(filename string) error {

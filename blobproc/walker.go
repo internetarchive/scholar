@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/miku/blobproc/pdfextract"
 	"github.com/miku/grobidclient"
 )
 
@@ -65,7 +64,6 @@ func (w *WalkFast) worker(wctx context.Context, workerName string, queue chan Pa
 				var (
 					path    = payload.Path
 					started = time.Now()
-					errors  []error
 				)
 				logger.Debug("processing", "path", path)
 				atomic.AddInt64(&w.stats.Processed, 1)
@@ -82,110 +80,14 @@ func (w *WalkFast) worker(wctx context.Context, workerName string, queue chan Pa
 				}()
 				ctx, cancel := context.WithTimeout(wctx, w.Timeout)
 				defer cancel()
-				// Fulltext and thumbail via local command line tools
-				// --------------------------------------------------
-				result := pdfextract.ProcessFile(ctx, path, &pdfextract.Options{
-					Dim:       pdfextract.Dim{180, 300},
-					ThumbType: "JPEG",
+				errors := ProcessPDF(ctx, ProcessPDFParams{
+					Path:              path,
+					Size:              payload.FileInfo.Size(),
+					Grobid:            w.Grobid,
+					S3:                w.S3,
+					GrobidMaxFileSize: w.GrobidMaxFileSize,
+					Logger:            logger,
 				})
-				switch {
-				case result.Status != "success":
-					logger.Warn("pdfextract failed", "path", payload.Path, "status", result.Status, "err", result.Err)
-					errors = append(errors, result.Err)
-				case len(result.SHA1Hex) != 40:
-					logger.Warn("invalid sha1 in response", "sha1", result.SHA1Hex)
-					errors = append(errors, fmt.Errorf("invalid SHA1 in response: %v", result.SHA1Hex))
-				case result.Status == "success":
-					// If we have a thumbnail, save it.
-					if result.HasPage0Thumbnail() {
-						if w.S3 == nil {
-							logger.Debug("skipping S3 put (thumbnail), S3 client not available", "sha1", result.SHA1Hex)
-						} else {
-							opts := BlobRequestOptions{
-								Bucket:  "thumbnail",
-								Folder:  "pdf",
-								Blob:    result.Page0Thumbnail,
-								SHA1Hex: result.SHA1Hex,
-								Ext:     "180px.jpg",
-								Prefix:  "",
-							}
-							resp, err := w.S3.PutBlob(ctx, &opts)
-							if err != nil {
-								logger.Error("s3 failed (thumbnail)", "err", err, "sha1", result.SHA1Hex)
-								errors = append(errors, fmt.Errorf("s3 failed (thumbnail): %v", result.SHA1Hex))
-							} else {
-								logger.Debug("s3 put ok", "bucket", resp.Bucket, "path", resp.ObjectPath)
-							}
-						}
-					}
-					// If we have some text, save it.
-					if len(result.Text) > 0 {
-						if w.S3 == nil {
-							logger.Debug("skipping S3 put (text), S3 client not available", "sha1", result.SHA1Hex)
-						} else {
-							opts := BlobRequestOptions{
-								Bucket:  "sandcrawler",
-								Folder:  "text",
-								Blob:    []byte(result.Text),
-								SHA1Hex: result.SHA1Hex,
-								Ext:     "txt",
-								Prefix:  "",
-							}
-							resp, err := w.S3.PutBlob(ctx, &opts)
-							if err != nil {
-								logger.Error("s3 failed (text)", "err", err, "sha1", result.SHA1Hex)
-								errors = append(errors, fmt.Errorf("s3 failed (text): %v", result.SHA1Hex))
-							} else {
-								logger.Debug("s3 put ok", "bucket", resp.Bucket, "path", resp.ObjectPath)
-							}
-						}
-					}
-				}
-				// Skip GROBID if client not available
-				if w.Grobid == nil {
-					logger.Debug("skipping GROBID processing, GROBID client not available", "path", path)
-					return
-				}
-				if payload.FileInfo.Size() > w.GrobidMaxFileSize {
-					logger.Warn("skipping too large file for GROBID", "path", path, "size", payload.FileInfo.Size())
-					return
-				}
-				// Structured metadata from PDF via grobid
-				// ---------------------------------------
-				gres, err := w.Grobid.ProcessPDFContext(ctx, path, "processFulltextDocument", &grobidclient.Options{
-					GenerateIDs:            true,
-					ConsolidateHeader:      true,
-					ConsolidateCitations:   false, // "too expensive for now"
-					IncludeRawCitations:    true,
-					IncludeRawAffiliations: true,
-					TEICoordinates:         []string{"ref", "figure", "persName", "formula", "biblStruct"},
-					SegmentSentences:       true,
-				})
-				switch {
-				case err != nil || gres.Err != nil:
-					logger.Warn("grobid failed", "err", err)
-					return
-				default:
-					if w.S3 == nil {
-						logger.Debug("skipping S3 put (grobid), S3 client not available", "sha1", gres.SHA1Hex)
-					} else {
-						opts := BlobRequestOptions{
-							Bucket:  "sandcrawler",
-							Folder:  "grobid",
-							Blob:    gres.Body,
-							SHA1Hex: gres.SHA1Hex,
-							Ext:     "tei.xml",
-							Prefix:  "",
-						}
-						resp, err := w.S3.PutBlob(ctx, &opts)
-						if err != nil {
-							logger.Error("s3 failed (tei)", "err", err)
-							errors = append(errors, fmt.Errorf("s3 failed (tei): %v", err))
-						} else {
-							logger.Debug("s3 put ok", "bucket", resp.Bucket, "path", resp.ObjectPath)
-						}
-					}
-				}
 				if len(errors) == 0 {
 					logger.Debug("processing finished successfully", "path", path, "t", time.Since(started), "ts", time.Since(started).Seconds())
 					atomic.AddInt64(&w.stats.OK, 1)

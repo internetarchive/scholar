@@ -273,10 +273,12 @@ test:djscholar:
     - uv sync --no-dev --no-python-downloads
     - DJANGO_SETTINGS_MODULE=djscholar.site.settings.ci uv run pytest
   rules:
+    # skip on Go-project release tags (e.g. trawler/v1.2.3, blobproc/v0.4.0)
+    - if: '$CI_COMMIT_TAG =~ /^(trawler|blobproc|scholkit)\/v\d+\.\d+\.\d+$/'
+      when: never
     # run tests when any file in djscholar/ changes
     - if: '$CI_PIPELINE_SOURCE == "push"'
       changes:
         - djscholar/**/*
-      #when: on_success
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: always

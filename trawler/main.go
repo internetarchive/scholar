@@ -11,6 +11,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cmd/doajcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/fccmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
+	"git.archive.org/webgroup/scholar/trawler/cmd/pdfcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/pubmedcmd"
 	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cobra"
@@ -62,6 +63,7 @@ func init() {
 	rootCmd.AddCommand(doajcmd.Cmd)
 	rootCmd.AddCommand(fccmd.Cmd)
 	rootCmd.AddCommand(indexcmd.IndexCmd)
+	rootCmd.AddCommand(pdfcmd.Cmd)
 	rootCmd.AddCommand(pubmedcmd.Cmd)
 }
 

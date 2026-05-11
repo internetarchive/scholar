@@ -17,9 +17,9 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/miku/blobproc"
-	"github.com/miku/blobproc/config"
-	"github.com/miku/blobproc/pdfextract"
+	"github.com/internetarchive/scholar/blobproc"
+	"github.com/internetarchive/scholar/blobproc/config"
+	"github.com/internetarchive/scholar/blobproc/pdfextract"
 	"github.com/miku/grobidclient"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

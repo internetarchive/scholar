@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/miku/blobproc/fileutils"
+	"github.com/internetarchive/scholar/blobproc/fileutils"
 	"github.com/shirou/gopsutil/v3/disk"
 )
 

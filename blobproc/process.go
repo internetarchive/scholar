@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/miku/blobproc/pdfextract"
+	"github.com/internetarchive/scholar/blobproc/pdfextract"
 	"github.com/miku/grobidclient"
 )
 

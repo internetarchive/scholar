@@ -19,7 +19,7 @@ import (
 	"strings"
 
 	"github.com/gabriel-vasile/mimetype"
-	"github.com/miku/blobproc/pdfinfo"
+	"github.com/internetarchive/scholar/blobproc/pdfinfo"
 	"mvdan.cc/xurls/v2"
 )
 

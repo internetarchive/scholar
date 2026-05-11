@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/miku/blobproc/ia"
-	"github.com/miku/blobproc/warcutil"
+	"github.com/internetarchive/scholar/blobproc/ia"
+	"github.com/internetarchive/scholar/blobproc/warcutil"
 )
 
 const (

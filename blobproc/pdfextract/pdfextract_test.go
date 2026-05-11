@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/miku/blobproc/pdfinfo"
+	"github.com/internetarchive/scholar/blobproc/pdfinfo"
 )
 
 // TestPdfExtract uses a snapshot style test. If the expected JSON files are

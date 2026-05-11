@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/miku/blobproc/dedent"
+	"github.com/internetarchive/scholar/blobproc/dedent"
 )
 
 func TestURLMap(t *testing.T) {

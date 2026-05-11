@@ -1,4 +1,4 @@
-module github.com/miku/blobproc
+module github.com/internetarchive/scholar/blobproc
 
 go 1.25.4
 

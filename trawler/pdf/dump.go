@@ -3,22 +3,14 @@ package pdf
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"fmt"
-	"net/http"
+	"log/slog"
 	"os"
 
+	"github.com/internetarchive/scholar/blobproc"
+	"github.com/miku/grobidclient"
 	"github.com/miku/grobidclient/tei"
 )
-
-/*
-	this file houses code for dumping structured data about PDFs. at time of
-	initial writing it is intended to be used for debugging as we work on
-	ingesting of PDFs from periodic crawls.
-
-	We could submit files directly to grobid but will for now continue to use
-	blobproc in case we want to migrate off of grobid in the near future.
-*/
 
 type DumpedPDF struct {
 	Grobid  tei.GrobidDocument
@@ -26,46 +18,36 @@ type DumpedPDF struct {
 }
 
 func Dump(pdfPath string) (*DumpedPDF, error) {
-	processor := Processor{
-		Client: &http.Client{},
-	}
-	ctx := context.Background()
-	pdfBs, err := os.ReadFile(pdfPath)
+	fi, err := os.Stat(pdfPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read pdf '%s': %w", pdfPath, err)
+		return nil, err
 	}
 
-	headEnd := 1024
-	if len(pdfBs) < headEnd {
-		headEnd = len(pdfBs)
-	}
-	if !bytes.Contains(pdfBs[:headEnd], []byte("%PDF-")) {
-		return nil, fmt.Errorf("file '%s' does not look like a PDF: missing %%PDF- header in first %d bytes", pdfPath, headEnd)
+	grobid := grobidclient.New("https://scholar.archive.org/_grobid")
+
+	l := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	params := blobproc.ProcessPDFParams{
+		Path:              pdfPath,
+		Size:              fi.Size(),
+		Grobid:            grobid,
+		GrobidMaxFileSize: 100 << 20,
+		Logger:            l,
 	}
 
-	tailStart := len(pdfBs) - 1024
-	if tailStart < 0 {
-		tailStart = 0
+	result, errs := blobproc.ProcessPDF(context.Background(), params)
+	if len(errs) > 0 {
+		fmt.Fprintf(os.Stderr, "encountered %d errors\n", len(errs))
+		for _, err := range errs {
+			fmt.Fprintln(os.Stderr, err)
+		}
 	}
-	if !bytes.Contains(pdfBs[tailStart:], []byte("%%EOF")) {
-		return nil, fmt.Errorf("file '%s' appears truncated: missing %%EOF trailer", pdfPath)
-	}
-
-	sha := fmt.Sprintf("%x", sha1.Sum(pdfBs))
-	fmt.Printf("DBG %#v\n", sha)
-	content, err := processor.Process(ctx, pdfBs, sha)
-	if err != nil {
-		return nil, fmt.Errorf("failed to processPDF '%s': %w", pdfPath, err)
-	}
-	fmt.Println(content.GrobidXML)
-
-	gdoc, err := tei.ParseDocument(bytes.NewReader(content.GrobidXML))
+	gdoc, err := tei.ParseDocument(bytes.NewReader(result.TEI))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse grobid xml: %w", err)
 	}
 
-	return &DumpedPDF{
-		Grobid:  *gdoc,
-		PdfText: string(content.PdfText),
-	}, nil
+	fmt.Printf("DBG %#v\n", gdoc)
+
+	return &DumpedPDF{}, nil
 }

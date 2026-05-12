@@ -3,24 +3,24 @@ package pdfinfo
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/gen2brain/go-fitz"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 
-// Metadata groups output of various tools into a single struct.
+// Metadata groups output of various PDF inspection backends into a single struct.
 type Metadata struct {
-	PDFCPU  *PDFCPU `json:"pdfcpu,omitempty"`  // pdfcpu output, parsed into JSON.
-	PDFInfo *Info   `json:"pdfinfo,omitempty"` // pdfinfo, parsed into JSON.
+	PDFCPU  *PDFCPU `json:"pdfcpu,omitempty"`  // structural fields, via pdfcpu Go API.
+	PDFInfo *Info   `json:"pdfinfo,omitempty"` // info-dict fields, via go-fitz (MuPDF).
 }
 
 // LegacyPDFExtra returns a struct that looks like the pdfextra dict from the
-// sandcrawler. Here for compatibilty.
+// sandcrawler. Here for compatibility.
 func (metadata Metadata) LegacyPDFExtra() *PDFExtra {
 	return &PDFExtra{
 		Page0Height: metadata.PDFInfo.PageDim().Height,
@@ -32,21 +32,18 @@ func (metadata Metadata) LegacyPDFExtra() *PDFExtra {
 
 // PDFExtra was a free form dictionary in sandcrawler. Keep this here for
 // compatibility.
-//
-// In [10]: pdf_document.pdf_id
-// Out[10]: PDFId(permanent_id='070262676b9d8a3776b3a9e2c168f961',
-// update_id='29245f594c8bea0fc7f2cc90ca1dd021')
 type PDFExtra struct {
-	Page0Height float64 `json:"page0height,omitempty"`  // in pts, we can parse "pdfinfo" output
-	Page0Width  float64 `json:"page0width,omitempty"`   // in pts, we can parse "pdfinfo" output
-	PageCount   int     `json:"page_count,omitempty"`   // "pdfinfo" "Pages"
+	Page0Height float64 `json:"page0height,omitempty"`  // in pts.
+	Page0Width  float64 `json:"page0width,omitempty"`   // in pts.
+	PageCount   int     `json:"page_count,omitempty"`
 	PermanentID string  `json:"permanent_id,omitempty"` // TODO: where do we get this from?
 	UpdateID    string  `json:"update_id,omitempty"`    // TODO: where do we get this from?
-	PDFVersion  string  `json:"pdf_version,omitempty"`  // PDF version: 1.5, ...
+	PDFVersion  string  `json:"pdf_version,omitempty"`
 }
 
-// PDFCPU structured output from pdfcpu tool. One annoyance of pdfcpu is that
-// it expect the file to have a .pdf extenstion (that's sooo weird!).
+// PDFCPU mirrors the historical "pdfcpu info -j" JSON shape so downstream
+// consumers of blobproc's output don't need to change. Populated from
+// pdfcpu's Go API; Header is left empty.
 type PDFCPU struct {
 	Header struct {
 		Creation string `json:"creation,omitempty"`
@@ -92,7 +89,11 @@ type PDFCPUInfo struct {
 	Watermarked        bool   `json:"watermarked,omitempty"`
 }
 
-// Info is a parsed pdfinfo output.
+// Info is the per-PDF metadata struct. Historically populated by parsing
+// Poppler "pdfinfo" output; now populated from go-fitz (MuPDF). Fields fitz
+// cannot determine (CustomMetadata, MetadataStream, Suspects, JavaScript,
+// Optimized, PDFSubtype, PageRot, Standard, Conformance, etc.) are left
+// zero-valued and elided from JSON via omitempty.
 type Info struct {
 	Title          string `json:"title,omitempty"`
 	Subject        string `json:"subject,omitempty"`
@@ -129,8 +130,8 @@ type Dim struct {
 	Height float64
 }
 
-// PageDim parses pdfinfo page size output into a Dim. Returns the zero value
-// Dim for unparsable data.
+// PageDim parses pdfinfo-style page size output into a Dim. Returns the zero
+// value Dim for unparsable data.
 func (info *Info) PageDim() Dim {
 	if info == nil {
 		return Dim{}
@@ -158,172 +159,110 @@ func (info *Info) PageDim() Dim {
 	}
 }
 
-// ParseFile a filename into a structured metadata object. Requires pdfinfo and
-// pdfcpu to be installed. The filename must have .pdf extension, otherwise
-// pdfcpu will fail.
-func ParseFile(ctx context.Context, filename string) (*Metadata, error) {
-	if !strings.HasSuffix(filename, ".pdf") {
-		return nil, fmt.Errorf("pdfcpu requires an explicit .pdf filename")
-	}
-	if _, err := exec.LookPath("pdfcpu"); err != nil {
-		return nil, fmt.Errorf("missing pdfcpu executable, cf. https://github.com/pdfcpu/pdfcpu")
-	}
-	if _, err := exec.LookPath("pdfinfo"); err != nil {
-		return nil, fmt.Errorf("missing pdfinfo executable")
-	}
-	var metadata = new(Metadata)
-	info, err := runPdfInfo(ctx, filename)
-	if err != nil {
-		slog.Warn("pdfinfo failed", "filename", filename, "err", err)
+// ParseBlob returns structured metadata for an in-memory PDF. Uses go-fitz
+// (MuPDF) for the info-dict + basic geometry and pdfcpu's Go API for the
+// richer structural fields. No external binaries required.
+func ParseBlob(ctx context.Context, blob []byte) (*Metadata, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	metadata.PDFInfo = info
-	pdfcpu, err := runPdfCpu(ctx, filename)
+	info, err := infoFromFitz(blob)
 	if err != nil {
-		slog.Warn("pdfcpu failed", "filename", filename, "err", err)
+		slog.Warn("fitz metadata extraction failed", "err", err)
 		return nil, err
 	}
-	metadata.PDFCPU = pdfcpu
-	return metadata, nil
-}
-
-// runPdfCpu parses a pdf file. Requires pdfcpu executable to be installed.
-// The filename must have .pdf extension, otherwise pdfcpu will fail.  If the
-// first attempt fails, a second attempt is made before returning an error.
-func runPdfCpu(ctx context.Context, filename string) (*PDFCPU, error) {
-	const maxAttempts = 2
-	var lastErr error
-
-	for try := 1; try <= maxAttempts; try++ {
-		var buf bytes.Buffer
-		cmd := exec.CommandContext(ctx, "pdfcpu", "info", "-j", filename)
-		cmd.Stdout = &buf
-		if err := cmd.Run(); err != nil {
-			lastErr = err
-			continue
-		}
-		var pdfcpu PDFCPU
-		if err := json.Unmarshal(buf.Bytes(), &pdfcpu); err != nil {
-			lastErr = err
-			continue
-		}
-		return &pdfcpu, nil
-	}
-	return nil, lastErr
-}
-
-// runPdfInfo parses a pdf file. Requires pdfinfo executable to be installed.
-func runPdfInfo(ctx context.Context, filename string) (*Info, error) {
-	var buf bytes.Buffer
-	cmd := exec.CommandContext(ctx, "pdfinfo", filename)
-	cmd.Stdout = &buf
-	if err := cmd.Run(); err != nil {
+	cpu, err := infoFromPdfcpu(blob)
+	if err != nil {
+		slog.Warn("pdfcpu metadata extraction failed", "err", err)
 		return nil, err
 	}
-	return ParseInfo(buf.String()), nil
-}
-
-// ParseInfo pdfinfo output into an Info struct.
-func ParseInfo(s string) *Info {
-	info := Info{}
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-		fields := strings.SplitN(line, ":", 2)
-		if len(fields) != 2 {
-			continue
-		}
-		fields[0] = strings.TrimSpace(fields[0])
-		fields[1] = strings.TrimSpace(fields[1])
-		switch fields[0] {
-		case "Title":
-			info.Title = fields[1]
-		case "Subject":
-			info.Subject = fields[1]
-		case "Keywords":
-			info.Keywords = fields[1]
-		case "Author":
-			info.Author = fields[1]
-		case "Creator":
-			info.Creator = fields[1]
-		case "Producer":
-			info.Producer = fields[1]
-		case "CreationDate":
-			info.CreationDate = fields[1]
-		case "ModDate":
-			info.ModDate = fields[1]
-		case "Custom Metadata":
-			info.CustomMetadata = parseBool(fields[1])
-		case "Metadata Stream":
-			info.MetadataStream = parseBool(fields[1])
-		case "Tagged":
-			info.Tagged = parseBool(fields[1])
-		case "UserProperties":
-			info.UserProperties = parseBool(fields[1])
-		case "Suspects":
-			info.Suspects = parseBool(fields[1])
-		case "Form":
-			info.Form = fields[1]
-		case "JavaScript":
-			info.JavaScript = parseBool(fields[1])
-		case "Pages":
-			info.Pages = parseInt(fields[1])
-		case "Encrypted":
-			info.Encrypted = parseBool(fields[1])
-		case "Page size":
-			info.PageSize = fields[1]
-		case "Page rot":
-			info.PageRot = parseInt(fields[1])
-		case "File size":
-			info.FileSize = parseAnyInt(fields[1])
-		case "Optimized":
-			info.Optimized = parseBool(fields[1])
-		case "PDF version":
-			info.PDFVersion = fields[1]
-		case "PDF subtype":
-			info.PDFSubtype = fields[1]
-		case "Abbreviation":
-			info.Abbreviation = fields[1]
-		case "Subtitle":
-			info.Subtitle = fields[1]
-		case "Standard":
-			info.Standard = fields[1]
-		case "Conformance":
-			info.Conformance = fields[1]
-		default:
-			log.Printf("ignoring pdfinfo field: %v", fields[0])
-		}
+	// Prefer pdfcpu's float page dimensions for PageSize when available; fall
+	// back to fitz's integer page bounds otherwise.
+	if len(cpu.Infos) > 0 && len(cpu.Infos[0].PageSizes) > 0 {
+		ps := cpu.Infos[0].PageSizes[0]
+		info.PageSize = fmt.Sprintf("%v x %v pts", ps.Width, ps.Height)
 	}
-	return &info
+	return &Metadata{PDFInfo: info, PDFCPU: cpu}, nil
 }
 
-// parseBool returns a bool from a string used in pdfinfo output, like "yes", and "no".
-func parseBool(s string) bool {
-	if s == "yes" {
-		return true
-	}
-	return false
-}
-
-// parseInt return 0, if no other value could be parsed.
-func parseInt(s string) int {
-	v, err := strconv.Atoi(s)
+func infoFromFitz(blob []byte) (*Info, error) {
+	doc, err := fitz.NewFromMemory(blob)
 	if err != nil {
-		return 0
+		return nil, fmt.Errorf("fitz open: %w", err)
 	}
-	return v
+	defer doc.Close()
+	// go-fitz's purego Metadata() returns each value as the raw 256-byte
+	// lookup buffer (null-padded). Trim null bytes from every entry.
+	m := doc.Metadata()
+	for k, v := range m {
+		m[k] = strings.TrimRight(v, "\x00")
+	}
+	info := &Info{
+		Title:        m["title"],
+		Subject:      m["subject"],
+		Keywords:     m["keywords"],
+		Author:       m["author"],
+		Creator:      m["creator"],
+		Producer:     m["producer"],
+		CreationDate: m["creationDate"],
+		ModDate:      m["modDate"],
+		Pages:        doc.NumPage(),
+		Encrypted:    m["encryption"] != "" && !strings.EqualFold(m["encryption"], "None"),
+		PDFVersion:   strings.TrimPrefix(m["format"], "PDF "),
+		FileSize:     len(blob),
+	}
+	if doc.NumPage() > 0 {
+		if b, err := doc.Bound(0); err == nil {
+			info.PageSize = fmt.Sprintf("%d x %d pts", b.Dx(), b.Dy())
+		}
+	}
+	return info, nil
 }
 
-// parseAnyInt will return the first token in a given string, that could be parsed into an int.
-func parseAnyInt(s string) int {
-	for _, tok := range strings.Fields(s) {
-		v, err := strconv.Atoi(tok)
-		if err != nil {
-			continue
-		}
-		return v
+func infoFromPdfcpu(blob []byte) (*PDFCPU, error) {
+	info, err := api.PDFInfo(bytes.NewReader(blob), "", nil, false, nil)
+	if err != nil {
+		return nil, err
 	}
-	return 0
+	cpuInfo := PDFCPUInfo{
+		AppendOnly:         info.AppendOnly,
+		Author:             info.Author,
+		Bookmarks:          info.Outlines,
+		CreationDate:       info.CreationDate,
+		Creator:            info.Creator,
+		Encrypted:          info.Encrypted,
+		Form:               info.Form,
+		Hybrid:             info.Hybrid,
+		Keywords:           info.Keywords,
+		Linearized:         info.Linearized,
+		ModificationDate:   info.ModificationDate,
+		Names:              info.Names,
+		PageCount:          int64(info.PageCount),
+		PageMode:           info.PageMode,
+		Permissions:        int64(info.Permissions),
+		Producer:           info.Producer,
+		Signatures:         info.Signatures,
+		Source:             info.FileName,
+		Subject:            info.Subject,
+		Tagged:             info.Tagged,
+		Thumbnails:         info.Thumbnails,
+		Title:              info.Title,
+		Unit:               info.UnitString,
+		UsingObjectStreams: info.UsingObjectStreams,
+		UsingXRefStreams:   info.UsingXRefStreams,
+		Version:            info.Version,
+		Watermarked:        info.Watermarked,
+	}
+	// pdfcpu's Go API populates the PageDimensions set, not the Dimensions
+	// slice (which is filled by the CLI right before JSON marshal).
+	for d := range info.PageDimensions {
+		cpuInfo.PageSizes = append(cpuInfo.PageSizes, struct {
+			Height float64 `json:"height,omitempty"`
+			Width  float64 `json:"width,omitempty"`
+		}{Height: d.Height, Width: d.Width})
+	}
+	if v, ok := info.Properties["PTEX.Fullbanner"]; ok {
+		cpuInfo.Properties.PTEXFullbanner = v
+	}
+	return &PDFCPU{Infos: []PDFCPUInfo{cpuInfo}}, nil
 }

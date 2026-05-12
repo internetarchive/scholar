@@ -2,10 +2,10 @@ package pdfinfo
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestParsePageSize(t *testing.T) {
@@ -74,136 +74,50 @@ func TestParsePageSize(t *testing.T) {
 	}
 }
 
-func TestParseFile(t *testing.T) {
-	var cases = []struct {
-		filename string
-		err      error
-		info     *Info
-	}{
-		{
-			filename: "../testdata/pdf/1906.02444.pdf",
-			err:      nil,
-			info: &Info{
-				Creator:        "LaTeX with hyperref package",
-				Producer:       "pdfTeX-1.40.17",
-				CreationDate:   "Fri Jun  7 02:39:17 2019 CEST",
-				ModDate:        "Fri Jun  7 02:39:17 2019 CEST",
-				CustomMetadata: true,
-				Form:           "none",
-				Pages:          8,
-				PageSize:       "595.276 x 841.89 pts (A4)",
-				PageRot:        0,
-				FileSize:       633850,
-				PDFVersion:     "1.5",
-			},
-		},
+func TestParseBlob(t *testing.T) {
+	blob, err := os.ReadFile("../testdata/pdf/1906.02444.pdf")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
 	}
-	ignoreTimeFields := cmpopts.IgnoreFields(Info{}, "CreationDate", "ModDate") // CEST, UTC, ...
-	for _, c := range cases {
-		info, err := runPdfInfo(context.Background(), c.filename)
-		if err != c.err {
-			t.Fatalf("got %v, want %v", err, c.err)
-		}
-		if !cmp.Equal(info, c.info, ignoreTimeFields) {
-			t.Fatalf("got %v, want %v, diff: %v", info, c.info, cmp.Diff(info, c.info, ignoreTimeFields))
-		}
+	md, err := ParseBlob(context.Background(), blob)
+	if err != nil {
+		t.Fatalf("ParseBlob: %v", err)
 	}
-}
-
-func TestParse(t *testing.T) {
-	var cases = []struct {
-		s    string
-		info *Info
-	}{
-		{s: ``, info: &Info{}},
-		{
-			s: `
-			Title:
-			Subject:
-			Keywords:
-			Author:
-			Creator:         LaTeX with hyperref package
-			Producer:        pdfTeX-1.40.17
-			CreationDate:    Fri Jun  7 02:39:17 2019 CEST
-			ModDate:         Fri Jun  7 02:39:17 2019 CEST
-			Custom Metadata: yes
-			Metadata Stream: no
-			Tagged:          no
-			UserProperties:  no
-			Suspects:        no
-			Form:            none
-			JavaScript:      no
-			Pages:           8
-			Encrypted:       no
-			Page size:       595.276 x 841.89 pts (A4)
-			Page rot:        0
-			File size:       633850 bytes
-			Optimized:       no
-			PDF version:     1.5
-			`,
-			info: &Info{
-				Creator:        "LaTeX with hyperref package",
-				Producer:       "pdfTeX-1.40.17",
-				CreationDate:   "Fri Jun  7 02:39:17 2019 CEST",
-				ModDate:        "Fri Jun  7 02:39:17 2019 CEST",
-				CustomMetadata: true,
-				Form:           "none",
-				Pages:          8,
-				PageSize:       "595.276 x 841.89 pts (A4)",
-				PageRot:        0,
-				FileSize:       633850,
-				PDFVersion:     "1.5",
-			},
-		},
-		{
-			s: `
-			Title:           Choose the red pill <i>and</i> the blue pill: a position paper
-			Subject:
-			Keywords:        authentication, authorization, blue pill, grey goo, nebuchadnezzar, red pill, rotating shield harmonics, scooby doo, secure operating system, the matrix, trusted path
-			Author:          Ben Laurie, Abe Singer
-			Creator:         Microsoft Word
-			Producer:        Mac OS X 10.5.5 Quartz PDFContext
-			CreationDate:    Mon Nov 24 23:24:37 2008 CET
-			ModDate:         Sat Apr 18 16:57:15 2009 CEST
-			Custom Metadata: yes
-			Metadata Stream: yes
-			Tagged:          no
-			UserProperties:  no
-			Suspects:        no
-			Form:            none
-			JavaScript:      no
-			Pages:           7
-			Encrypted:       no
-			Page size:       612 x 792 pts (letter)
-			Page rot:        0
-			File size:       419698 bytes
-			Optimized:       yes
-			PDF version:     1.3
-			`,
-			info: &Info{
-				Title:          "Choose the red pill <i>and</i> the blue pill: a position paper",
-				Keywords:       "authentication, authorization, blue pill, grey goo, nebuchadnezzar, red pill, rotating shield harmonics, scooby doo, secure operating system, the matrix, trusted path",
-				Author:         "Ben Laurie, Abe Singer",
-				Creator:        "Microsoft Word",
-				Producer:       "Mac OS X 10.5.5 Quartz PDFContext",
-				CreationDate:   "Mon Nov 24 23:24:37 2008 CET",
-				ModDate:        "Sat Apr 18 16:57:15 2009 CEST",
-				CustomMetadata: true,
-				MetadataStream: true,
-				Form:           "none",
-				Pages:          7,
-				PageSize:       "612 x 792 pts (letter)",
-				PageRot:        0,
-				FileSize:       419698,
-				Optimized:      true,
-				PDFVersion:     "1.3",
-			},
-		},
+	if md.PDFInfo == nil {
+		t.Fatal("PDFInfo is nil")
 	}
-	for _, c := range cases {
-		info := ParseInfo(c.s)
-		if !cmp.Equal(info, c.info) {
-			t.Fatalf("got %v, want %v, diff: %v", info, c.info, cmp.Diff(info, c.info))
-		}
+	if md.PDFCPU == nil || len(md.PDFCPU.Infos) == 0 {
+		t.Fatal("PDFCPU.Infos is empty")
+	}
+	// Spot-check fields the fitz path is expected to populate. Date fields
+	// are skipped: fitz returns the raw PDF date string (e.g.
+	// "D:20190607003917+00'00'") which differs from Poppler's localized
+	// "Fri Jun  7 02:39:17 2019 CEST".
+	got := md.PDFInfo
+	if got.Creator != "LaTeX with hyperref package" {
+		t.Errorf("Creator: got %q, want %q", got.Creator, "LaTeX with hyperref package")
+	}
+	if got.Producer != "pdfTeX-1.40.17" {
+		t.Errorf("Producer: got %q, want %q", got.Producer, "pdfTeX-1.40.17")
+	}
+	if got.Pages != 8 {
+		t.Errorf("Pages: got %d, want 8", got.Pages)
+	}
+	if got.PDFVersion != "1.5" {
+		t.Errorf("PDFVersion: got %q, want %q", got.PDFVersion, "1.5")
+	}
+	if got.FileSize != 633850 {
+		t.Errorf("FileSize: got %d, want 633850", got.FileSize)
+	}
+	if dim := got.PageDim(); dim != (Dim{Width: 595.276, Height: 841.89}) {
+		t.Errorf("PageDim: got %+v, want {Width:595.276 Height:841.89}", dim)
+	}
+	// Spot-check the pdfcpu side too.
+	cpu := md.PDFCPU.Infos[0]
+	if cpu.PageCount != 8 {
+		t.Errorf("pdfcpu PageCount: got %d, want 8", cpu.PageCount)
+	}
+	if len(cpu.PageSizes) == 0 {
+		t.Error("pdfcpu PageSizes is empty")
 	}
 }

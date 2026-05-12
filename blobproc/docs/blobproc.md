@@ -18,8 +18,9 @@ DESCRIPTION
 ===========
 
 **blobproc** is a PDF postprocessing utility that generates derivatives like fulltext,
-thumbnails, and metadata from PDF files. It processes PDFs through external tools (GROBID,
-pdftotext, pdftoppm) and can persist results to S3-compatible storage.
+thumbnails, and metadata from PDF files. Text and thumbnail extraction happen in-process via
+go-fitz (MuPDF); GROBID is still called as an external service. Results can be persisted to
+S3-compatible storage.
 
 The typical workflow involves running **blobproc serve** to accept incoming PDFs, which are
 stored in a spool directory. A separate process or timer runs **blobproc run** to process
@@ -65,7 +66,7 @@ Overview of data flow, from top to bottom.
               │             │             │
               v             v             v
         ┌─────────┐   ┌─────────┐   ┌─────────┐
-        │ GROBID  │   │pdftotext│   │pdftoppm │
+        │ GROBID  │   │ go-fitz │   │ go-fitz │
         │ (XML)   │   │ (text)  │   │ (thumb) │
         └────┬────┘   └────┬────┘   └────┬────┘
              │             │             │
@@ -222,5 +223,5 @@ Report issues at the project repo (tba).
 SEE ALSO
 ========
 
-**pdftotext**(1), **pdftoppm**(1)
+GROBID is consulted as an external service over HTTP; see https://grobid.readthedocs.io/.
 

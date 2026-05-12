@@ -175,7 +175,7 @@ func TestPdfExtract(t *testing.T) {
 			t.Fatalf("snapshot broken: %v", err)
 		}
 		// Ignore Page0Thumbnail in struct comparison - JPEG output varies across
-		// different pdftoppm/poppler versions and platforms.
+		// renderer versions and platforms.
 		cmpOpts := []cmp.Option{
 			cmpopts.EquateEmpty(),
 			cmpopts.IgnoreFields(Result{}, "Page0Thumbnail"),

@@ -11,14 +11,16 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"os"
-	"os/exec"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/gabriel-vasile/mimetype"
+	"github.com/gen2brain/go-fitz"
 	"github.com/internetarchive/scholar/blobproc/pdfinfo"
 	"mvdan.cc/xurls/v2"
 )
@@ -85,7 +87,7 @@ type Result struct {
 	Status         string            `json:"status,omitempty"`         // A free form status string.
 	Err            error             `json:"err,omitempty"`            // Any error we encountered.
 	FileInfo       *FileInfo         `json:"fileinfo,omitempty"`       // Size and checksums.
-	Text           string            `json:"text,omitempty"`           // Fulltext as parsed with a tool, e.g. pdftotext.
+	Text           string            `json:"text,omitempty"`           // Fulltext as parsed via go-fitz (MuPDF).
 	Page0Thumbnail []byte            `json:"page0thumbnail,omitempty"` // Thumbnail image, jpg format.
 	MetaXML        string            `json:"metaxml,omitempty"`        // Unassigned.
 	Metadata       *pdfinfo.Metadata `json:"metadata,omitempty"`       // New, grouped by tool, info about a pdf.
@@ -123,68 +125,93 @@ type Options struct {
 	ThumbType string
 }
 
-// extractTextFromPDF returns the text of the PDF, uses pdftotext.
-func extractTextFromPDF(ctx context.Context, filename string) ([]byte, error) {
-	if _, err := exec.LookPath("pdftotext"); err != nil {
-		return nil, fmt.Errorf("missing pdftotext executable")
+// extractTextFromPDF returns the full text of the PDF using go-fitz (MuPDF).
+// Pages are separated by form-feed (\f) to mirror pdftotext's default page
+// separator. Text comes back in MuPDF reading order; there is no column-aware
+// whitespace preservation analogous to "pdftotext -layout".
+func extractTextFromPDF(ctx context.Context, blob []byte) ([]byte, error) {
+	doc, err := fitz.NewFromMemory(blob)
+	if err != nil {
+		return nil, fmt.Errorf("fitz open: %w", err)
 	}
+	defer doc.Close()
 	var buf bytes.Buffer
-	cmd := exec.CommandContext(ctx, "pdftotext", "-layout", filename, "-")
-	cmd.Stdout = &buf
-	if err := cmd.Run(); err != nil {
-		return nil, err
+	n := doc.NumPage()
+	for i := range n {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		txt, err := doc.Text(i)
+		if err != nil {
+			return nil, fmt.Errorf("fitz text page %d: %w", i, err)
+		}
+		buf.WriteString(txt)
+		if i < n-1 {
+			buf.WriteByte('\f')
+		}
 	}
-	// Extract lightweight additional structured information from the fulltext, e.g. weblinks.
 	return buf.Bytes(), nil
 }
 
-// extractThumbnailFromPDF runs pdftoppm to render page0 of the PDF into an image.
-func extractThumbnailFromPDF(ctx context.Context, filename string, dim Dim, thumbType string) ([]byte, error) {
+// extractThumbnailFromPDF renders page 0 via go-fitz (MuPDF) and encodes it as
+// jpg or png. The rendering DPI is computed from page bounds so the resulting
+// image fits within dim. tiff is no longer supported.
+func extractThumbnailFromPDF(ctx context.Context, blob []byte, dim Dim, thumbType string) ([]byte, error) {
 	if dim.W < 0 && dim.H < 0 {
 		return nil, nil
 	}
-	if _, err := exec.LookPath("pdftoppm"); err != nil {
-		return nil, fmt.Errorf("missing pdftoppm executable")
-	}
-	var (
-		prefix          = filename + ".page0.wip"
-		formatFlag, dst string
-	)
-	switch strings.ToLower(thumbType) {
-	case "jpg", "jpeg":
-		formatFlag = "-jpeg"
-		dst = prefix + ".jpg"
-	case "png":
-		formatFlag = "-png"
-		dst = prefix + ".png"
-	case "tiff":
-		formatFlag = "-tiff"
-		dst = prefix + ".tiff"
-	default:
-		formatFlag = "-jpeg"
-		dst = prefix + ".jpg"
-	}
-	defer func() {
-		_ = os.Remove(dst)
-	}()
-	cmd := exec.CommandContext(ctx, "pdftoppm",
-		formatFlag,
-		"-f", "1",
-		"-l", "1",
-		"-singlefile",
-		"-scale-to-x", fmt.Sprintf("%d", dim.W),
-		"-scale-to-y", fmt.Sprintf("%d", dim.H),
-		filename,
-		prefix)
-	if err := cmd.Run(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return os.ReadFile(dst)
+	doc, err := fitz.NewFromMemory(blob)
+	if err != nil {
+		return nil, fmt.Errorf("fitz open: %w", err)
+	}
+	defer doc.Close()
+	if doc.NumPage() == 0 {
+		return nil, fmt.Errorf("pdf has no pages")
+	}
+	bounds, err := doc.Bound(0)
+	if err != nil {
+		return nil, err
+	}
+	wPts := float64(bounds.Dx())
+	hPts := float64(bounds.Dy())
+	dpi := 150.0
+	switch {
+	case dim.W > 0 && dim.H > 0:
+		dpiX := float64(dim.W) * 72.0 / wPts
+		dpiY := float64(dim.H) * 72.0 / hPts
+		dpi = dpiX
+		if dpiY < dpi {
+			dpi = dpiY
+		}
+	case dim.W > 0:
+		dpi = float64(dim.W) * 72.0 / wPts
+	case dim.H > 0:
+		dpi = float64(dim.H) * 72.0 / hPts
+	}
+	img, err := doc.ImageDPI(0, dpi)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	switch strings.ToLower(thumbType) {
+	case "png":
+		if err := png.Encode(&buf, img); err != nil {
+			return nil, err
+		}
+	default:
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
 }
 
-// extractPDFMetadata extracts the PDF info via pdfcpu as raw JSON bytes.
-func extractPDFMetadata(ctx context.Context, filename string) (*pdfinfo.Metadata, error) {
-	return pdfinfo.ParseFile(ctx, filename)
+// extractPDFMetadata extracts the PDF metadata via go-fitz and pdfcpu.
+func extractPDFMetadata(ctx context.Context, blob []byte) (*pdfinfo.Metadata, error) {
+	return pdfinfo.ParseBlob(ctx, blob)
 }
 
 // ProcessFile turns a PDF file to a structured output.
@@ -207,33 +234,9 @@ func ProcessFile(ctx context.Context, filename string, opts *Options) *Result {
 
 // ProcessBlob takes a blob and returns a pdf extract result. TODO(martin): we
 // can makes this faster by running various subprocesses in parallel.
-// TODO(martin): we take a blob from memory only to persist it and run the cli
-// tools over it, we should not require that much memory.
 func ProcessBlob(ctx context.Context, blob []byte, opts *Options) *Result {
 	var fi = new(FileInfo)
 	fi.FromBytes(blob)
-	// Save PDF blob to a temporary file to run various cli tools over it.
-	// Strangely, pdfcpu wants a file with a .pdf extension (-1).
-	tf, err := os.CreateTemp("", "blobproc-pdf-*.pdf")
-	if err != nil {
-		return &Result{
-			SHA1Hex:  fi.SHA1Hex,
-			Err:      err,
-			FileInfo: fi,
-		}
-	}
-	defer func() {
-		_ = tf.Close()
-		os.Remove(tf.Name())
-	}()
-	_, err = io.Copy(tf, bytes.NewReader(blob))
-	if err != nil {
-		return &Result{
-			SHA1Hex:  fi.SHA1Hex,
-			Err:      err,
-			FileInfo: fi,
-		}
-	}
 	// Prefilter non-pdf and bad pdf files.
 	switch {
 	case fi.Mimetype != "application/pdf":
@@ -252,7 +255,7 @@ func ProcessBlob(ctx context.Context, blob []byte, opts *Options) *Result {
 		}
 	}
 	// Extract the fulltext.
-	text, err := extractTextFromPDF(ctx, tf.Name())
+	text, err := extractTextFromPDF(ctx, blob)
 	switch {
 	case err != nil:
 		return &Result{
@@ -268,7 +271,7 @@ func ProcessBlob(ctx context.Context, blob []byte, opts *Options) *Result {
 		}
 	}
 	// Extract the thumbnail.
-	page0Thumbail, err := extractThumbnailFromPDF(ctx, tf.Name(), opts.Dim, opts.ThumbType)
+	page0Thumbail, err := extractThumbnailFromPDF(ctx, blob, opts.Dim, opts.ThumbType)
 	switch {
 	case err != nil:
 		return &Result{
@@ -281,7 +284,7 @@ func ProcessBlob(ctx context.Context, blob []byte, opts *Options) *Result {
 		page0Thumbail = nil
 	}
 	// Extract additional pdf info.
-	metadata, err := extractPDFMetadata(ctx, tf.Name())
+	metadata, err := extractPDFMetadata(ctx, blob)
 	switch {
 	case err != nil:
 		return &Result{

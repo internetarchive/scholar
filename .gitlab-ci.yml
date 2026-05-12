@@ -78,32 +78,6 @@ build-grobid:
     - curl --user $NEXUS_BASICAUTH --upload-file $BUILD_DIR/grobid-home-$GROBID-VERSION.zip $NEXUS_URL/repository/raw-internal/grobid/grobid-home-$GROBID-VERSION.zip
     - curl --user $NEXUS_BASICAUTH --upload-file $BUILD_DIR/grobid-service-$GROBID-VERSION.zip $NEXUS_URL/repository/raw-internal/grobid/grobid-service-$GROBID-VERSION.zip
 
-build-pdfcpu:
-  # blobproc currently uses https://github.com/pdfcpu/pdfcpu.git for PDF
-  # metadata extraction; TODO: revisit and remove this dep if possible
-  image: golang:${GO_VERSION}
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: always
-    - when: never
-  variables:
-    # 02/2026: using a commit here, because nexus does not allow updates and latest
-    # release v0.11.1 was not built w/ CGO_ENABLED=0 and failed on the
-    # deployment machine
-    PDFCPU_VERSION: "v0.11.0" # a git tag
-    PDFCPU_REPO: https://github.com/pdfcpu/pdfcpu.git
-    NEXUS_URL: http://nexus.us.archive.org
-  script:
-    - git clone --branch $PDFCPU_VERSION --single-branch $PDFCPU_REPO
-    - cd pdfcpu
-    - CGO_ENABLED=0 go build ./cmd/pdfcpu/... # builds pdfcpu binary; CGO_ENABLED=0, since deployment machine had GLIBC 2.31
-    - ls -la
-    - echo "uploading to $NEXUS_URL..."
-    - |
-      curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
-        --upload-file "pdfcpu" \
-        "${NEXUS_URL}/repository/raw-internal/pdfcpu/${PDFCPU_VERSION}/pdfcpu"
-
 # ======== blobproc ========
 
 test:blobproc:
@@ -124,10 +98,8 @@ test:blobproc:
     - if: '$CI_COMMIT_TAG =~ /^blobproc\/v\d+\.\d+\.\d+$/'
       when: never
   script:
-    - apt-get update && apt-get install -y poppler-utils sqlite3 fonts-roboto # pdfinfo, pdftotext, pdftoppm, pdfcpu
     - go env -w GOPROXY=https://nexus.us.archive.org/repository/golang-org
     - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
-    - go install github.com/pdfcpu/pdfcpu/cmd/pdfcpu@v0.11.1 # pdfcpu
     - cd blobproc
     - make test
 

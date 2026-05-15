@@ -33,61 +33,72 @@ func (p Processor) beatHeart(msg string) {
 	}
 }
 
-// Process submits pdfBs to blobproc, polls until processing completes, then
-// fetches and returns the grobid XML and pdftotext output from S3. sha1 is the
-// SHA-1 hex digest of pdfBs, used to verify the spool URL and construct S3
-// keys. Reads blobproc.endpoint, blobproc.s3bucket, and blobproc.poll_interval
-// from viper config.
-func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Content, error) {
+// Submit POSTs pdfBs to blobproc's spool endpoint and returns the poll URL
+// blobproc will report completion on. sha1 is the SHA-1 hex digest of pdfBs,
+// used to sanity-check the returned spool URL.
+func (p *Processor) Submit(ctx context.Context, pdfBs []byte, sha1 string) (string, error) {
 	endpoint := viper.GetString("blobproc.endpoint")
 
-	req, err := http.NewRequest("POST", endpoint+"/spool", bytes.NewBuffer(pdfBs))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint+"/spool", bytes.NewBuffer(pdfBs))
 	if err != nil {
-		return Content{}, fmt.Errorf("could not form blobproc request: %w", err)
+		return "", fmt.Errorf("could not form blobproc request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/pdf")
 
 	resp, err := p.Client.Do(req)
 	if err != nil {
-		return Content{}, fmt.Errorf("blobproc request error: %w", err)
+		return "", fmt.Errorf("blobproc request error: %w", err)
 	}
 	if resp.StatusCode != 202 {
-		return Content{}, fmt.Errorf("unexpected status from blobproc '%d'", resp.StatusCode)
+		return "", fmt.Errorf("unexpected status from blobproc '%d'", resp.StatusCode)
 	}
 	p.beatHeart("blobproc-submitted")
 
 	loc := resp.Header.Get("Location")
 	if loc == "" {
-		return Content{}, fmt.Errorf("got blank spool url from blobproc")
+		return "", fmt.Errorf("got blank spool url from blobproc")
 	}
 
 	pu, err := url.Parse(loc)
 	if err != nil {
-		return Content{}, fmt.Errorf("could not parse blobproc spool url %q: %w", loc, err)
+		return "", fmt.Errorf("could not parse blobproc spool url %q: %w", loc, err)
 	}
 
 	pollURL := endpoint + pu.Path
 	if !strings.Contains(pollURL, sha1) {
-		return Content{}, fmt.Errorf("expected sha1 %q in spool url %q", sha1, pollURL)
+		return "", fmt.Errorf("expected sha1 %q in spool url %q", sha1, pollURL)
 	}
+	return pollURL, nil
+}
 
-	pollReq, err := http.NewRequest("GET", pollURL, nil)
+// Poll waits for blobproc to finish processing the blob at pollURL (signalled
+// by a 404 response).
+func (p *Processor) Poll(ctx context.Context, pollURL string) error {
+	pollReq, err := http.NewRequestWithContext(ctx, "GET", pollURL, nil)
 	if err != nil {
-		return Content{}, fmt.Errorf("could not form blobproc poll request: %w", err)
+		return fmt.Errorf("could not form blobproc poll request: %w", err)
 	}
-
+	interval := viper.GetDuration("blobproc.poll_interval")
 	for {
 		p.beatHeart("blobproc-poll")
-		time.Sleep(viper.GetDuration("blobproc.poll_interval"))
-		resp, err = p.Client.Do(pollReq)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+		resp, err := p.Client.Do(pollReq)
 		if err != nil {
-			return Content{}, fmt.Errorf("error polling blobproc: %w", err)
+			return fmt.Errorf("error polling blobproc: %w", err)
 		}
 		if resp.StatusCode == 404 {
-			break
+			return nil
 		}
 	}
+}
 
+// Fetch retrieves the grobid XML and pdftotext output that blobproc wrote to
+// S3 for the given sha1.
+func (p *Processor) Fetch(ctx context.Context, sha1 string) (Content, error) {
 	s3bucket := viper.GetString("blobproc.s3bucket")
 
 	grobidKey := fmt.Sprintf("%s/grobid/%s/%s/%s.tei.xml", s3bucket, sha1[0:2], sha1[2:4], sha1)
@@ -110,8 +121,17 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 		return Content{}, fmt.Errorf("could not read pdftotext output: %w", err)
 	}
 
-	return Content{
-		GrobidXML: grobidXML,
-		PdfText:   pdfText,
-	}, nil
+	return Content{GrobidXML: grobidXML, PdfText: pdfText}, nil
+}
+
+// Process is a convenience: Submit → Poll → Fetch.
+func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Content, error) {
+	pollURL, err := p.Submit(ctx, pdfBs, sha1)
+	if err != nil {
+		return Content{}, err
+	}
+	if err := p.Poll(ctx, pollURL); err != nil {
+		return Content{}, err
+	}
+	return p.Fetch(ctx, sha1)
 }

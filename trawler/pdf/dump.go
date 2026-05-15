@@ -47,7 +47,8 @@ func Dump(pdfPath string) (*DumpedPDF, error) {
 		return nil, fmt.Errorf("failed to parse grobid xml: %w", err)
 	}
 
-	fmt.Printf("DBG %#v\n", gdoc)
+	fmt.Printf("DBG %#v\n", string(gdoc.Header.DOI))
 
+	// TODO fill in this struct
 	return &DumpedPDF{}, nil
 }

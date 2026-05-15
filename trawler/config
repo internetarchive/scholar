@@ -38,6 +38,11 @@ external_task_queue = "pubmed_crawl_external"
 every = "86400s"
 scholkit_s3_bucket = "scholkit"
 
+[periodic_ingest]
+task_queue = "periodic_ingest_internal"
+items_per_child = 4
+collection_page_size = 100
+
 [fatcat1]
 endpoint = "https://scholar.archive.org/api/fatcat/v1"
 
@@ -233,7 +238,7 @@ retries = 4
 backoff = "10s"
 
 [blobproc]
-endpoint = "http://wbgrp-svc263.us.archive.org:9444"
+endpoint = "http://wbgrp-svc510.us.archive.org:9444"
 poll_interval = "2s"
 s3bucket = "sandcrawler"
 

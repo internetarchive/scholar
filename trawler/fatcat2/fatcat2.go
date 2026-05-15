@@ -788,6 +788,11 @@ func LookupSha256(c *http.Client, sha256 string) (*uuid.UUID, error) {
 	return lookup(c, "file", "sha256", sha256)
 }
 
+// LookupSha1 returns the ID of a fatcat2 File with the given Sha1, if any.
+func LookupSha1(c *http.Client, sha1 string) (*uuid.UUID, error) {
+	return lookup(c, "file", "sha1", sha1)
+}
+
 func fc2uuid(fatcatIdent string) (uuid.UUID, error) {
 	i := strings.ToUpper(fatcatIdent + "======")
 	decoded, err := base32.StdEncoding.DecodeString(i)

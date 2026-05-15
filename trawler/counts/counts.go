@@ -24,9 +24,19 @@ type ContainerCounts struct {
 	Skipped int
 }
 
+type PdfCounts struct {
+	// Skipped is the count of PDFs already known (checksum with content) to fatcat
+	Skipped int
+	// Processed is the count of PDFs successfully handled via blobproc
+	Processed int
+	// Failed is the count of PDFs that failed to be parsed
+	Failed int
+}
+
 type Counts struct {
 	Releases   ReleaseCounts
 	Containers ContainerCounts
+	Pdfs       PdfCounts
 }
 
 func (c Counts) Add(other Counts) Counts {
@@ -42,6 +52,11 @@ func (c Counts) Add(other Counts) Counts {
 		Containers: ContainerCounts{
 			Ignored: c.Containers.Ignored + other.Containers.Ignored,
 			Added:   c.Containers.Added + other.Containers.Added,
+		},
+		Pdfs: PdfCounts{
+			Skipped:   c.Pdfs.Skipped + other.Pdfs.Skipped,
+			Processed: c.Pdfs.Processed + other.Pdfs.Processed,
+			Failed:    c.Pdfs.Failed + other.Pdfs.Failed,
 		},
 	}
 }

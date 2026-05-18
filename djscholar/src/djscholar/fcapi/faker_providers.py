@@ -67,7 +67,7 @@ class ExtIDProvider(BaseProvider):
         while not re.match(r"^[a-zA-Z0-9]", suffix):
             suffix = self.random_element(string.ascii_letters + string.digits) + suffix[1:]
 
-        return f"{prefix}/{suffix}"
+        return f"{prefix}/{suffix}".lower()
 
     def pmcid(self) -> str:
         """

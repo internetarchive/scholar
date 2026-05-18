@@ -75,7 +75,7 @@ class ReleaseLookup(Schema):
     id_type: Literal[*[t[0]
                        for t
                        in m.RELEASE_EXT_ID_TYPES] + ["legacy_ident"]]
-    id_value: str
+    id_value: Annotated[str, AfterValidator(lower)]
 
 
 class LegacyLookup(Schema):

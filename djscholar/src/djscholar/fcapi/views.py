@@ -75,7 +75,7 @@ class ReleaseLookup(Schema):
     id_type: Literal[*[t[0]
                        for t
                        in m.RELEASE_EXT_ID_TYPES] + ["legacy_ident"]]
-    id_value: Annotated[str, AfterValidator(lower)]
+    id_value: str
 
 
 class LegacyLookup(Schema):
@@ -328,6 +328,8 @@ def delete_container(request, ident: UUID) -> ContainerSchema:
 def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
     """Look up a release using an external ID. If multiple releases match the
     ID, an arbitrary one is returned."""
+    if lookup.id_type == 'doi':
+        lookup.id_value = lookup.id_value.lower()
     return ReleaseSchema.from_orm(release_svc.lookup(lookup.id_type, lookup.id_value))
 
 

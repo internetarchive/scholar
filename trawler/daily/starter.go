@@ -123,7 +123,6 @@ func StartWorker(d WorkerDetails) error {
 		w.RegisterActivity(ScholkitScrapeActivity)
 	} else if d.Access == "internal" {
 		w.RegisterWorkflow(DailyCrawlWorkflow)
-		w.RegisterWorkflow(LineBatchWorkflow)
 		w.RegisterActivity(ProcessLine)
 		w.RegisterActivity(harvesting.FindLineBatch)
 	}

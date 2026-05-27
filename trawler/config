@@ -11,6 +11,14 @@ dsn = "https://b917e17fa01e2aee8a07bcc6a933a5d0@sentry.archive.org/75"
 batch_size = 10000
 chunk_size = 102400
 
+[daily]
+# lines_per_can bounds how many ndjson lines a single DailyCrawlWorkflow run
+# processes before handing off to a fresh run via ContinueAsNew. This keeps any
+# one run's Temporal history well under the ~10k-event / 50MB limits. Each
+# ProcessLine is roughly 3-5 history events, so ~2000 lines keeps a run under
+# ~10k events. Defaults to 2000 if unset or <= 0.
+lines_per_can = 2000
+
 [s3]
 endpoint = "wbgrp-svc314.us.archive.org:8333"
 access_id = ""

@@ -544,7 +544,11 @@ def run_releases(args) -> None:
 
     batch = []
     for line in sys.stdin:
-        rid = uuid.UUID(line.strip())
+        try:
+            rid = uuid.UUID(line.strip())
+        except ValueError:
+            logger.warn(f"corrupt rid: {line.strip()}")
+            continue
 
         if cache.get(str(rid)) is not None:
             logger.info(f"{rid}: found in cache, skipping ahead")

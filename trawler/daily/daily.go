@@ -27,7 +27,6 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
-	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
@@ -41,124 +40,80 @@ type DailyCrawlWorkflowInput struct {
 	SourceOverride string
 	// Upstream is which API we're scraping
 	Upstream string
+
+	// The fields below carry state across ContinueAsNew. Callers starting a
+	// fresh day leave them at their zero values; the workflow populates them and
+	// threads them through each ContinueAsNew so a day resumes where it left off
+	// without re-scraping or re-deriving its provenance label.
+
+	// S3Key points to the scraped .ndjson in s3. Empty on the first run, which
+	// is the signal to run the scrape activity; populated and carried forward
+	// thereafter.
+	S3Key string
+	// Source is the provenance label for created records. Pinned on the first
+	// run (it embeds the RunID, which changes on every ContinueAsNew) and carried
+	// forward so a day's records all share one source string.
+	Source string
+	// Offset is the byte position in the .ndjson to resume reading from.
+	Offset int64
+	// Counts accumulates results across every run in the ContinueAsNew chain so
+	// the final run returns the day's grand total.
+	Counts counts.Counts
 }
 
 func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (counts.Counts, error) {
 	l := workflow.GetLogger(ctx)
-	out := counts.Counts{}
-	source := in.SourceOverride
-	if source == "" {
-		day := in.Day
-		if day == "" {
-			day = workflow.Now(ctx).AddDate(0, 0, -1).Format("2006-01-02")
+
+	// First run of the ContinueAsNew chain only: pin the source label and scrape
+	// the upstream. Both are threaded through `in` on every subsequent run so we
+	// never re-scrape and a day's records all share one source string.
+	if in.S3Key == "" {
+		source := in.SourceOverride
+		if source == "" {
+			day := in.Day
+			if day == "" {
+				day = workflow.Now(ctx).AddDate(0, 0, -1).Format("2006-01-02")
+			}
+			rid := workflow.GetInfo(ctx).WorkflowExecution.RunID
+			if len(rid) > 8 {
+				rid = rid[:8]
+			}
+			source = fmt.Sprintf("%s-%s-%s", in.Upstream, day, rid)
 		}
-		rid := workflow.GetInfo(ctx).WorkflowExecution.RunID
-		if len(rid) > 8 {
-			rid = rid[:8]
+		in.Source = source
+
+		// fetch metadata from the upstream API and store in s3
+		scrapeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 4 * 60 * 60 * time.Second,
+			TaskQueue:           viper.GetString(fmt.Sprintf("%s.external_task_queue", in.Upstream)),
+		})
+		scrapeIn := scholkitScrapeInput{
+			Day:      in.Day,
+			Upstream: in.Upstream,
 		}
-		source = fmt.Sprintf("%s-%s-%s", in.Upstream, day, rid)
+		var scrapeOut scholkitScrapeOutput
+		if err := workflow.ExecuteActivity(scrapeCtx, ScholkitScrapeActivity, scrapeIn).Get(scrapeCtx, &scrapeOut); err != nil {
+			l.Error(fmt.Sprintf("scholkit %s activity failed: %s", in.Upstream, err))
+			return in.Counts, err
+		}
+		if scrapeOut.S3Key == "" {
+			return in.Counts, fmt.Errorf("scholkit %s returned an empty s3 key", in.Upstream)
+		}
+		in.S3Key = scrapeOut.S3Key
+		l.Info(fmt.Sprintf("scholkit %s s3key: %s", in.Upstream, in.S3Key))
 	}
 
-	// fetch metadata from the upstream API and store in s3
+	// Process the harvested data serially, resuming at in.Offset. We call
+	// ProcessLine once per line and ContinueAsNew periodically so no single run
+	// accumulates enough history to approach Temporal's limits. Only the byte
+	// offset and running totals cross the ContinueAsNew boundary -- never the
+	// (potentially tens-of-MB) offset list.
 
-	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 4 * 60 * 60 * time.Second,
-		TaskQueue:           viper.GetString(fmt.Sprintf("%s.external_task_queue", in.Upstream)),
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	scrapeIn := scholkitScrapeInput{
-		Day:      in.Day,
-		Upstream: in.Upstream,
-	}
-	var scrapeOut scholkitScrapeOutput
-	err := workflow.ExecuteActivity(ctx, ScholkitScrapeActivity, scrapeIn).Get(ctx, &scrapeOut)
-	if err != nil {
-		l.Error(fmt.Sprintf("scholkit %s activity failed: %s", in.Upstream, err))
-		return out, err
-	}
-	l.Info(fmt.Sprintf("scholkit %s s3key: %s", in.Upstream, scrapeOut.S3Key))
-
-	// process the harvested data
-
-	ao = workflow.ActivityOptions{
+	findCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
 		TaskQueue:           viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-
-	batchInput := lineBatchInput{
-		S3Key:    scrapeOut.S3Key,
-		Source:   source,
-		Upstream: in.Upstream,
-	}
-	findInput := harvesting.FindLineBatchInput{
-		S3Key:     scrapeOut.S3Key,
-		BatchSize: viper.GetInt("harvesting.batch_size"),
-		ChunkSize: viper.GetInt("harvesting.chunk_size"),
-	}
-	findOutput := harvesting.FindLineBatchOutput{}
-	childSelector := workflow.NewSelector(ctx)
-	var childCount int
-
-	var childErr error
-	var childCounts counts.Counts
-	for {
-		err := workflow.ExecuteActivity(ctx, harvesting.FindLineBatch, findInput).Get(ctx, &findOutput)
-		if err != nil {
-			return out, err
-		}
-		if len(findOutput.Offsets) > 0 {
-			findInput.Offset = findOutput.BytesRead
-			batchInput.Offsets = findOutput.Offsets
-			childWorkflowOptions := workflow.ChildWorkflowOptions{
-				ParentClosePolicy: enums.PARENT_CLOSE_POLICY_ABANDON,
-			}
-			ctx = workflow.WithChildOptions(ctx, childWorkflowOptions)
-			fut := workflow.ExecuteChildWorkflow(ctx, LineBatchWorkflow, batchInput)
-			var cwe workflow.Execution
-			err := fut.GetChildWorkflowExecution().Get(ctx, &cwe)
-			if err != nil {
-				return out, err
-			}
-			childSelector.AddFuture(fut, func(f workflow.Future) {
-				childErr = f.Get(ctx, &childCounts)
-			})
-			childCount++
-		}
-		if findOutput.EOF {
-			break
-		}
-	}
-
-	for range childCount {
-		childSelector.Select(ctx)
-		if childErr != nil {
-			return out, childErr
-		}
-		out = out.Add(childCounts)
-		l.Info(fmt.Sprintf("child ignored %d lines", childCounts.Releases.Ignored))
-	}
-
-	l.Info(fmt.Sprintf("%#v", out))
-
-	return out, nil
-}
-
-type lineBatchInput struct {
-	// S3Key is a key to a .ndjson file in s3 storage
-	S3Key string
-	// Offsets is a list of pairs of [ReadOffset, Length]
-	Offsets [][]int64
-	// Source identifies what crawl led to the creation of records for provenance purposes
-	Source string
-	// Upstream is which API we're scraping
-	Upstream string
-}
-
-func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, error) {
-	out := counts.Counts{}
-	ao := workflow.ActivityOptions{
+	})
+	procCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout:    4 * time.Hour,
 		ScheduleToCloseTimeout: 8 * time.Hour,
 		HeartbeatTimeout:       2 * time.Minute,
@@ -168,32 +123,61 @@ func LineBatchWorkflow(ctx workflow.Context, in lineBatchInput) (counts.Counts, 
 			InitialInterval:    30 * time.Second,
 			MaximumInterval:    90 * time.Second,
 		},
+	})
+
+	linesPerCAN := viper.GetInt("daily.lines_per_can")
+	if linesPerCAN <= 0 {
+		linesPerCAN = 2000
 	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	findInput := harvesting.FindLineBatchInput{
+		S3Key:     in.S3Key,
+		Offset:    in.Offset,
+		BatchSize: viper.GetInt("harvesting.batch_size"),
+		ChunkSize: viper.GetInt("harvesting.chunk_size"),
+	}
 	lin := harvesting.ProcessLineInput{
 		S3Key:    in.S3Key,
 		Source:   in.Source,
 		Upstream: in.Upstream,
 	}
-	for _, offset := range in.Offsets {
-		lin.LineStart = offset[0]
-		lin.Length = offset[1]
 
-		var c counts.Counts
-
-		// TODO can we afford two or three activities per line? if we can, i'd rather see:
-		// - harvestUpstream
-		// - crawl
-		// - handlePDF
-		// but for now i'll keep it one per line
-
-		err := workflow.ExecuteActivity(ctx, ProcessLine, lin).Get(ctx, &c)
-		if err != nil {
-			return out, err
+	var linesThisRun int
+	for {
+		var findOutput harvesting.FindLineBatchOutput
+		if err := workflow.ExecuteActivity(findCtx, harvesting.FindLineBatch, findInput).Get(findCtx, &findOutput); err != nil {
+			return in.Counts, err
 		}
-		out = out.Add(c)
+
+		for _, offset := range findOutput.Offsets {
+			lin.LineStart = offset[0]
+			lin.Length = offset[1]
+
+			var c counts.Counts
+			if err := workflow.ExecuteActivity(procCtx, ProcessLine, lin).Get(procCtx, &c); err != nil {
+				return in.Counts, err
+			}
+			in.Counts = in.Counts.Add(c)
+			linesThisRun++
+		}
+
+		in.Offset = findOutput.BytesRead
+		findInput.Offset = findOutput.BytesRead
+
+		if findOutput.EOF {
+			l.Info(fmt.Sprintf("day complete for source %q: %#v", in.Source, in.Counts))
+			return in.Counts, nil
+		}
+
+		// Hand off to a fresh run to keep history bounded once we've processed
+		// enough lines (or the server suggests it). Carry only the byte offset
+		// and accumulated counts.
+		if linesThisRun >= linesPerCAN || workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
+			l.Info(fmt.Sprintf("continue-as-new for source %q at offset %d (%d lines this run)",
+				in.Source, in.Offset, linesThisRun))
+			return in.Counts, workflow.NewContinueAsNewError(ctx, DailyCrawlWorkflow, in)
+		}
 	}
-	return out, nil
 }
 
 func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Counts, error) {

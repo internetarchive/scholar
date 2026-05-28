@@ -9,7 +9,23 @@ stages:
 variables:
   GO_VERSION: 1.26.0-trixie
 
+.go-cache:
+  variables:
+    GOMODCACHE: "$CI_PROJECT_DIR/.go/pkg/mod"
+    GOCACHE: "$CI_PROJECT_DIR/.go/build"
+  cache:
+    key:
+      files:
+        - trawler/go.sum
+        - blobproc/go.sum
+        - scholkit/go.sum
+    paths:
+      - .go/pkg/mod/
+      - .go/build/
+    policy: pull-push
+
 build:trawler-build:
+  extends: .go-cache
   stage: build
   image: golang:${GO_VERSION}
   rules:
@@ -26,6 +42,7 @@ build:trawler-build:
     expire_in: 1 week
 
 test:trawler-mr-test:
+  extends: .go-cache
   stage: test
   image: golang:${GO_VERSION}
   rules:
@@ -81,6 +98,7 @@ build-grobid:
 # ======== blobproc ========
 
 test:blobproc:
+  extends: .go-cache
   stage: test
   image: golang:${GO_VERSION}
   variables:
@@ -105,6 +123,7 @@ test:blobproc:
     - make test
 
 build:blobproc-deb:
+  extends: .go-cache
   stage: build
   image: golang:${GO_VERSION}
   variables:
@@ -156,6 +175,7 @@ upload:blobproc:
 # ======== scholkit ========
 
 test:scholkit:
+  extends: .go-cache
   stage: test
   image: golang:${GO_VERSION}
   variables:
@@ -179,6 +199,7 @@ test:scholkit:
     - make test
 
 build:scholkit-deb:
+  extends: .go-cache
   stage: build
   image: golang:${GO_VERSION}
   variables:

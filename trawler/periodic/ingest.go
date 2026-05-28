@@ -662,6 +662,11 @@ func processResult(ctx context.Context, sha1hex string, content pdf.Content) err
 		return &GrobidParseError{Sha1: sha1hex, Err: err}
 	}
 
+	// TODO support non-DOI ext ids
+	if gdoc.Header.DOI == "" {
+		return nil
+	}
+
 	fmt.Printf("DBG %#v\n", gdoc)
 	slog.Info("processed blobproc result",
 		"sha1", sha1hex,

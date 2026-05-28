@@ -14,11 +14,7 @@ variables:
     GOMODCACHE: "$CI_PROJECT_DIR/.go/pkg/mod"
     GOCACHE: "$CI_PROJECT_DIR/.go/build"
   cache:
-    key:
-      files:
-        - trawler/go.sum
-        - blobproc/go.sum
-        - scholkit/go.sum
+    key: scholar-go-mods-v1
     paths:
       - .go/pkg/mod/
       - .go/build/

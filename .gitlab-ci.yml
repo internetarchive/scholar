@@ -22,7 +22,7 @@ build:trawler-build:
     - make trawler
   artifacts:
     paths:
-      - "trawler"
+      - "trawler/"
     expire_in: 1 week
 
 test:trawler-mr-test:

@@ -48,7 +48,6 @@ test:trawler-mr-test:
     - go env -w GOPROXY=https://nexus.us.archive.org/repository/golang-org
     - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
     - make test
-    - make trawlerdebug
 
 upload:trawler-upload:
   stage: upload
@@ -61,12 +60,11 @@ upload:trawler-upload:
     - build:trawler-build
   script:
     - cd trawler
-    - stat trawlerdebug
-    - export VERSION=$(./trawlerdebug && ./trawlerdebug -v | sed 's/trawler version //')
+    - export VERSION=$(./trawler && ./trawler -v | sed 's/trawler version //')
     - echo "Uploading trawler binary to nexus..."
     - |
       curl -fv --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
-        --upload-file trawlerdebug "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
+        --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
 
 build-grobid:
   image: gradle:jre11-slim

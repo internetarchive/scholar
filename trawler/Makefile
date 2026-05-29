@@ -16,9 +16,6 @@ all: $(TARGETS)
 trawler: main.go
 	CGO_ENABLED=0 go build -ldflags="-X main.version=$(VERSION)" -o $@ $<
 
-trawlerdebug: main.go
-	CGO_ENABLED=0 go build -ldflags="-X main.version=$(VERSION)" -o $@ $<
-
 .PHONY: test
 test:
 	go test -short -v -cover ./...

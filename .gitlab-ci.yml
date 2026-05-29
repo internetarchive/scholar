@@ -60,12 +60,14 @@ upload:trawler-upload:
     - build:trawler-build
   script:
     - cd trawler
-    - CGO_ENABLED=0 go build -ldflags="-X main.version=$(shell git describe --tags --match='trawler/v*' | cut -d 'v' -f2 | cut -d'-' -f1)" -o sigh $<
-    - export VERSION=$(./sigh && ./sigh -v | sed 's/trawler version //')
+    - apk add file
+    - make trawlerdebug
+    - stat trawlerdebug && file trawlerdebug
+    - export VERSION=$(./trawlerdebug && ./trawlerdebug -v | sed 's/trawler version //')
     - echo "Uploading trawler binary to nexus..."
     - |
       curl -fv --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
-        --upload-file sigh "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
+        --upload-file trawlerdebug "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
 
 build-grobid:
   image: gradle:jre11-slim

@@ -51,7 +51,7 @@ test:trawler-mr-test:
 
 upload:trawler-upload:
   stage: upload
-  image: curlimages/curl:8.18.0
+  image: curlimages/curl:8.20.0
   variables:
     NEXUS_URL: https://nexus.us.archive.org
   rules:

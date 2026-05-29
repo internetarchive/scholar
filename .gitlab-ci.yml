@@ -67,7 +67,7 @@ test:trawler-mr-test:
 #        --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
 upload:trawler-upload:
   stage: upload
-  image: debian/trixie:13.5
+  image: debian:trixie
   variables:
     NEXUS_URL: https://nexus.us.archive.org
   rules:

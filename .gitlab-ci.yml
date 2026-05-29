@@ -49,9 +49,25 @@ test:trawler-mr-test:
     - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
     - make test
 
+#upload:trawler-upload:
+#  stage: upload
+#  image: curlimages/curl:8.20.0
+#  variables:
+#    NEXUS_URL: https://nexus.us.archive.org
+#  rules:
+#    - if: $CI_COMMIT_TAG =~ /^trawler\/v\d+\.\d+\.\d+$/
+#  dependencies:
+#    - build:trawler-build
+#  script:
+#    - cd trawler
+#    - export VERSION=$(./trawler && ./trawler -v | sed 's/trawler version //')
+#    - echo "Uploading trawler binary to nexus..."
+#    - |
+#      curl -fv --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
+#        --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
 upload:trawler-upload:
   stage: upload
-  image: curlimages/curl:8.20.0
+  image: debian/trixie:13.5
   variables:
     NEXUS_URL: https://nexus.us.archive.org
   rules:

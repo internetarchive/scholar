@@ -6,7 +6,9 @@ SHELL := /bin/bash
 TARGETS := blobproc blobfetch docs/blobproc.1
 PKGNAME := blobproc
 MAKEFLAGS := --jobs=$(shell nproc)
-VERSION := $(shell cat VERSION 2>/dev/null || echo "0.0.0")
+# Version is derived from the git tag (blobproc/v1.2.3 -> 1.2.3), matching
+# trawler and scholkit. No manual bump / VERSION file needed.
+VERSION := $(shell git describe --tags --match='blobproc/v*' | cut -d 'v' -f2 | cut -d '-' -f1)
 
 .PHONY: all
 all: $(TARGETS)
@@ -16,7 +18,7 @@ all: $(TARGETS)
 # breaks on deploy hosts that don't have it installed. glibc stays dynamically
 # linked; deploy target must have glibc >= build host glibc.
 %: cmd/%/main.go
-	CGO_ENABLED=1 go build -o $@ $<
+	CGO_ENABLED=1 go build -ldflags="-X github.com/internetarchive/scholar/blobproc.Version=$(VERSION)" -o $@ $<
 
 .PHONY: test
 test:
@@ -47,10 +49,3 @@ clean:
 .PHONY: deb
 deb: $(TARGETS)
 	GOARCH=amd64 SEMVER=$(VERSION) nfpm package --config nfpm.yaml -p deb
-
-.PHONY: update-version
-update-version:
-	@if [ -z "$(V)" ]; then echo "Usage: make update-version V=x.y.z"; exit 1; fi
-	@echo "$(V)" > VERSION
-	sed -i -e 's@^const Version =.*@const Version = "$(V)"@' version.go
-	@echo "updated version to $(V)"

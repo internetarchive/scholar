@@ -11,10 +11,15 @@ VERSION := $(shell git describe --tags --match='trawler/v*' | cut -d 'v' -f2 | c
 .PHONY: all
 all: $(TARGETS)
 
-# NB we use CGO_ENABLED since many target VMs are very old and have a glibc mismatch
+# CGO_ENABLED=1 so go-fitz (pulled in via blobproc/pdfextract) links the
+# bundled MuPDF static archive at build time. With CGO_ENABLED=0 go-fitz falls
+# back to its purego implementation, which dlopen()s libffi.so.8 + libmupdf.so
+# at runtime and panics in init() on hosts that lack them. glibc stays
+# dynamically linked; the deploy target must have glibc >= build host glibc.
+# (Matches blobproc/Makefile.)
 
 trawler: main.go
-	CGO_ENABLED=0 go build -ldflags="-X main.version=$(VERSION)" -o $@ $<
+	CGO_ENABLED=1 go build -ldflags="-X main.version=$(VERSION)" -o $@ $<
 
 .PHONY: test
 test:

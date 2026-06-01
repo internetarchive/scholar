@@ -7,7 +7,7 @@ stages:
   - build
   - upload
 variables:
-  GO_VERSION: 1.26.0-trixie
+  GO_IMAGE_TAG: 1.26-trixie
 
 .go-cache:
   variables:
@@ -23,7 +23,7 @@ variables:
 build:trawler-build:
   extends: .go-cache
   stage: build
-  image: golang:${GO_VERSION}
+  image: golang:${GO_IMAGE_TAG}
   rules:
     - if: $CI_COMMIT_TAG =~ /^trawler\/v\d+\.\d+\.\d+$/
   script:
@@ -40,7 +40,7 @@ build:trawler-build:
 test:trawler-mr-test:
   extends: .go-cache
   stage: test
-  image: golang:${GO_VERSION}
+  image: golang:${GO_IMAGE_TAG}
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
@@ -49,25 +49,9 @@ test:trawler-mr-test:
     - go env -w 'GOSUMDB=sum.golang.org https://nexus.us.archive.org/repository/raw-sum-golang-proxy'
     - make test
 
-#upload:trawler-upload:
-#  stage: upload
-#  image: curlimages/curl:8.20.0
-#  variables:
-#    NEXUS_URL: https://nexus.us.archive.org
-#  rules:
-#    - if: $CI_COMMIT_TAG =~ /^trawler\/v\d+\.\d+\.\d+$/
-#  dependencies:
-#    - build:trawler-build
-#  script:
-#    - cd trawler
-#    - export VERSION=$(./trawler && ./trawler -v | sed 's/trawler version //')
-#    - echo "Uploading trawler binary to nexus..."
-#    - |
-#      curl -fv --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
-#        --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
 upload:trawler-upload:
   stage: upload
-  image: debian:trixie
+  image: curlimages/curl:8.20.0
   variables:
     NEXUS_URL: https://nexus.us.archive.org
   rules:
@@ -76,8 +60,11 @@ upload:trawler-upload:
     - build:trawler-build
   script:
     - cd trawler
-    - export VERSION=$(./trawler && ./trawler -v | sed 's/trawler version //')
-    - echo "Uploading trawler binary to nexus..."
+    # Derive the version from the tag (trawler/v1.2.3 -> 1.2.3) instead of
+    # executing ./trawler: the binary dlopens libffi.so.8 at init (via
+    # blobproc -> go-fitz -> jupiterrider/ffi) and would crash in this image.
+    - export VERSION=${CI_COMMIT_TAG#trawler/v}
+    - echo "Uploading trawler ${VERSION} binary to nexus..."
     - |
       curl -fv --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file trawler "${NEXUS_URL}/repository/raw-internal/scholar/trawler-${VERSION}"
@@ -112,7 +99,7 @@ build-grobid:
 test:blobproc:
   extends: .go-cache
   stage: test
-  image: golang:${GO_VERSION}
+  image: golang:${GO_IMAGE_TAG}
   variables:
     DEBIAN_FRONTEND: noninteractive
     http_proxy: "http://http-proxy.us.archive.org:8080"
@@ -137,7 +124,7 @@ test:blobproc:
 build:blobproc-deb:
   extends: .go-cache
   stage: build
-  image: golang:${GO_VERSION}
+  image: golang:${GO_IMAGE_TAG}
   variables:
     DEBIAN_FRONTEND: noninteractive
     NFPM_VERSION: "2.44.1"
@@ -174,9 +161,13 @@ upload:blobproc:
       when: on_success
   script:
     - cd blobproc
-    - export VERSION=$(./blobproc version)
+    # Derive the version from the tag (blobproc/v1.2.3 -> 1.2.3) rather than
+    # running ./blobproc: the binary isn't in this job's artifact (only the
+    # .deb is), and it's a glibc-CGO binary that wouldn't run on this Alpine
+    # image anyway. The upload filename comes from the .deb itself.
+    - export VERSION=${CI_COMMIT_TAG#blobproc/v}
     - export DEB_FILE=$(ls *.deb)
-    - echo "uploading $DEB_FILE to $NEXUS_URL..."
+    - echo "uploading $DEB_FILE (v$VERSION) to $NEXUS_URL..."
     - |
       curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file "${DEB_FILE}" \
@@ -189,7 +180,7 @@ upload:blobproc:
 test:scholkit:
   extends: .go-cache
   stage: test
-  image: golang:${GO_VERSION}
+  image: golang:${GO_IMAGE_TAG}
   variables:
     DEBIAN_FRONTEND: noninteractive
     http_proxy: "http://http-proxy.us.archive.org:8080"
@@ -213,7 +204,7 @@ test:scholkit:
 build:scholkit-deb:
   extends: .go-cache
   stage: build
-  image: golang:${GO_VERSION}
+  image: golang:${GO_IMAGE_TAG}
   variables:
     DEBIAN_FRONTEND: noninteractive
     NFPM_VERSION: "2.44.1"
@@ -229,7 +220,8 @@ build:scholkit-deb:
     - go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v${NFPM_VERSION}
     - export PATH=$PATH:$(go env GOPATH)/bin
     - nfpm --version
-    # Extract version from tag (scholkit-1.2.3 -> 1.2.3)
+    # Version (SEMVER) comes from scholkit/Makefile via
+    # `git describe --match 'scholkit/v*'`, e.g. tag scholkit/v1.2.3 -> 1.2.3.
     - cd scholkit
     - make deb
   artifacts:
@@ -248,8 +240,11 @@ upload:scholkit:
       when: on_success
   script:
     - cd scholkit
+    # Tag-derived version (scholkit/v1.2.3 -> 1.2.3), for the log line only;
+    # the upload filename comes from the .deb itself.
+    - export VERSION=${CI_COMMIT_TAG#scholkit/v}
     - export DEB_FILE=$(ls *.deb)
-    - echo "uploading $DEB_FILE to $NEXUS_URL..."
+    - echo "uploading $DEB_FILE (v$VERSION) to $NEXUS_URL..."
     - |
       curl --noproxy '*' -v --user "$NEXUS_ADS_GLCI_PUBLISHER_USERNAME:$NEXUS_ADS_GLCI_PUBLISHER_PASSWORD" \
         --upload-file "${DEB_FILE}" \

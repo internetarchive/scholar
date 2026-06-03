@@ -544,41 +544,50 @@ def run_releases(args) -> None:
 
     batch_len: int = int(args.batch)
 
-    batch = []
+    def flush(candidates: list[uuid.UUID]) -> None:
+        if not candidates:
+            return
+
+        # one round-trip resolves the whole batch: which of these ids are
+        # already in the new db? (replaces one SELECT per id.)
+        with new_conn.cursor() as new_cur:
+            rows = new_cur.execute("""
+                SELECT id FROM fcapi_release
+                WHERE id = ANY(%s)""", [candidates]).fetchall()
+        present = {str(row["id"]) for row in rows}
+
+        to_migrate = [rid for rid in candidates if str(rid) not in present]
+        logger.info(
+            f"batch: {len(candidates)} candidates, {len(present)} already in db, "
+            f"{len(to_migrate)} to migrate")
+        if to_migrate:
+            handle_batch(old_conn, new_conn, cache, to_migrate)
+
+        # cache everything confirmed handled: already-present plus freshly
+        # migrated. only reached if handle_batch didn't raise. one transaction
+        # for the whole batch instead of a commit per key.
+        with cache.transact():
+            for rid in candidates:
+                cache.set(str(rid), True)
+
+    candidates: list[uuid.UUID] = []
     for line in sys.stdin:
         try:
             rid = uuid.UUID(line.strip())
         except ValueError:
-            logger.warn(f"corrupt rid: {line.strip()}")
+            logger.warning(f"corrupt rid: {line.strip()}")
             continue
 
+        # local set-membership check; the db existence check is batched below.
         if cache.get(str(rid)) is not None:
-            logger.info(f"{rid}: found in cache, skipping ahead")
             continue
 
-        with new_conn.cursor() as new_cur:
-            row = new_cur.execute("""
-                SELECT 1 as found FROM fcapi_release
-                WHERE id = %s""", [rid]).fetchone()
-            if row is not None:
-                cache.set(str(rid), True)
-                logger.info(f"{rid}: found in db, skipping")
-                continue
+        candidates.append(rid)
+        if len(candidates) == batch_len:
+            flush(candidates)
+            candidates = []
 
-        batch.append(rid)
-        if len(batch) == batch_len:
-            logger.info("handling batch")
-            handle_batch(old_conn, new_conn, cache, batch)
-            for brid in batch:
-                cache.set(str(brid), True)
-            batch = []
-
-    if len(batch) > 0:
-        logger.info("handling batch")
-        handle_batch(old_conn, new_conn, cache, batch)
-        for brid in batch:
-            cache.set(str(brid), True)
-        batch = []
+    flush(candidates)
 
 
 def run_containers(args) -> None:

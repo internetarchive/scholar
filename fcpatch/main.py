@@ -538,7 +538,9 @@ def handle_batch(old_conn, new_conn, cache, batch):
 def run_releases(args) -> None:
     old_conn = psycopg.connect(args.old_db_url, row_factory=dict_row)
     new_conn = psycopg.connect(args.new_db_url, row_factory=dict_row, autocommit=True)
-    cache = diskcache.Cache("fcpatch")
+    # configure diskcache for basic set membership. letting it have an eviction
+    # policy will lead to a huge WAL file.
+    cache = diskcache.Cache("fcpatch", eviction_policy="none", size_limit=2**42)
 
     batch_len: int = int(args.batch)
 

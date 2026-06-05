@@ -64,7 +64,7 @@ func IndexFulltext(rid uuid.UUID) error {
 	var pdfText []byte
 	var file *fatcat2.File
 	for _, f := range files {
-		s3Key := fmt.Sprintf("%s/%s/%s/%s/%s.txt",
+		s3Key := fmt.Sprintf("%s/%s/%s/%s/%s.tei.xml",
 			s3bucket, "grobid", f.Sha1[0:2], f.Sha1[2:4], f.Sha1)
 		obj, err := s3.GetObject(ctx, s3Key)
 		if err != nil {

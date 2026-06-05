@@ -253,35 +253,33 @@ type taskState struct {
 	sha1hex  string
 	warcItem string
 	warcFile string
-	pdfBytes []byte // populated after stage 2; freed after stage 3
-	pollURL  string // populated after stage 3
+	pdfBytes []byte // populated after stage 2; freed after processing
 }
 
-// ProcessItemActivity is the per-item leaf. It runs five internal stages
+// ProcessItemActivity is the per-item leaf. It runs three internal stages
 // over a single item's PDF rows:
 //
 //  1. parallel fatcat probes (skip what's already known + indexed)
 //  2. parallel petabox Range-GET + WARC payload extract
-//  3. parallel POSTs to blobproc /spool (drops PDF bytes after each)
-//  4. parallel polls until each blob is processed
-//  5. fetch GROBID + pdftotext from S3 and run processResult
+//  3. parallel in-process PDF processing (pdfextract + GROBID, derivatives
+//     written through to S3) followed by processResult on the in-memory output
 //
-// Aligning all stage 3 POSTs inside one blobproc spool cycle is the point of
-// this restructure — blobproc processes its spool in ~10-minute batches, so
-// one item's PDFs share a single cycle instead of paying N×10min serially.
+// Stage 3 used to be a submit/poll/fetch round-trip to blobprocd, gated on its
+// ~10-minute systemd-timer spool cycle. It now calls blobproc.ProcessPDF
+// directly, so there is no spool latency floor. See trawler/daily/BLOBPROC-INLINE.md.
 func ProcessItemActivity(ctx context.Context, in ProcessItemInput) (counts.Counts, error) {
 	l := activity.GetLogger(ctx)
 	out := counts.Counts{}
 	// Per-request timeout bounds hangs from stuck TCP reads (DNS blips,
-	// blobproc/fatcat hiccups, slow petabox reads). Has to be larger than
-	// any single legitimate request: blobproc POSTs for big PDFs are the
-	// slowest, but should still finish well under 5 minutes.
+	// fatcat hiccups, slow petabox reads). Has to be larger than any single
+	// legitimate request but should still finish well under 5 minutes. The
+	// PDF-processing stage uses its own clients (GROBID + S3), not this one.
 	client := &http.Client{Timeout: 5 * time.Minute}
-	processor := pdf.Processor{
-		Client: client,
-		Heartbeater: func(msg string) {
-			activity.RecordHeartbeat(ctx, msg)
-		},
+	processor, err := pdf.NewProcessor(func(msg string) {
+		activity.RecordHeartbeat(ctx, msg)
+	})
+	if err != nil {
+		return out, fmt.Errorf("pdf processor init failed: %w", err)
 	}
 
 	// Stage 0: decode + validate rows into task states.
@@ -328,30 +326,13 @@ func ProcessItemActivity(ctx context.Context, in ProcessItemInput) (counts.Count
 		return out, nil
 	}
 
-	// Stage 3: parallel submits. Each task drops its PDF bytes after a
-	// successful POST so memory stays bounded to ~stageConcurrency PDFs.
-	activity.RecordHeartbeat(ctx, "stage-3-blobproc-submit")
+	// Stage 3: in-process PDF processing (pdfextract + GROBID, derivatives
+	// written through to S3) followed by processResult, run in parallel. Each
+	// task drops its PDF bytes after processing so memory stays bounded to
+	// ~stageConcurrency PDFs.
+	activity.RecordHeartbeat(ctx, "stage-3-process-pdf")
 	stopHB = heartbeat(ctx, "stage-3-progress")
-	tasks, failed = submitToBlobproc(ctx, &processor, tasks)
-	stopHB()
-	out.Pdfs.Failed += failed
-	l.Info("blobproc submission complete", "item", in.Identifier, "submitted", len(tasks), "submit_failures", failed)
-	if len(tasks) == 0 {
-		return out, nil
-	}
-
-	// Stage 4: parallel polls.
-	activity.RecordHeartbeat(ctx, "stage-4-blobproc-poll")
-	stopHB = heartbeat(ctx, "stage-4-progress")
-	tasks, failed = pollBlobproc(ctx, &processor, tasks)
-	stopHB()
-	out.Pdfs.Failed += failed
-	l.Info("blobproc poll complete", "item", in.Identifier, "completed", len(tasks), "poll_failures", failed)
-
-	// Stage 5: fetch results + processResult per blob.
-	activity.RecordHeartbeat(ctx, "stage-5-fetch-and-process")
-	stopHB = heartbeat(ctx, "stage-5-progress")
-	processed, failedFinal := fetchAndRunProcessResult(ctx, &processor, tasks)
+	processed, failedFinal := processTasks(ctx, processor, tasks)
 	stopHB()
 	out.Pdfs.Processed += processed
 	out.Pdfs.Failed += failedFinal
@@ -478,98 +459,12 @@ func fetchAndExtractWARC(ctx context.Context, client *http.Client, tasks []*task
 	return kept, failed
 }
 
-// submitToBlobproc POSTs each task's bytes to blobproc /spool in parallel.
-// On success task.pollURL is set and task.pdfBytes is freed. Per-task
-// submit failures are skipped (returned as count).
-func submitToBlobproc(ctx context.Context, processor *pdf.Processor, tasks []*taskState) (kept []*taskState, failed int) {
-	type outcome struct {
-		t  *taskState
-		ok bool
-	}
-	results := make([]outcome, len(tasks))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, stageConcurrency)
-	for i, t := range tasks {
-		select {
-		case <-ctx.Done():
-			return nil, failed
-		case sem <- struct{}{}:
-		}
-		wg.Add(1)
-		go func(i int, t *taskState) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			pollURL, err := processor.Submit(ctx, t.pdfBytes, t.sha1hex)
-			t.pdfBytes = nil
-			if err != nil {
-				slog.Warn("blobproc submit failed", "sha1", t.sha1hex, "err", err.Error())
-				results[i] = outcome{t: t, ok: false}
-				return
-			}
-			t.pollURL = pollURL
-			results[i] = outcome{t: t, ok: true}
-		}(i, t)
-	}
-	wg.Wait()
-	for _, r := range results {
-		if r.t == nil {
-			continue
-		}
-		if !r.ok {
-			failed++
-			continue
-		}
-		kept = append(kept, r.t)
-	}
-	return kept, failed
-}
-
-// pollBlobproc polls every task's blobproc spool URL in parallel until each
-// returns 404. Per-task poll failures are skipped (returned as count).
-func pollBlobproc(ctx context.Context, processor *pdf.Processor, tasks []*taskState) (kept []*taskState, failed int) {
-	type outcome struct {
-		t  *taskState
-		ok bool
-	}
-	results := make([]outcome, len(tasks))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, stageConcurrency)
-	for i, t := range tasks {
-		select {
-		case <-ctx.Done():
-			return nil, failed
-		case sem <- struct{}{}:
-		}
-		wg.Add(1)
-		go func(i int, t *taskState) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			if err := processor.Poll(ctx, t.pollURL); err != nil {
-				slog.Warn("blobproc poll failed", "sha1", t.sha1hex, "err", err.Error())
-				results[i] = outcome{t: t, ok: false}
-				return
-			}
-			results[i] = outcome{t: t, ok: true}
-		}(i, t)
-	}
-	wg.Wait()
-	for _, r := range results {
-		if r.t == nil {
-			continue
-		}
-		if !r.ok {
-			failed++
-			continue
-		}
-		kept = append(kept, r.t)
-	}
-	return kept, failed
-}
-
-// fetchAndRunProcessResult pulls each task's GROBID + pdftotext output from
-// S3 and runs processResult. GROBID parse failures are counted as failures
-// (not propagated) so one broken paper doesn't abort the activity.
-func fetchAndRunProcessResult(ctx context.Context, processor *pdf.Processor, tasks []*taskState) (processed, failed int) {
+// processTasks runs blobproc.ProcessPDF in-process for each task in parallel
+// (pdfextract + GROBID, derivatives written through to S3), then runs
+// processResult on the in-memory output. Each task drops its PDF bytes after
+// processing. Per-task failures are counted, not propagated, so one bad PDF
+// doesn't abort the item.
+func processTasks(ctx context.Context, processor *pdf.Processor, tasks []*taskState) (processed, failed int) {
 	var (
 		wg  sync.WaitGroup
 		mu  sync.Mutex
@@ -585,9 +480,10 @@ func fetchAndRunProcessResult(ctx context.Context, processor *pdf.Processor, tas
 		go func(t *taskState) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			content, err := processor.Fetch(ctx, t.sha1hex)
+			content, err := processor.Process(ctx, t.pdfBytes, t.sha1hex)
+			t.pdfBytes = nil
 			if err != nil {
-				slog.Warn("blobproc result fetch failed", "sha1", t.sha1hex, "err", err.Error())
+				slog.Warn("pdf processing failed", "sha1", t.sha1hex, "err", err.Error())
 				mu.Lock()
 				failed++
 				mu.Unlock()

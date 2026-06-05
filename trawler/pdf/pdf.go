@@ -1,137 +1,156 @@
-// pdf handles submission of PDF bytes to blobproc, polling for completion,
-// and retrieval of the resulting grobid XML and pdftotext output from S3.
+// pdf runs PDF post-processing (GROBID TEI, pdftotext, page-0 thumbnail)
+// in-process via the blobproc library. Derivatives are written through to S3
+// (the rederivable cache that scholar's web UI and the reindex path read) and
+// also returned in memory so callers can index without an S3 round-trip.
+//
+// This replaces the old HTTP round-trip to blobprocd (POST /spool, poll for
+// completion, fetch results from S3), which imposed a ~10-minute latency floor
+// from blobproc's systemd-timer spool cycle. See trawler/daily/BLOBPROC-INLINE.md.
 package pdf
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
+	"log/slog"
+	"os"
 	"time"
 
-	"git.archive.org/webgroup/scholar/trawler/s3"
+	"github.com/internetarchive/scholar/blobproc"
+	"github.com/miku/grobidclient"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/spf13/viper"
 )
 
-// Content holds the outputs produced by blobproc for a single PDF.
+// defaultGrobidHost is used when [grobid].host is unset in config.
+const defaultGrobidHost = "https://scholar.archive.org/_grobid"
+
+// defaultGrobidMaxFileSize bounds the input we hand to GROBID; larger PDFs
+// still get text + thumbnail but skip the GROBID step.
+const defaultGrobidMaxFileSize = 256 << 20 // 256 MiB
+
+// Content holds the outputs produced for a single PDF.
 type Content struct {
 	GrobidXML []byte
 	PdfText   []byte
 }
 
+// Processor runs blobproc.ProcessPDF in-process. Construct once per activity
+// with NewProcessor and reuse it across PDFs: the GROBID client and S3
+// BlobStore it holds are safe for concurrent use, so Process may be called
+// from multiple goroutines.
 type Processor struct {
-	Client      *http.Client
+	grobid            *grobidclient.Grobid
+	s3                *blobproc.BlobStore
+	grobidMaxFileSize int64
+	// Heartbeater, if set, is invoked periodically while a PDF is being
+	// processed so a long GROBID call doesn't trip an activity HeartbeatTimeout.
 	Heartbeater func(string)
 }
 
-func (p Processor) beatHeart(msg string) {
+// NewProcessor builds a Processor from viper config: [grobid] host/max_filesize
+// and the [s3] endpoint/credentials for the write-through derivative store
+// (same store the rest of trawler reads derivatives from). The optional
+// heartbeat callback is wired to activity.RecordHeartbeat by callers.
+func NewProcessor(heartbeat func(string)) (*Processor, error) {
+	mc, err := minio.New(viper.GetString("s3.endpoint"), &minio.Options{
+		Creds: credentials.NewStaticV4(
+			viper.GetString("s3.access_id"),
+			viper.GetString("s3.secret_key"),
+			"",
+		),
+		Secure: false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("s3 client init failed: %w", err)
+	}
+
+	host := viper.GetString("grobid.host")
+	if host == "" {
+		host = defaultGrobidHost
+	}
+	maxSize := viper.GetInt64("grobid.max_filesize")
+	if maxSize <= 0 {
+		maxSize = defaultGrobidMaxFileSize
+	}
+
+	return &Processor{
+		grobid:            grobidclient.New(host),
+		s3:                &blobproc.BlobStore{Client: mc},
+		grobidMaxFileSize: maxSize,
+		Heartbeater:       heartbeat,
+	}, nil
+}
+
+func (p *Processor) beatHeart(msg string) {
 	if p.Heartbeater != nil {
 		p.Heartbeater(msg)
 	}
 }
 
-// Submit POSTs pdfBs to blobproc's spool endpoint and returns the poll URL
-// blobproc will report completion on. sha1 is the SHA-1 hex digest of pdfBs,
-// used to sanity-check the returned spool URL.
-func (p *Processor) Submit(ctx context.Context, pdfBs []byte, sha1 string) (string, error) {
-	endpoint := viper.GetString("blobproc.endpoint")
-
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint+"/spool", bytes.NewBuffer(pdfBs))
-	if err != nil {
-		return "", fmt.Errorf("could not form blobproc request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/pdf")
-
-	resp, err := p.Client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("blobproc request error: %w", err)
-	}
-	if resp.StatusCode != 202 {
-		return "", fmt.Errorf("unexpected status from blobproc '%d'", resp.StatusCode)
-	}
-	p.beatHeart("blobproc-submitted")
-
-	loc := resp.Header.Get("Location")
-	if loc == "" {
-		return "", fmt.Errorf("got blank spool url from blobproc")
-	}
-
-	pu, err := url.Parse(loc)
-	if err != nil {
-		return "", fmt.Errorf("could not parse blobproc spool url %q: %w", loc, err)
-	}
-
-	pollURL := endpoint + pu.Path
-	if !strings.Contains(pollURL, sha1) {
-		return "", fmt.Errorf("expected sha1 %q in spool url %q", sha1, pollURL)
-	}
-	return pollURL, nil
-}
-
-// Poll waits for blobproc to finish processing the blob at pollURL (signalled
-// by a 404 response).
-func (p *Processor) Poll(ctx context.Context, pollURL string) error {
-	pollReq, err := http.NewRequestWithContext(ctx, "GET", pollURL, nil)
-	if err != nil {
-		return fmt.Errorf("could not form blobproc poll request: %w", err)
-	}
-	interval := viper.GetDuration("blobproc.poll_interval")
-	for {
-		p.beatHeart("blobproc-poll")
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(interval):
-		}
-		resp, err := p.Client.Do(pollReq)
-		if err != nil {
-			return fmt.Errorf("error polling blobproc: %w", err)
-		}
-		if resp.StatusCode == 404 {
-			return nil
-		}
-	}
-}
-
-// Fetch retrieves the grobid XML and pdftotext output that blobproc wrote to
-// S3 for the given sha1.
-func (p *Processor) Fetch(ctx context.Context, sha1 string) (Content, error) {
-	s3bucket := viper.GetString("blobproc.s3bucket")
-
-	grobidKey := fmt.Sprintf("%s/grobid/%s/%s/%s.tei.xml", s3bucket, sha1[0:2], sha1[2:4], sha1)
-	obj, err := s3.GetObject(ctx, grobidKey)
-	if err != nil {
-		return Content{}, fmt.Errorf("blobproc grobid s3 read failed: %w", err)
-	}
-	grobidXML, err := io.ReadAll(obj)
-	if err != nil {
-		return Content{}, fmt.Errorf("could not read grobid output: %w", err)
-	}
-
-	pdftotextKey := fmt.Sprintf("%s/text/%s/%s/%s.txt", s3bucket, sha1[0:2], sha1[2:4], sha1)
-	obj, err = s3.GetObject(ctx, pdftotextKey)
-	if err != nil {
-		return Content{}, fmt.Errorf("blobproc pdftotext s3 read failed: %w", err)
-	}
-	pdfText, err := io.ReadAll(obj)
-	if err != nil {
-		return Content{}, fmt.Errorf("could not read pdftotext output: %w", err)
-	}
-
-	return Content{GrobidXML: grobidXML, PdfText: pdfText}, nil
-}
-
-// Process is a convenience: Submit → Poll → Fetch.
+// Process runs the full per-PDF pipeline (pdfextract for text + thumbnail, then
+// GROBID for TEI) on pdfBs. Derivatives are written through to S3 and the
+// GROBID XML + extracted text are returned in memory. sha1 is used only for
+// logging; blobproc derives the canonical sha1 from the bytes for S3 keys.
+//
+// An error is returned when GROBID produced no TEI (the indexer needs it);
+// text and thumbnail, which blobproc writes before GROBID, are persisted to S3
+// regardless.
 func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Content, error) {
-	pollURL, err := p.Submit(ctx, pdfBs, sha1)
+	f, err := os.CreateTemp("", "trawler-pdf-*.pdf")
 	if err != nil {
-		return Content{}, err
+		return Content{}, fmt.Errorf("could not create temp file: %w", err)
 	}
-	if err := p.Poll(ctx, pollURL); err != nil {
-		return Content{}, err
+	defer os.Remove(f.Name())
+	if _, err := f.Write(pdfBs); err != nil {
+		f.Close()
+		return Content{}, fmt.Errorf("could not write temp pdf: %w", err)
 	}
-	return p.Fetch(ctx, sha1)
+	if err := f.Close(); err != nil {
+		return Content{}, fmt.Errorf("could not close temp pdf: %w", err)
+	}
+
+	// Keep the activity alive across the synchronous GROBID call.
+	stop := p.heartbeatLoop(ctx)
+	defer stop()
+
+	result, errs := blobproc.ProcessPDF(ctx, blobproc.ProcessPDFParams{
+		Path:              f.Name(),
+		Size:              int64(len(pdfBs)),
+		Grobid:            p.grobid,
+		S3:                p.s3,
+		GrobidMaxFileSize: p.grobidMaxFileSize,
+		Logger:            slog.Default(),
+	})
+	for _, e := range errs {
+		slog.Warn("pdf processing error", "sha1", sha1, "err", e.Error())
+	}
+	if len(result.TEI) == 0 {
+		return Content{}, fmt.Errorf("no GROBID output for %s (%d processing errors)", sha1, len(errs))
+	}
+	return Content{GrobidXML: result.TEI, PdfText: []byte(result.Text)}, nil
+}
+
+// heartbeatLoop fires Heartbeater every 30s until the returned stop func is
+// called (or ctx is cancelled). It is a no-op when no Heartbeater is set.
+func (p *Processor) heartbeatLoop(ctx context.Context) (stop func()) {
+	if p.Heartbeater == nil {
+		return func() {}
+	}
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				p.beatHeart("pdf-processing")
+			}
+		}
+	}()
+	return func() { close(done) }
 }

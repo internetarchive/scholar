@@ -245,9 +245,18 @@ replay_endpoint = "https://web.archive.org/web/"
 retries = 4
 backoff = "10s"
 
+[grobid]
+# GROBID host trawler sends PDFs to for TEI extraction. PDF processing is now
+# in-process via the blobproc library (see trawler/daily/BLOBPROC-INLINE.md),
+# so trawler talks to GROBID directly rather than through blobprocd.
+host = "https://scholar.archive.org/_grobid"
+# PDFs larger than this (bytes) skip GROBID but still get text + thumbnail.
+max_filesize = 268435456  # 256 MiB
+
 [blobproc]
-endpoint = "http://wbgrp-svc510.us.archive.org:9444"
-poll_interval = "2s"
+# s3bucket names the derivative-store bucket (GROBID TEI + pdftotext) that the
+# reindex path reads. Derivatives are written through to the [s3] store above
+# during processing. The old blobprocd HTTP endpoint / poll_interval are gone.
 s3bucket = "sandcrawler"
 
 [indexing]

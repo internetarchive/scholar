@@ -410,17 +410,17 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		return out, nil
 	}
 
-	pdfProcessor := pdf.Processor{
-		Client: client,
-		Heartbeater: func(msg string) {
-			activity.RecordHeartbeat(ctx, msg)
-		},
+	pdfProcessor, err := pdf.NewProcessor(func(msg string) {
+		activity.RecordHeartbeat(ctx, msg)
+	})
+	if err != nil {
+		return out, fmt.Errorf("pdf processor init failed: %w", err)
 	}
 
 	activity.RecordHeartbeat(ctx, "pre-pdf-process")
 	pdfContent, err := pdfProcessor.Process(ctx, pdfBs, file.Sha1)
 	if err != nil {
-		return out, fmt.Errorf("blobproc processing failed: %w", err)
+		return out, fmt.Errorf("pdf processing failed: %w", err)
 	}
 	activity.RecordHeartbeat(ctx, "post-pdf-process")
 

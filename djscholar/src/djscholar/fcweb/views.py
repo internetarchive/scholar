@@ -1042,6 +1042,20 @@ _CHANGELOG_VIEW_NAMES = {
 _CHANGELOG_PAGE_SIZE = 50
 
 
+def _format_cursor(entity) -> str:
+    """Encode a row's keyset position for use in a pagination link."""
+    return f"{entity.updated.isoformat()}_{entity.id}"
+
+
+def _parse_cursor(raw: str) -> tuple[datetime.datetime, uuid.UUID] | None:
+    """Decode a keyset cursor, or None if malformed (caller falls back to page 1)."""
+    try:
+        updated_str, id_str = raw.rsplit("_", 1)
+        return datetime.datetime.fromisoformat(updated_str), uuid.UUID(id_str)
+    except (ValueError, AttributeError):
+        return None
+
+
 def changelog_view(request: HttpRequest) -> HttpResponse:
     entity_type = request.GET.get("entity_type", "releases")
     if entity_type not in _CHANGELOG_ENTITY_LABELS:
@@ -1056,18 +1070,36 @@ def changelog_view(request: HttpRequest) -> HttpResponse:
     else:
         start_date = datetime.date.today()
 
-    try:
-        offset = max(0, int(request.GET.get("offset", 0)))
-    except (ValueError, TypeError):
-        offset = 0
-
     source = request.GET.get("source", "").strip() or None
 
-    total = changelog_svc.recent_count(entity_type, start_date, source=source)
-    entries = changelog_svc.recent(
-        entity_type, start_date, limit=_CHANGELOG_PAGE_SIZE, offset=offset,
-        source=source,
+    # Keyset pagination: at most one of newer_than/older_than is set, carrying
+    # the boundary row's (updated, id). A malformed cursor falls back to page 1.
+    cursor = None
+    direction = "older"
+    newer_than = request.GET.get("newer_than")
+    older_than = request.GET.get("older_than")
+    if newer_than:
+        cursor = _parse_cursor(newer_than)
+        direction = "newer"
+    elif older_than:
+        cursor = _parse_cursor(older_than)
+        direction = "older"
+    if cursor is None:
+        direction = "older"
+
+    entries, has_more = changelog_svc.recent_page(
+        entity_type, start_date, limit=_CHANGELOG_PAGE_SIZE, source=source,
+        cursor=cursor, direction=direction,
     )
+
+    # On the first page there is nothing newer; otherwise the page we came from
+    # proves the opposite direction exists, and has_more covers the travelled one.
+    if cursor is None:
+        show_newer, show_older = False, has_more
+    elif direction == "older":
+        show_newer, show_older = True, has_more
+    else:
+        show_newer, show_older = has_more, True
 
     return _render(request, "fcweb/changelog.html", {
         "entity_type": entity_type,
@@ -1078,10 +1110,11 @@ def changelog_view(request: HttpRequest) -> HttpResponse:
         "next_date": start_date + datetime.timedelta(days=1),
         "today": datetime.date.today(),
         "entries": entries,
-        "total": total,
-        "offset": offset,
-        "page_size": _CHANGELOG_PAGE_SIZE,
         "source_filter": source,
+        "show_newer": show_newer,
+        "show_older": show_older,
+        "newer_cursor": _format_cursor(entries[0]) if entries else None,
+        "older_cursor": _format_cursor(entries[-1]) if entries else None,
     })
 
 

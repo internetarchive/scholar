@@ -115,20 +115,18 @@
   </tbody>
 </table>
 
-{% set prev_offset = offset - page_size %}
-{% set next_offset = offset + page_size %}
 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; font-size: 0.9rem;">
   <div>
-    {% if prev_offset >= 0 %}
-      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&offset={{ prev_offset }}{{ src_qs }}">&laquo; Newer</a>
+    {% if show_newer and newer_cursor %}
+      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&newer_than={{ newer_cursor|urlencode }}{{ src_qs }}">&laquo; Newer</a>
     {% endif %}
   </div>
   <div style="color: #555;">
-    {{ offset + 1 }}&ndash;{{ offset + entries|length }} of {{ "{:,}".format(total) }}
+    {{ entries|length }} shown
   </div>
   <div>
-    {% if next_offset < total %}
-      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&offset={{ next_offset }}{{ src_qs }}">Older &raquo;</a>
+    {% if show_older and older_cursor %}
+      <a href="{{ url('fcweb:changelog_view') }}?entity_type={{ entity_type }}&date={{ date }}&older_than={{ older_cursor|urlencode }}{{ src_qs }}">Older &raquo;</a>
     {% endif %}
   </div>
 </div>

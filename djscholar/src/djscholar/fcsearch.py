@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from django.conf import settings
+from django.core.cache import cache
 
 from djscholar import es
 from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
@@ -932,7 +933,42 @@ def get_inbound_refs(
 # -- Global stats queries ----------------------------------------------------
 
 
+_ENTITY_STATS_CACHE_KEY = "fcsearch:entity_stats"
+# Catalog-wide totals barely move between page loads; cache them so constant
+# /stats traffic (eg, bots) doesn't translate into constant ES aggregations.
+_ENTITY_STATS_TTL = 15 * 60
+# A failed/degraded result is cached only briefly: long enough to throttle a
+# retry storm against a struggling ES, short enough to recover quickly.
+_ENTITY_STATS_FAIL_TTL = 60
+_ENTITY_STATS_UNAVAILABLE = "__unavailable__"
+
+
+def _entity_stats_ok(stats: dict[str, Any] | None) -> bool:
+    """A real result always has releases; zero/None means the query failed."""
+    return bool(stats) and stats.get("release", {}).get("total", 0) > 0
+
+
 def get_entity_stats() -> dict[str, Any] | None:
+    """Global entity stats from ES, cached to shield ES from /stats traffic.
+
+    Successful results are cached for _ENTITY_STATS_TTL; failures are negatively
+    cached for a much shorter window so repeated hits during an ES outage don't
+    re-query on every request.
+    """
+    cached = cache.get(_ENTITY_STATS_CACHE_KEY)
+    if cached is not None:
+        return None if cached == _ENTITY_STATS_UNAVAILABLE else cached
+
+    stats = _compute_entity_stats()
+    if _entity_stats_ok(stats):
+        cache.set(_ENTITY_STATS_CACHE_KEY, stats, _ENTITY_STATS_TTL)
+    else:
+        cache.set(_ENTITY_STATS_CACHE_KEY, _ENTITY_STATS_UNAVAILABLE,
+                  _ENTITY_STATS_FAIL_TTL)
+    return stats
+
+
+def _compute_entity_stats() -> dict[str, Any] | None:
     """Fetch global entity stats from ES (releases, papers, containers)."""
     try:
         client = es.client()
@@ -941,7 +977,11 @@ def get_entity_stats() -> dict[str, Any] | None:
 
     stats: dict[str, Any] = {}
 
-    # -- release totals + ref count --
+    # -- releases: index-wide total + ref-count sum, plus the paper-like subset --
+    # A single request: with no top-level query, hits.total is all releases and
+    # the ref_count sum is global, while the paper-like breakdown is a scoped
+    # `filter` sub-aggregation. This shares one collection pass and one round
+    # trip with what used to be two separate searches.
     try:
         resp = client.search(
             index=settings.ES_FATCAT_RELEASE_INDEX,
@@ -949,63 +989,50 @@ def get_entity_stats() -> dict[str, Any] | None:
                 "size": 0,
                 "aggs": {
                     "release_ref_count": {"sum": {"field": "ref_count"}},
-                },
-            },
-            request_cache=True,
-            track_total_hits=True,
-        )
-        total_hits = resp["hits"]["total"]
-        stats["release"] = {
-            "total": total_hits["value"] if isinstance(total_hits, dict) else total_hits,
-            "refs_total": int(resp["aggregations"]["release_ref_count"]["value"]),
-        }
-    except Exception:
-        stats["release"] = {"total": 0, "refs_total": 0}
-
-    # -- paper-like subset (article-journal + paper-conference) --
-    try:
-        resp = client.search(
-            index=settings.ES_FATCAT_RELEASE_INDEX,
-            body={
-                "size": 0,
-                "query": {
-                    "terms": {
-                        "release_type": ["article-journal", "paper-conference"],
-                    }
-                },
-                "aggs": {
                     "paper_like": {
-                        "filters": {
-                            "filters": {
-                                "in_web": {"term": {"in_web": True}},
-                                "is_oa": {"term": {"is_oa": True}},
-                                "in_kbart": {"term": {"in_kbart": True}},
-                                "in_web_not_kbart": {
+                        "filter": {
+                            "terms": {
+                                "release_type": [
+                                    "article-journal", "paper-conference",
+                                ],
+                            }
+                        },
+                        "aggs": {
+                            "in_web": {"filter": {"term": {"in_web": True}}},
+                            "is_oa": {"filter": {"term": {"is_oa": True}}},
+                            "in_kbart": {"filter": {"term": {"in_kbart": True}}},
+                            "in_web_not_kbart": {
+                                "filter": {
                                     "bool": {
                                         "filter": [
                                             {"term": {"in_web": True}},
                                             {"term": {"in_kbart": False}},
                                         ]
                                     }
-                                },
-                            }
-                        }
-                    }
+                                }
+                            },
+                        },
+                    },
                 },
             },
             request_cache=True,
             track_total_hits=True,
         )
         total_hits = resp["hits"]["total"]
-        buckets = resp["aggregations"]["paper_like"]["buckets"]
-        stats["papers"] = {
+        paper_agg = resp["aggregations"]["paper_like"]
+        stats["release"] = {
             "total": total_hits["value"] if isinstance(total_hits, dict) else total_hits,
-            "in_web": buckets["in_web"]["doc_count"],
-            "is_oa": buckets["is_oa"]["doc_count"],
-            "in_kbart": buckets["in_kbart"]["doc_count"],
-            "in_web_not_kbart": buckets["in_web_not_kbart"]["doc_count"],
+            "refs_total": int(resp["aggregations"]["release_ref_count"]["value"]),
+        }
+        stats["papers"] = {
+            "total": paper_agg["doc_count"],
+            "in_web": paper_agg["in_web"]["doc_count"],
+            "is_oa": paper_agg["is_oa"]["doc_count"],
+            "in_kbart": paper_agg["in_kbart"]["doc_count"],
+            "in_web_not_kbart": paper_agg["in_web_not_kbart"]["doc_count"],
         }
     except Exception:
+        stats["release"] = {"total": 0, "refs_total": 0}
         stats["papers"] = {"total": 0, "in_web": 0, "is_oa": 0, "in_kbart": 0, "in_web_not_kbart": 0}
 
     # -- container totals --

@@ -456,7 +456,7 @@ class TestBuildResultBasic:
 
     def test_fatcat_url(self):
         result = _build_result(_make_hit(biblio={"release_ident": "aaaaaaaaaaaaaaaaaaaaaaaaae"}))
-        assert result["fatcat_url"] == "https://scholar.archive.org/_sd/fatcat/release/00000000-0000-0000-0000-000000000001"
+        assert result["fatcat_url"] == "https://scholar.archive.org/fatcat/release/00000000-0000-0000-0000-000000000001"
 
     def test_fatcat_url_missing_ident(self):
         result = _build_result(_make_hit(biblio={}))
@@ -549,12 +549,12 @@ class TestRewriteAccessUrl:
     def test_wayback_url_rewritten(self):
         url = "https://web.archive.org/web/20210315120000/https://example.com/paper.pdf"
         result = _rewrite_access_url(url, "aaaaaaaaaaaaaaaaaaaaaaaaae")
-        assert result == "/_sd/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/wayback/https://example.com/paper.pdf"
+        assert result == "/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/wayback/https://example.com/paper.pdf"
 
     def test_ia_file_url_rewritten(self):
         url = "https://archive.org/download/some-item/path/to/file.pdf"
         result = _rewrite_access_url(url, "aaaaaaaaaaaaaaaaaaaaaaaaae")
-        assert result == "/_sd/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/ia_file/some-item/path/to/file.pdf"
+        assert result == "/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/ia_file/some-item/path/to/file.pdf"
 
     def test_other_url_unchanged(self):
         url = "https://example.com/paper.pdf"
@@ -571,17 +571,17 @@ class TestRewriteAccessUrl:
     def test_wayback_url_with_query_string(self):
         url = "https://web.archive.org/web/20210315120000/https://example.com/paper.pdf?dl=1"
         result = _rewrite_access_url(url, "aaaaaaaaaaaaaaaaaaaaaaaaae")
-        assert result == "/_sd/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/wayback/https://example.com/paper.pdf?dl=1"
+        assert result == "/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/wayback/https://example.com/paper.pdf?dl=1"
 
     def test_wayback_http_url(self):
         url = "http://web.archive.org/web/20210315120000/https://example.com/paper.pdf"
         result = _rewrite_access_url(url, "aaaaaaaaaaaaaaaaaaaaaaaaae")
-        assert result == "/_sd/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/wayback/https://example.com/paper.pdf"
+        assert result == "/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/wayback/https://example.com/paper.pdf"
 
     def test_ia_file_url_with_spaces_encoded(self):
         url = "https://archive.org/download/my-item/my%20file.pdf"
         result = _rewrite_access_url(url, "aaaaaaaaaaaaaaaaaaaaaaaaae")
-        assert result == "/_sd/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/ia_file/my-item/my%20file.pdf"
+        assert result == "/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/ia_file/my-item/my%20file.pdf"
 
 
 class TestBuildResultAccessUrlRewriting:
@@ -589,13 +589,13 @@ class TestBuildResultAccessUrlRewriting:
         result = _build_result(_make_hit(fulltext={
             "access_url": "https://web.archive.org/web/20210315120000/https://example.com/paper.pdf",
         }))
-        assert result["access_url"] == "/_sd/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/wayback/https://example.com/paper.pdf"
+        assert result["access_url"] == "/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/wayback/https://example.com/paper.pdf"
 
     def test_ia_file_access_url_routed_through_redirect(self):
         result = _build_result(_make_hit(fulltext={
             "access_url": "https://archive.org/download/some-item/paper.pdf",
         }))
-        assert result["access_url"] == "/_sd/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/ia_file/some-item/paper.pdf"
+        assert result["access_url"] == "/work/aaaaaaaaaaaaaaaaaaaaaaaaae/access/ia_file/some-item/paper.pdf"
 
     def test_non_archive_url_unchanged(self):
         result = _build_result(_make_hit(fulltext={

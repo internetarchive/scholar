@@ -552,12 +552,12 @@ def _rewrite_access_url(access_url: str, work_ident: str) -> str:
     m = _WAYBACK_URL_RE.match(access_url)
     if m:
         original_url = m.group(1)
-        return f"/_sd/work/{work_ident}/access/wayback/{original_url}"
+        return f"/work/{work_ident}/access/wayback/{original_url}"
 
     m = _IA_FILE_URL_RE.match(access_url)
     if m:
         item, file_path = m.group(1), m.group(2)
-        return f"/_sd/work/{work_ident}/access/ia_file/{item}/{file_path}"
+        return f"/work/{work_ident}/access/ia_file/{item}/{file_path}"
 
     return access_url
 
@@ -623,7 +623,7 @@ def _build_result(hit):
         "work_ident": source.get("work_ident", ""),
         "work_uuid": fcid2uuid(source["work_ident"]) if source.get("work_ident") else "",
         "release_stage": biblio.get("release_stage", ""),
-        "fatcat_url": f"https://scholar.archive.org/_sd/fatcat/release/{fcid2uuid(biblio['release_ident'])}" if biblio.get("release_ident") else "",
+        "fatcat_url": f"https://scholar.archive.org/fatcat/release/{fcid2uuid(biblio['release_ident'])}" if biblio.get("release_ident") else "",
     }
 
 

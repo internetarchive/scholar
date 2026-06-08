@@ -423,7 +423,17 @@ SORT_LABELS = [
 ]
 
 DEFAULT_PAGE_SIZE = 20
-DEEP_PAGE_LIMIT = 2000
+# Cap the deepest reachable offset. Deep `from`/`size` paging makes every ES
+# shard sort `from + size` docs, so per-query cost (and the number of crawlable
+# pagination URLs) scales linearly with this value. 200 == 10 pages of 20; bump
+# it if deeper browsing is needed.
+DEEP_PAGE_LIMIT = 200
+# Stop ES counting matches past this many. `track_total_hits: true` forces an
+# exact count of every matching doc on every query, which is pathological for
+# the broad queries that dominate load. Capping makes ES return "N+" once the
+# cap is reached, which is all the UI needs. Keep this comfortably above the
+# reachable result window (DEEP_PAGE_LIMIT + page_size).
+TRACK_TOTAL_HITS = 10000
 DEFAULT_DATE_FILTER = "all_time"
 DEFAULT_TYPE_FILTER = "papers"
 DEFAULT_ACCESS_FILTER = "fulltext"
@@ -506,7 +516,7 @@ def _build_es_body(q, offset, page_size, date_filter, type_filter, access_filter
 
     body = {
         "query": query,
-        "track_total_hits": True,
+        "track_total_hits": TRACK_TOTAL_HITS,
         "from": offset,
         "size": page_size,
         "collapse": {
@@ -687,17 +697,23 @@ def search(request: HttpRequest) -> HttpResponse:
 
     if data is not None:
         took_secs = round(data.get("took", 0) / 1000, 2)
-        total = data.get("hits", {}).get("total", {}).get("value", 0)
+        total_obj = data.get("hits", {}).get("total", {})
+        total = total_obj.get("value", 0)
+        # ES reports relation "gte" when the true count exceeds TRACK_TOTAL_HITS;
+        # the template then renders the total as an estimate ("N+").
+        total_is_estimate = total_obj.get("relation") == "gte"
         hits = data.get("hits", {}).get("hits", [])
 
         # Adjust total when collapse returns fewer than a full page on first page
         if offset == 0 and len(hits) < page_size:
             total = len(hits)
+            total_is_estimate = False
 
         results = [_build_result(h) for h in hits]
     else:
         took_secs = 0
         total = 0
+        total_is_estimate = False
         results = []
 
     mode = request.GET.get("mode", "list")
@@ -716,6 +732,7 @@ def search(request: HttpRequest) -> HttpResponse:
         "has_prev": page > 1,
         "has_next": page < total_pages and not clamped,
         "total": total,
+        "total_is_estimate": total_is_estimate,
         "took_secs": took_secs,
         "date_filter": date_filter,
         "date_filter_labels": DATE_FILTER_LABELS,

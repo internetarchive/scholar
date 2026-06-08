@@ -191,7 +191,7 @@
   <div class="search-layout">
     <div class="sidebar">
       <div class="sidebar-top">
-        <div class="result-count"><strong>{{ total|intcomma }}</strong> hits</div>
+        <div class="result-count"><strong>{{ total|intcomma }}{% if total_is_estimate %}+{% endif %}</strong> hits</div>
         <div class="query-time">in {{ took_secs }}s</div>
       </div>
       <div class="mode-toggle">

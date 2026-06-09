@@ -318,8 +318,10 @@ def release_view(request: HttpRequest, ident: str) -> HttpResponse:
             raise Http404(f"release not found: {ident}")
         return _render(request, "fcweb/release_view.html", ctx)
 
-    authors = release_svc.get_authors(release_uuid)
     contribs = list(release_svc.get_contribs(release_uuid))
+    # authors are the author-role subset of contribs; derive in Python rather
+    # than issuing a second ReleaseContrib query (matches get_authors()).
+    authors = [c for c in contribs if c.role in ("author", "") or c.role is None]
     extids = release_svc.get_extids(release_uuid)
     abstracts = list(release_svc.get_abstracts(release_uuid))
     files = list(release_svc.get_files(release_uuid))

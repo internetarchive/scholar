@@ -9,7 +9,9 @@ from djscholar.fcapi.services import EntityNotFound, _entity_schema_metadata
 
 def get(ident: UUID) -> m.Release:
     try:
-        return m.Release.objects.get(id=ident)
+        # select_related the container so callers that render it (most release
+        # views) don't trigger a second lazy FK query per request.
+        return m.Release.objects.select_related("container").get(id=ident)
     except m.Release.DoesNotExist:
         raise EntityNotFound("release", f"no release with id {ident}")
 

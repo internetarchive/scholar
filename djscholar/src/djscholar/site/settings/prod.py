@@ -24,6 +24,13 @@ DATABASES = {
         'NAME': 'fatcat2',
         'HOST': 'pg.scholar.archive.org',
         'DISABLE_SERVER_SIDE_CURSORS': True,
+        # Reuse the client->pgbouncer connection across requests instead of
+        # opening a fresh one each time (the two remote app nodes pay a
+        # TCP+TLS+auth handshake per request otherwise). CONN_HEALTH_CHECKS
+        # validates a reused connection at request start so a connection
+        # dropped by pgbouncer/network doesn't surface as an error.
+        'CONN_MAX_AGE': 300,
+        'CONN_HEALTH_CHECKS': True,
     }
 }
 

@@ -83,6 +83,17 @@ def get_authors(ident: UUID) -> list[m.ReleaseContrib]:
     )
 
 
+def authors_from_contribs(
+    contribs: list[m.ReleaseContrib],
+) -> list[m.ReleaseContrib]:
+    """The author-role subset of an already-fetched contribs list.
+
+    In-memory equivalent of get_authors(), for callers that have already
+    loaded all of a release's contribs and want to avoid a second query.
+    """
+    return [c for c in contribs if c.role in ("author", "") or c.role is None]
+
+
 def get_extids(ident: UUID) -> dict[str, str]:
     """Return external IDs as a {id_type: id_value} dict."""
     return dict(

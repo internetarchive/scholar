@@ -15,7 +15,7 @@ from django.utils.safestring import mark_safe
 from elasticsearch.exceptions import RequestError, TransportError
 
 import djscholar.es as es
-from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
+from djscholar.fcapi.fcid import fcid2uuid, is_legacy_fcid, uuid2fcid
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import works as work_svc
@@ -769,7 +769,14 @@ def work(request: HttpRequest, work_uuid: str) -> HttpResponse:
 
 
 def work_legacy(request: HttpRequest, work_ident: str) -> HttpResponse:
-    """Redirect old fatcat-ident URLs to the canonical UUID URL."""
+    """Redirect old fatcat-ident URLs to the canonical UUID URL.
+
+    This route is the catch-all for /work/<anything-not-a-uuid>, so it sees a
+    lot of crawler junk. Reject values that don't look like a legacy fatcat
+    ident with a 400 instead of letting the conversion raise a 500.
+    """
+    if not is_legacy_fcid(work_ident):
+        return HttpResponse("invalid work identifier", status=400)
     work_uuid = fcid2uuid(work_ident)
     return redirect(resolve_url("ftsearch:work", work_uuid=work_uuid), permanent=True)
 

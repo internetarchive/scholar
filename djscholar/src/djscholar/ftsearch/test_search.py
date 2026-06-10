@@ -1,3 +1,5 @@
+from django.test import RequestFactory
+
 from djscholar.ftsearch.views import (
     DEFAULT_ACCESS_FILTER,
     DEFAULT_DATE_FILTER,
@@ -10,6 +12,7 @@ from djscholar.ftsearch.views import (
     _rewrite_access_url,
     _rewrite_id_query,
     _build_es_body,
+    work_legacy,
 )
 
 
@@ -606,3 +609,20 @@ class TestBuildResultAccessUrlRewriting:
     def test_no_access_url(self):
         result = _build_result(_make_hit(fulltext={}))
         assert result["access_url"] == ""
+
+
+class TestWorkLegacyRedirect:
+    """/work/<non-uuid> falls through to work_legacy, which gets a lot of
+    crawler junk. Junk should be a 400, not a 500 from a failed conversion."""
+
+    def test_junk_ident_returns_400(self):
+        request = RequestFactory().get("/work/not-an-ident")
+        response = work_legacy(request, "not-an-ident")
+        assert response.status_code == 400
+
+    def test_right_length_wrong_alphabet_returns_400(self):
+        # 26 chars but uses 0/1 which aren't in the base32 alphabet; this is
+        # exactly the shape that used to trip the assertion -> 500.
+        request = RequestFactory().get("/work/00000000000000000000000000")
+        response = work_legacy(request, "0" * 26)
+        assert response.status_code == 400

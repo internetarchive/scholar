@@ -434,6 +434,13 @@ DEEP_PAGE_LIMIT = 200
 # cap is reached, which is all the UI needs. Keep this comfortably above the
 # reachable result window (DEEP_PAGE_LIMIT + page_size).
 TRACK_TOTAL_HITS = 10000
+# Stop requesting highlights once paging past this offset. Highlighting
+# (re-analyzing fulltext bodies to build snippets) is one of the costliest
+# parts of the fetch phase. Humans rarely browse past the first few pages;
+# deeper pages are dominated by crawlers that never render snippets. With
+# DEFAULT_PAGE_SIZE this keeps highlights on pages 1-3 (offsets 0/20/40) and
+# drops them from page 4 on.
+HIGHLIGHT_OFFSET_LIMIT = 60
 DEFAULT_DATE_FILTER = "all_time"
 DEFAULT_TYPE_FILTER = "papers"
 DEFAULT_ACCESS_FILTER = "fulltext"
@@ -526,7 +533,11 @@ def _build_es_body(q, offset, page_size, date_filter, type_filter, access_filter
                 "size": 0,
             },
         },
-        "highlight": {
+    }
+
+    # Only request highlights for the first few pages; see HIGHLIGHT_OFFSET_LIMIT.
+    if offset < HIGHLIGHT_OFFSET_LIMIT:
+        body["highlight"] = {
             "fields": HIGHLIGHT_FIELDS,
             "require_field_match": False,
             "highlight_query": {
@@ -536,8 +547,7 @@ def _build_es_body(q, offset, page_size, date_filter, type_filter, access_filter
                     "lenient": True,
                 }
             },
-        },
-    }
+        }
 
     sort_clause = SORT_OPTIONS[sort]
     if sort_clause:

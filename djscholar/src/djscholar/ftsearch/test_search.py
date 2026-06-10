@@ -6,6 +6,7 @@ from djscholar.ftsearch.views import (
     DEFAULT_PAGE_SIZE,
     DEFAULT_SORT,
     DEFAULT_TYPE_FILTER,
+    HIGHLIGHT_OFFSET_LIMIT,
     SORT_OPTIONS,
     _build_result,
     _get_access_options,
@@ -239,6 +240,18 @@ class TestPaginationAndHighlight:
         hq = body["highlight"]["highlight_query"]["query_string"]
         assert hq["query"] == "bovine tuberculosis"
         assert "fields" not in hq
+
+    def test_highlight_present_within_offset_limit(self):
+        # last offset that still highlights
+        body = _build_es_body(**_defaults(offset=HIGHLIGHT_OFFSET_LIMIT - 1))
+        assert "highlight" in body
+
+    def test_highlight_dropped_past_offset_limit(self):
+        # deep pages skip the expensive highlight phase
+        body = _build_es_body(**_defaults(offset=HIGHLIGHT_OFFSET_LIMIT))
+        assert "highlight" not in body
+        body = _build_es_body(**_defaults(offset=HIGHLIGHT_OFFSET_LIMIT + 40))
+        assert "highlight" not in body
 
 
 class TestSort:

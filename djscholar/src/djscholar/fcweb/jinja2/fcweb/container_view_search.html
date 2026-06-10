@@ -78,7 +78,7 @@
       {% endif %}
       &nbsp;&nbsp;
       <i>{{ found.offset + 1 }}&ndash;{{ found.offset + found.count_returned }}
-      of {{ "{:,}".format(found.count_found) }}</i>
+      of {{ "{:,}".format(found.count_found) }}{% if found.count_found_is_estimate %}+{% endif %}</i>
       &nbsp;&nbsp;
       {% if found.offset + found.limit < found.count_found and found.offset + found.limit < found.deep_page_limit %}
         <a href="{{ url('fcweb:container_view_search', ident=ident) }}?q={{ q|urlencode }}&offset={{ found.offset + found.limit }}">Next &raquo;</a>

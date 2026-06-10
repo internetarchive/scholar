@@ -63,7 +63,7 @@
     </tbody>
   </table>
   {% if releases_found.count_found > releases_found.count_returned %}
-    <p><i>Showing only the first {{ releases_found.count_returned }} out of {{ "{:,}".format(releases_found.count_found) }} releases.</i></p>
+    <p><i>Showing only the first {{ releases_found.count_returned }} out of {{ "{:,}".format(releases_found.count_found) }}{% if releases_found.count_found_is_estimate %}+{% endif %} releases.</i></p>
   {% endif %}
   {% else %}
     <p><i>No publications found.</i></p>

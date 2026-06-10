@@ -17,6 +17,7 @@ from django.contrib.auth.hashers import (
 from django.contrib.auth.models import User
 from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from factory.django import DjangoModelFactory
 from ninja.testing import TestClient
 from ninja_apikey.models import APIKey
@@ -331,6 +332,36 @@ class TestReleaseRoutes(EntityCRUDTestCase):
         self.assertEqual(response.data["count"], len(es))
         self.assertSetEqual(set([d['id'] for d in response.data["items"]]),
                             set([str(e.id) for e in es]))
+
+    def test_get_files_query_count_constant(self):
+        """Regression for the Sentry N+1 in /release/{ident}/files.
+
+        FileSchema embeds each file's releases as full ReleaseSchema, and
+        ReleaseSchema in turn embeds extids/contribs/abstracts/citations.
+        Without a nested prefetch, serializing those relations issues queries
+        per file, so the total query count grows with the number of files.
+        Assert it stays constant instead.
+        """
+        # Give the embedded release a nested row so the relation access path is
+        # exercised with real data (the N+1 fires even on empty relations).
+        ReleaseAbstractFactory.create(release=self.entity)
+
+        def measure(num_files):
+            for _ in range(num_files):
+                f = FileFactory.create()
+                f.releases.set([self.entity])
+            with CaptureQueriesContext(connection) as ctx:
+                response = client.get(f"{self.get}/{self.entity.id}/files")
+                self.assertEqual(response.status_code, HTTPStatus.OK)
+            return len(ctx.captured_queries)
+
+        few = measure(2)
+        many = measure(6)
+        self.assertEqual(
+            few, many,
+            f"file listing scales queries with file count (N+1): "
+            f"{few} queries for 2 files vs {many} for 8",
+        )
 
     def test_get_contribs(self):
         contribs = []

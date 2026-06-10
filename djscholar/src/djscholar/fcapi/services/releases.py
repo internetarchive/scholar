@@ -58,9 +58,22 @@ def get_work(ident: UUID) -> m.Work:
 
 
 def get_files(ident: UUID) -> QuerySet:
+    # FileSchema embeds each file's releases as full ReleaseSchema, and
+    # ReleaseSchema in turn embeds extids/contribs/abstracts/citations. Without
+    # prefetching those nested collections, serializing each embedded release
+    # fires a query per relation (the N+1 Sentry flagged). Prefetch them so the
+    # whole response is a fixed handful of queries regardless of file/release
+    # count.
     return m.File.objects.filter(
         releasefile__release_id=ident
-    ).prefetch_related("releases", "urls")
+    ).prefetch_related(
+        "urls",
+        "releases",
+        "releases__extids",
+        "releases__contribs",
+        "releases__abstracts",
+        "releases__citations",
+    )
 
 
 def get_contribs(ident: UUID) -> QuerySet:

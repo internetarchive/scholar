@@ -12,6 +12,35 @@ from djscholar import es
 from djscholar.fcapi.fcid import fcid2uuid, uuid2fcid
 
 
+# Cap exact hit counting on paged result sets. track_total_hits=True forces ES
+# to exactly count every matching doc on every query, which is pathological for
+# the broad full-text queries that dominate load. Capping makes ES report a
+# "gte" total once the cap is reached, which is all the paginated UI needs.
+# Mirrors ftsearch.views.TRACK_TOTAL_HITS.
+_TRACK_TOTAL_HITS = 10000
+
+# Cap the deepest reachable search offset. Deep from/size paging makes every ES
+# shard sort from+size docs, so per-query cost (and the number of crawlable
+# pagination URLs) scales linearly with this. Mirrors ftsearch.views.
+_DEEP_PAGE_LIMIT = 200
+
+# Citation lists can legitimately run deeper than search-result browsing, so
+# they get a more generous (but still bounded) paging depth.
+_REF_DEEP_PAGE_LIMIT = 1000
+
+
+def _parse_total(total_hits: Any) -> tuple[int, bool]:
+    """Extract (count, is_estimate) from an ES ``hits.total`` value.
+
+    With a capped track_total_hits, ES reports relation "gte" and a clamped
+    value once the true total exceeds the cap; surface that as an estimate so
+    the UI can render "N+" instead of a wrong exact number.
+    """
+    if isinstance(total_hits, dict):
+        return total_hits["value"], total_hits.get("relation") == "gte"
+    return total_hits, False
+
+
 _RELEASE_SOURCE_FIELDS = [
     "ident", "title", "contrib_names", "release_year",
     "release_type", "preservation",
@@ -44,9 +73,10 @@ def _parse_release_hit(src: dict[str, Any]) -> dict[str, Any]:
 class SearchHits:
     count_returned: int = 0
     count_found: int = 0
+    count_found_is_estimate: bool = False
     offset: int = 0
     limit: int = 25
-    deep_page_limit: int = 2000
+    deep_page_limit: int = _DEEP_PAGE_LIMIT
     query_time_ms: int = 0
     results: list[dict[str, Any]] = field(default_factory=list)
 
@@ -239,7 +269,7 @@ def search_containers(
     client = es.client()
 
     limit = min(limit, 300)
-    offset = min(max(offset, 0), 2000)
+    offset = min(max(offset, 0), _DEEP_PAGE_LIMIT)
 
     basic_query = {
         "query_string": {
@@ -278,17 +308,17 @@ def search_containers(
     resp = client.search(
         index=settings.ES_FATCAT_CONTAINER_INDEX,
         body=body,
-        track_total_hits=True,
+        track_total_hits=_TRACK_TOTAL_HITS,
     )
 
-    total_hits = resp["hits"]["total"]
-    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+    count_found, is_estimate = _parse_total(resp["hits"]["total"])
 
     results = [_parse_container_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
 
     return SearchHits(
         count_returned=len(results),
         count_found=count_found,
+        count_found_is_estimate=is_estimate,
         offset=offset,
         limit=limit,
         query_time_ms=resp.get("took", 0),
@@ -309,7 +339,7 @@ def search_releases(
     client = es.client()
 
     limit = min(limit, 300)
-    offset = min(max(offset, 0), 2000)
+    offset = min(max(offset, 0), _DEEP_PAGE_LIMIT)
 
     basic_query = {
         "query_string": {
@@ -362,17 +392,17 @@ def search_releases(
     resp = client.search(
         index=settings.ES_FATCAT_RELEASE_INDEX,
         body=body,
-        track_total_hits=True,
+        track_total_hits=_TRACK_TOTAL_HITS,
     )
 
-    total_hits = resp["hits"]["total"]
-    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+    count_found, is_estimate = _parse_total(resp["hits"]["total"])
 
     results = [_parse_release_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
 
     return SearchHits(
         count_returned=len(results),
         count_found=count_found,
+        count_found_is_estimate=is_estimate,
         offset=offset,
         limit=limit,
         query_time_ms=resp.get("took", 0),
@@ -417,7 +447,7 @@ def get_preservation_by_type(
             index=settings.ES_FATCAT_RELEASE_INDEX,
             body=body,
             request_cache=True,
-            track_total_hits=True,
+            track_total_hits=False,
         )
     except Exception:
         return None
@@ -485,7 +515,7 @@ def get_container_preservation_by_year(
             index=settings.ES_FATCAT_RELEASE_INDEX,
             body=body,
             request_cache=True,
-            track_total_hits=True,
+            track_total_hits=False,
         )
     except Exception:
         return None
@@ -548,7 +578,7 @@ def get_container_preservation_by_volume(
             index=settings.ES_FATCAT_RELEASE_INDEX,
             body=body,
             request_cache=True,
-            track_total_hits=True,
+            track_total_hits=False,
         )
     except Exception:
         return None
@@ -618,6 +648,7 @@ def get_container_browse_year_volume_issue(
             index=settings.ES_FATCAT_RELEASE_INDEX,
             body=body,
             request_cache=True,
+            track_total_hits=False,
         )
     except Exception:
         return None
@@ -727,13 +758,12 @@ def search_container_releases(
         resp = client.search(
             index=settings.ES_FATCAT_RELEASE_INDEX,
             body=body,
-            track_total_hits=True,
+            track_total_hits=_TRACK_TOTAL_HITS,
         )
     except Exception:
         return None
 
-    total_hits = resp["hits"]["total"]
-    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+    count_found, is_estimate = _parse_total(resp["hits"]["total"])
 
     results = []
     for hit in resp["hits"]["hits"]:
@@ -755,6 +785,7 @@ def search_container_releases(
     return SearchHits(
         count_returned=len(results),
         count_found=count_found,
+        count_found_is_estimate=is_estimate,
         offset=0,
         limit=300,
         results=results,
@@ -768,8 +799,10 @@ def search_container_releases(
 class RefHits:
     count_returned: int = 0
     count_found: int = 0
+    count_found_is_estimate: bool = False
     offset: int = 0
     limit: int = 25
+    deep_page_limit: int = _REF_DEEP_PAGE_LIMIT
     query_time_ms: int = 0
     result_refs: list[dict[str, Any]] = field(default_factory=list)
 
@@ -835,7 +868,7 @@ def get_outbound_refs(
 
     legacy_ident = uuid2fcid(release_uuid)
     limit = min(limit, 200)
-    offset = max(offset, 0)
+    offset = min(max(offset, 0), _REF_DEEP_PAGE_LIMIT)
 
     body = {
         "size": limit,
@@ -854,13 +887,12 @@ def get_outbound_refs(
         resp = client.search(
             index=settings.ES_FATCAT_REF_INDEX,
             body=body,
-            track_total_hits=True,
+            track_total_hits=_TRACK_TOTAL_HITS,
         )
     except Exception:
         return None
 
-    total_hits = resp["hits"]["total"]
-    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+    count_found, is_estimate = _parse_total(resp["hits"]["total"])
 
     results = [_parse_ref_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
     results.sort(key=lambda r: r.get("ref_index") or 0)
@@ -868,6 +900,7 @@ def get_outbound_refs(
     return RefHits(
         count_returned=len(results),
         count_found=count_found,
+        count_found_is_estimate=is_estimate,
         offset=offset,
         limit=limit,
         query_time_ms=resp.get("took", 0),
@@ -891,7 +924,7 @@ def get_inbound_refs(
 
     legacy_ident = uuid2fcid(release_uuid)
     limit = min(limit, 200)
-    offset = max(offset, 0)
+    offset = min(max(offset, 0), _REF_DEEP_PAGE_LIMIT)
 
     body = {
         "size": limit,
@@ -910,19 +943,19 @@ def get_inbound_refs(
         resp = client.search(
             index=settings.ES_FATCAT_REF_INDEX,
             body=body,
-            track_total_hits=True,
+            track_total_hits=_TRACK_TOTAL_HITS,
         )
     except Exception:
         return None
 
-    total_hits = resp["hits"]["total"]
-    count_found = total_hits["value"] if isinstance(total_hits, dict) else total_hits
+    count_found, is_estimate = _parse_total(resp["hits"]["total"])
 
     results = [_parse_ref_hit(hit["_source"]) for hit in resp["hits"]["hits"]]
 
     return RefHits(
         count_returned=len(results),
         count_found=count_found,
+        count_found_is_estimate=is_estimate,
         offset=offset,
         limit=limit,
         query_time_ms=resp.get("took", 0),
@@ -1152,7 +1185,7 @@ def get_coverage_preservation_by_type(
             index=settings.ES_FATCAT_RELEASE_INDEX,
             body=body,
             request_cache=True,
-            track_total_hits=True,
+            track_total_hits=False,
         )
     except Exception:
         return None
@@ -1221,7 +1254,7 @@ def get_coverage_preservation_by_year(q: str) -> list[dict[str, Any]] | None:
             index=settings.ES_FATCAT_RELEASE_INDEX,
             body=body,
             request_cache=True,
-            track_total_hits=True,
+            track_total_hits=False,
         )
     except Exception:
         return None
@@ -1290,7 +1323,7 @@ def get_coverage_preservation_by_date(q: str) -> list[dict[str, Any]] | None:
             index=settings.ES_FATCAT_RELEASE_INDEX,
             body=body,
             request_cache=True,
-            track_total_hits=True,
+            track_total_hits=False,
         )
     except Exception:
         return None

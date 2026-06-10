@@ -59,7 +59,7 @@
     <i>Showing
     {% if hits.offset == 0 %}first{% else %}{{ hits.offset + 1 }} &mdash;{% endif %}
     {{ hits.offset + hits.count_returned }}
-    of {{ "{:,}".format(hits.count_found) }} references</i>
+    of {{ "{:,}".format(hits.count_found) }}{% if hits.count_found_is_estimate %}+{% endif %} references</i>
     ({{ hits.query_time_ms }}ms)
   </p>
 
@@ -143,9 +143,9 @@
     {% endif %}
     &nbsp;&nbsp;
     <i>{{ hits.offset + 1 }}&ndash;{{ hits.offset + hits.count_returned }}
-    of {{ "{:,}".format(hits.count_found) }}</i>
+    of {{ "{:,}".format(hits.count_found) }}{% if hits.count_found_is_estimate %}+{% endif %}</i>
     &nbsp;&nbsp;
-    {% if hits.offset + hits.limit < hits.count_found %}
+    {% if hits.offset + hits.limit < hits.count_found and hits.offset + hits.limit < hits.deep_page_limit %}
       <a href="?offset={{ hits.offset + hits.limit }}">Next &raquo;</a>
     {% else %}
       <span style="color: #999;">Next &raquo;</span>

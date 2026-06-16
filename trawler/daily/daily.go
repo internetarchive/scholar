@@ -59,10 +59,63 @@ type DailyCrawlWorkflowInput struct {
 	// Counts accumulates results across every run in the ContinueAsNew chain so
 	// the final run returns the day's grand total.
 	Counts counts.Counts
+
+	// LinesPerCAN, BatchSize, ChunkSize, and the task queue names are
+	// viper-sourced settings captured once on the first run (see the SideEffect
+	// below) and threaded across ContinueAsNew so they stay fixed for the whole
+	// chain. We snapshot them rather than reading viper in the workflow body on
+	// every run because viper reads aren't deterministic across replay: a config
+	// change in Ansible would otherwise desync a running workflow's history -- or
+	// silently shift its behavior between runs. A zero BatchSize means we haven't
+	// captured yet. ExternalTaskQueue is only used by the first-run scrape but is
+	// snapshotted with the rest for the same determinism reason.
+	LinesPerCAN       int
+	BatchSize         int
+	ChunkSize         int
+	InternalTaskQueue string
+	ExternalTaskQueue string
+}
+
+// dailyConfig is the snapshot of viper-sourced settings the workflow captures
+// via SideEffect on the first run of a ContinueAsNew chain.
+type dailyConfig struct {
+	LinesPerCAN       int
+	BatchSize         int
+	ChunkSize         int
+	InternalTaskQueue string
+	ExternalTaskQueue string
 }
 
 func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (counts.Counts, error) {
 	l := workflow.GetLogger(ctx)
+
+	// Snapshot config once, on the first run, and thread it across
+	// ContinueAsNew so it's fixed for the whole chain. SideEffect records the
+	// read in history, so replays return the recorded values instead of
+	// re-reading viper -- which is what keeps an in-flight chain deterministic
+	// even when the deployed config changes underneath it.
+	if in.BatchSize == 0 {
+		var cfg dailyConfig
+		if err := workflow.SideEffect(ctx, func(workflow.Context) interface{} {
+			return dailyConfig{
+				LinesPerCAN:       viper.GetInt("daily.lines_per_can"),
+				BatchSize:         viper.GetInt("harvesting.batch_size"),
+				ChunkSize:         viper.GetInt("harvesting.chunk_size"),
+				InternalTaskQueue: viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+				ExternalTaskQueue: viper.GetString(fmt.Sprintf("%s.external_task_queue", in.Upstream)),
+			}
+		}).Get(&cfg); err != nil {
+			return in.Counts, err
+		}
+		if cfg.LinesPerCAN <= 0 {
+			cfg.LinesPerCAN = 2000
+		}
+		in.LinesPerCAN = cfg.LinesPerCAN
+		in.BatchSize = cfg.BatchSize
+		in.ChunkSize = cfg.ChunkSize
+		in.InternalTaskQueue = cfg.InternalTaskQueue
+		in.ExternalTaskQueue = cfg.ExternalTaskQueue
+	}
 
 	// First run of the ContinueAsNew chain only: pin the source label and scrape
 	// the upstream. Both are threaded through `in` on every subsequent run so we
@@ -85,7 +138,7 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		// fetch metadata from the upstream API and store in s3
 		scrapeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 			StartToCloseTimeout: 4 * 60 * 60 * time.Second,
-			TaskQueue:           viper.GetString(fmt.Sprintf("%s.external_task_queue", in.Upstream)),
+			TaskQueue:           in.ExternalTaskQueue,
 		})
 		scrapeIn := scholkitScrapeInput{
 			Day:      in.Day,
@@ -111,13 +164,13 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 
 	findCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
-		TaskQueue:           viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+		TaskQueue:           in.InternalTaskQueue,
 	})
 	procCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout:    4 * time.Hour,
 		ScheduleToCloseTimeout: 8 * time.Hour,
 		HeartbeatTimeout:       2 * time.Minute,
-		TaskQueue:              viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+		TaskQueue:              in.InternalTaskQueue,
 		RetryPolicy: &temporal.RetryPolicy{
 			BackoffCoefficient: 1.5,
 			InitialInterval:    30 * time.Second,
@@ -125,16 +178,13 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		},
 	})
 
-	linesPerCAN := viper.GetInt("daily.lines_per_can")
-	if linesPerCAN <= 0 {
-		linesPerCAN = 2000
-	}
+	linesPerCAN := in.LinesPerCAN
 
 	findInput := harvesting.FindLineBatchInput{
 		S3Key:     in.S3Key,
 		Offset:    in.Offset,
-		BatchSize: viper.GetInt("harvesting.batch_size"),
-		ChunkSize: viper.GetInt("harvesting.chunk_size"),
+		BatchSize: in.BatchSize,
+		ChunkSize: in.ChunkSize,
 	}
 	lin := harvesting.ProcessLineInput{
 		S3Key:    in.S3Key,
@@ -159,6 +209,25 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 			}
 			in.Counts = in.Counts.Add(c)
 			linesThisRun++
+
+			// Advance the resume point to just past the line we finished.
+			// offset[0]+offset[1] is the byte after this line's trailing newline
+			// (see harvesting.chunk), so a mid-batch ContinueAsNew neither
+			// re-processes nor skips a line.
+			in.Offset = offset[0] + offset[1]
+			findInput.Offset = in.Offset
+
+			// Hand off to a fresh run to keep history bounded once we've
+			// processed enough lines (or the server suggests it). Carry only
+			// the byte offset and accumulated counts. This check lives inside
+			// the per-line loop on purpose: a batch_size larger than linesPerCAN
+			// would otherwise force the entire batch through ProcessLine before
+			// the first CAN check, bloating a single run's history.
+			if linesThisRun >= linesPerCAN || workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
+				l.Info(fmt.Sprintf("continue-as-new for source %q at offset %d (%d lines this run)",
+					in.Source, in.Offset, linesThisRun))
+				return in.Counts, workflow.NewContinueAsNewError(ctx, DailyCrawlWorkflow, in)
+			}
 		}
 
 		in.Offset = findOutput.BytesRead
@@ -167,15 +236,6 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		if findOutput.EOF {
 			l.Info(fmt.Sprintf("day complete for source %q: %#v", in.Source, in.Counts))
 			return in.Counts, nil
-		}
-
-		// Hand off to a fresh run to keep history bounded once we've processed
-		// enough lines (or the server suggests it). Carry only the byte offset
-		// and accumulated counts.
-		if linesThisRun >= linesPerCAN || workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
-			l.Info(fmt.Sprintf("continue-as-new for source %q at offset %d (%d lines this run)",
-				in.Source, in.Offset, linesThisRun))
-			return in.Counts, workflow.NewContinueAsNewError(ctx, DailyCrawlWorkflow, in)
 		}
 	}
 }

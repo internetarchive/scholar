@@ -111,7 +111,10 @@ func TestDailyCrawlWorkflow_ResumeSkipsScrapeAndCarriesState(t *testing.T) {
 }
 
 // When a run processes lines_per_can lines without hitting EOF, it hands off via
-// ContinueAsNew rather than returning.
+// ContinueAsNew rather than returning. The CAN check lives inside the per-line
+// loop, so a batch larger than lines_per_can hands off mid-batch instead of
+// draining the whole batch first: with five offsets and a threshold of three,
+// only three lines are processed before CAN.
 func TestDailyCrawlWorkflow_ContinuesAsNewAtThreshold(t *testing.T) {
 	configureViper(3) // CAN after 3 lines
 
@@ -121,7 +124,8 @@ func TestDailyCrawlWorkflow_ContinuesAsNewAtThreshold(t *testing.T) {
 	env.OnActivity(ScholkitScrapeActivity, mock.Anything, mock.Anything).
 		Return(scholkitScrapeOutput{S3Key: "meta.ndjson"}, nil).Once()
 
-	// Five lines in one batch, no EOF: after the batch, 5 >= 3 triggers CAN.
+	// Five lines in one batch, no EOF: the third line hits 3 >= 3 and triggers
+	// CAN, leaving the last two offsets unprocessed this run.
 	env.OnActivity(harvesting.FindLineBatch, mock.Anything, mock.Anything).
 		Return(harvesting.FindLineBatchOutput{
 			Offsets:   [][]int64{{0, 5}, {5, 5}, {10, 5}, {15, 5}, {20, 5}},
@@ -130,7 +134,7 @@ func TestDailyCrawlWorkflow_ContinuesAsNewAtThreshold(t *testing.T) {
 		}, nil).Once()
 
 	env.OnActivity(ProcessLine, mock.Anything, mock.Anything).
-		Return(ignored(1), nil).Times(5)
+		Return(ignored(1), nil).Times(3)
 
 	env.ExecuteWorkflow(DailyCrawlWorkflow, DailyCrawlWorkflowInput{
 		Upstream:       "crossref",
@@ -142,6 +146,44 @@ func TestDailyCrawlWorkflow_ContinuesAsNewAtThreshold(t *testing.T) {
 	require.Error(t, err)
 	var canErr *workflow.ContinueAsNewError
 	require.True(t, errors.As(err, &canErr), "expected ContinueAsNewError, got %v", err)
+	env.AssertExpectations(t)
+}
+
+// Config (lines_per_can, batch_size, chunk_size) is read from viper once on the
+// first run and threaded into FindLineBatch, rather than the workflow reading
+// viper inline on every run. This is what keeps the values fixed and
+// replay-deterministic for the whole ContinueAsNew chain.
+func TestDailyCrawlWorkflow_CapturesConfigFromViper(t *testing.T) {
+	configureViper(1_000_000)
+	viper.Set("harvesting.batch_size", 250)
+	viper.Set("harvesting.chunk_size", 4096)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.OnActivity(ScholkitScrapeActivity, mock.Anything, mock.Anything).
+		Return(scholkitScrapeOutput{S3Key: "meta.ndjson"}, nil).Once()
+
+	// FindLineBatch must be handed the viper-sourced batch/chunk sizes even
+	// though they were never set on the input struct.
+	env.OnActivity(harvesting.FindLineBatch, mock.Anything, mock.MatchedBy(func(in harvesting.FindLineBatchInput) bool {
+		return in.BatchSize == 250 && in.ChunkSize == 4096
+	})).Return(harvesting.FindLineBatchOutput{
+		Offsets:   [][]int64{{0, 10}},
+		BytesRead: 10,
+		EOF:       true,
+	}, nil).Once()
+
+	env.OnActivity(ProcessLine, mock.Anything, mock.Anything).
+		Return(ignored(1), nil).Times(1)
+
+	env.ExecuteWorkflow(DailyCrawlWorkflow, DailyCrawlWorkflowInput{
+		Upstream:       "crossref",
+		SourceOverride: "src",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 }
 

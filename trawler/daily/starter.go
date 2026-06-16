@@ -2,15 +2,17 @@ package daily
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/temporal"
-	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	temporalsentry "github.com/uphold/temporal-sentry-interceptor"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/worker"
@@ -24,21 +26,44 @@ func StartOneOff(in DailyCrawlWorkflowInput) error {
 	}
 	defer c.Close()
 
-	uid, err := uuid.NewV7()
+	// Resolve the day client-side so the workflow ID names the day actually
+	// crawled. Empty means "yesterday" in UTC (matching the scrape activity's day
+	// boundary); pin it into the input so the workflow doesn't later compute a
+	// different "yesterday" across a midnight boundary.
+	if in.Day == "" {
+		in.Day = time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	}
+	day, err := time.Parse("2006-01-02", in.Day)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid day %q (want format 2006-01-02): %w", in.Day, err)
 	}
 
-	workflowID := fmt.Sprintf("%s_daily_parent_%s", in.Upstream, uid)
+	workflowID := fmt.Sprintf("%s_daily_%s", in.Upstream, day.Format("20060102"))
 
-	c.ExecuteWorkflow(ctx,
+	_, err = c.ExecuteWorkflow(ctx,
 		client.StartWorkflowOptions{
 			ID:        workflowID,
 			TaskQueue: viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+			// A deterministic per-day ID is what makes Temporal enforce "one crawl
+			// per upstream/day running at a time": FAIL rejects a start while one is
+			// already running. ALLOW_DUPLICATE still lets us re-run a day once the
+			// prior run has closed -- improved crawling logic or PDFs that were
+			// unreachable last time can yield more files on a rerun.
+			WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+			WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 		},
 		DailyCrawlWorkflow,
 		in)
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			log.Printf("daily crawl %s is already running; skipping", workflowID)
+			return nil
+		}
+		return fmt.Errorf("could not start workflow %s: %w", workflowID, err)
+	}
 
+	log.Printf("dispatched %s", workflowID)
 	return nil
 }
 
@@ -54,12 +79,12 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 
 	scheduleID := fmt.Sprintf("%s_daily_schedule", in.Upstream)
 
-	uid, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
-
-	workflowID := fmt.Sprintf("%s_daily_parent_%s", in.Upstream, uid)
+	// Base workflow ID for scheduled runs. Temporal appends the nominal scheduled
+	// time on each fire (e.g. crossref_daily-2026-06-16T08:00:00Z), which keeps
+	// every fire's ID unique and makes the day legible at a glance -- so no UUID
+	// is needed. Each fire leaves Day empty, so the workflow crawls its own
+	// "yesterday" relative to fire time.
+	workflowID := fmt.Sprintf("%s_daily", in.Upstream)
 
 	workflowArgs := []any{in}
 

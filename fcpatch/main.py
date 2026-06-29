@@ -506,16 +506,14 @@ def migrate_containers(old_conn: psycopg.Connection,
                 container["extra"]) if container["extra"] is not None else None})
 
 
-def handle_batch(old_conn, new_conn, cache, batch):
-    batch_data = [get_release_data(old_conn, rid) for rid in batch]
-
+def insert_release_group(new_conn, batch_data):
+    """Insert a group of releases (and their dependents) inside a single
+    transaction and pipeline. The first bad row raises and rolls back the whole
+    group, so callers wanting to isolate a bad release retry it on its own."""
     with new_conn.transaction(), new_conn.pipeline():
-        # phase 1: buffer all inserts for the entire batch (except file URLs)
+        # phase 1: buffer all inserts for the whole group (except file URLs)
         all_file_curs = []
         for bd in batch_data:
-            if bd is None:
-                logger.warning("got nil batch data")
-                continue
             file_curs = insert_release_main(new_conn, bd)
             all_file_curs.append((bd['file_urls'], file_curs))
 
@@ -533,6 +531,38 @@ def handle_batch(old_conn, new_conn, cache, batch):
                 INSERT INTO fcapi_fileurl (rel, url, file_id)
                 VALUES (%s, %s, %s)
             """, [rel, url, fid])
+
+
+def handle_batch(old_conn, new_conn, cache, batch):
+    batch_data = [get_release_data(old_conn, rid) for rid in batch]
+    releases = []
+    for bd in batch_data:
+        if bd is None:
+            logger.warning("got nil batch data")
+            continue
+        releases.append(bd)
+    if not releases:
+        return
+
+    # fast path: insert the whole batch in one transaction + pipeline (few
+    # round-trips). a bad row (e.g. a legacy value too long for the fc2 schema)
+    # aborts the pipeline and rolls the whole batch back, committing nothing.
+    try:
+        insert_release_group(new_conn, releases)
+        return
+    except psycopg.errors.StringDataRightTruncation:
+        logger.info(
+            f"batch of {len(releases)} hit an oversized column value; "
+            "retrying releases individually to isolate it")
+
+    # slow path: redo the batch one release at a time so the good ones still
+    # land and the bad one(s) get logged by rid and skipped.
+    for bd in releases:
+        rid = bd['release']['id']
+        try:
+            insert_release_group(new_conn, [bd])
+        except psycopg.errors.StringDataRightTruncation as e:
+            logger.warning(f"{rid}: skipping release; value too long for fc2 column: {e}")
 
 
 def run_releases(args) -> None:
@@ -572,10 +602,15 @@ def run_releases(args) -> None:
 
     candidates: list[uuid.UUID] = []
     for line in sys.stdin:
+        line = line.strip()
+        # skip blank lines (e.g. the trailing newline of piped psql output) so
+        # they don't get logged as bogus "corrupt rid:" warnings.
+        if not line:
+            continue
         try:
-            rid = uuid.UUID(line.strip())
+            rid = uuid.UUID(line)
         except ValueError:
-            logger.warning(f"corrupt rid: {line.strip()}")
+            logger.warning(f"corrupt rid: {line!r}")
             continue
 
         # local set-membership check; the db existence check is batched below.

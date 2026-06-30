@@ -605,10 +605,11 @@ func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholk
 	l.Info(fmt.Sprintf("sk cmd: %s %s", skPath, scholkitArgs))
 	cmd := exec.Command(skPath, scholkitArgs...)
 	bs, err := cmd.Output()
+	var ee *exec.ExitError
 	if err != nil {
-		if errors.Is(err, &exec.ExitError{}) {
+		if errors.As(err, &ee) {
 			l.Error("************* scholkit stderr start ****************")
-			l.Error(string(err.(*exec.ExitError).Stderr))
+			l.Error(string(ee.Stderr))
 			l.Error("************* scholkit stderr end ******************")
 		}
 		return out, fmt.Errorf("sk failed: %w", err)

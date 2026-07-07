@@ -1,11 +1,14 @@
 # KBART report for Keepers Registry
 
 The Internet Archive acts as a repository for scholarly materials preserved as
-part of [the Keepers Registry](https://keepers.issn.org/). Every year we submit
+part of [the Keepers Registry](https://keepers.issn.org/). Twice a year we submit
 a report to them of our relevant holdings.
 
-## Process
+## Frequency
 
+Uploads should occur in July and March.
+
+## Process
 
 1. Make a new directory in here for the current year
 2. Obtain the latest ISSN to ISSNL mapping file from issn.org. This link worked as of August 2025:
@@ -38,7 +41,3 @@ Username is `InternetArchive`; password is stored in the `ait-ansible` repo in `
 ftp ftp.issn.org
 ftp> put ia_serials_combined_kbart.2025-08-06.tsv
 ```
-
-## Future
-
-This ought to be automated but for something done once a year it has not felt super urgent. One important thing to note is that `search_containers.sh` uses `fatcat-cli` which is deprecated.

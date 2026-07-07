@@ -20,6 +20,10 @@ that already has a canonical home elsewhere (arXiv, PubMed Central) or that is
 paywalled big-5-publisher material that isn't public-domain or open-access. See
 the generator's README for the exact filter.
 
+## Frequency
+
+The sitemap should be updated twice a year in January and June.
+
 ## Generation
 
 Use the `scripts/sitemap` CLI. It scans the `scholar_fulltext` Elasticsearch

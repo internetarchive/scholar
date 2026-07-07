@@ -586,7 +586,14 @@ def run_releases(args) -> None:
                 WHERE id = ANY(%s)""", [candidates]).fetchall()
         present = {str(row["id"]) for row in rows}
 
-        to_migrate = [rid for rid in candidates if str(rid) not in present]
+        # a set comprehension dedupes as it filters: the same id can appear more
+        # than once in the input, and thus more than once in a single batch. the
+        # present-check only compares against what's already in the db, and the
+        # diskcache isn't written until the end of this flush, so an in-batch
+        # duplicate would otherwise survive into handle_batch and get INSERTed
+        # twice -- a duplicate-key violation, since fcapi_release has no ON
+        # CONFLICT guard. deduping here means each release is migrated once.
+        to_migrate = {rid for rid in candidates if str(rid) not in present}
         logger.info(
             f"batch: {len(candidates)} candidates, {len(present)} already in db, "
             f"{len(to_migrate)} to migrate")

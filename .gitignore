@@ -11,6 +11,7 @@ scripts/hitstats/main
 trawler/trawler
 trawler/cdx/cdx
 trawler/spn/spn
+kbart/kbart
 scholstats/out.html
 go.work.sum
 scholkit/cmd/sk-feed/sk-feed

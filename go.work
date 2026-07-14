@@ -4,3 +4,4 @@ use ./trawler
 use ./scholkit
 use ./blobproc
 use ./pubmed2json
+use ./kbart

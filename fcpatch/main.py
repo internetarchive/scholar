@@ -21,7 +21,7 @@ from psycopg.types.json import Jsonb
 # how our ingestion has always worked, i consider file to be a child of
 # release, so files, too (and their children).
 
-# our input is the set of relead idents that appeared in the changelog between
+# our input is the set of release idents that appeared in the changelog between
 # 2025-06-01 and 2026-04-01.
 
 # +------------+------------+

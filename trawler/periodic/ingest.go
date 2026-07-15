@@ -1,541 +1,226 @@
 package periodic
 
+/*
+This package is like `daily` but for the ingestion of PDFs from warcs on
+petabox instead of the live web. We complement the daily crawling with periodic
+heritrix (or whatever) based wide crawls in the hope of capturing PDFs.
+
+The entry workflow is PeriodicIngestWorkflow. It pages through a crawl collection on petabox, pulls CDX files, then reads and processes any PDFs within.
+*/
+
 import (
 	"bufio"
 	"bytes"
 	"context"
 	"encoding/base32"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/cdx/cdxfile"
-	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/ia"
 	"git.archive.org/webgroup/scholar/trawler/pdf"
 	warc "github.com/internetarchive/gowarc"
 	"github.com/miku/grobidclient/tei"
-	"github.com/spf13/viper"
-	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
-// stageConcurrency caps in-flight HTTP work per stage inside
-// ProcessItemActivity. Tuned for "fast enough that blobproc sees the whole
-// batch in one 10-minute cycle" without overwhelming fatcat / petabox.
-const stageConcurrency = 8
+const (
+	// TODO config?
+	itemsPerPage = 100
+	taskQueue    = "periodic_ingest"
+)
 
-type IngestCollectionInput struct {
-	CollectionID string
-	// Limit caps the number of items selected from the collection in this
-	// run. 0 means no limit. Useful for smoke tests against a real
-	// collection without committing to processing the whole thing.
+// NEW BESPOKE HERE
+
+type PeriodicCounts struct {
+	PdfLines     int
+	PdfsWanted   int
+	PdfsAcquired int
+}
+
+type PeriodicIngestInput struct {
+	// petabox collection of warcs/cdx
+	CollectionName string
+	// limit how many items are looked at; for debugging
 	Limit int
 }
 
-type IngestItemBatchInput struct {
-	Identifiers []string
-}
-
-type ProcessItemInput struct {
-	Identifier string
-	Rows       []cdxfile.Row
-}
-
-type ListItemsInput struct {
-	CollectionID string
-	Page         int
-	PageSize     int
-}
-
-type ListItemsOutput struct {
-	Identifiers []string
-	HasMore     bool
-}
-
-// IngestCollectionWorkflow is the parent: pages the IA advancedsearch API
-// for items in the named collection, batches identifiers into chunks of
-// periodic_ingest.items_per_child, and dispatches one IngestItemBatchWorkflow
-// child per chunk.
-func IngestCollectionWorkflow(ctx workflow.Context, in IngestCollectionInput) (counts.Counts, error) {
-	out := counts.Counts{}
-	l := workflow.GetLogger(ctx)
-
-	itemsPerChild := viper.GetInt("periodic_ingest.items_per_child")
-	if itemsPerChild <= 0 {
-		itemsPerChild = 4
-	}
-	pageSize := viper.GetInt("periodic_ingest.collection_page_size")
-	if pageSize <= 0 {
-		pageSize = 100
-	}
+func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (PeriodicCounts, error) {
+	out := PeriodicCounts{}
+	// l := workflow.GetLogger(ctx)
 
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute,
-		TaskQueue:           viper.GetString("periodic_ingest.task_queue"),
+		StartToCloseTimeout: 20 * time.Minute,
+		TaskQueue:           taskQueue,
+	}
+	var listOut ListCollectionOutput
+	err := workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, ao),
+		ListCollectionActivity,
+		ListCollectionInput{CollectionName: in.CollectionName}).Get(ctx, &listOut)
+	if err != nil {
+		return out, err
+	}
+
+	ao = workflow.ActivityOptions{
+		StartToCloseTimeout: 4 * time.Hour, // TODO may want to tweak later
+		TaskQueue:           taskQueue,
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
+	var processOut PeriodicCounts
+	for _, itemId := range listOut.ItemIds {
 
-	childWfOpts := workflow.ChildWorkflowOptions{
-		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_ABANDON,
-	}
-
-	childSelector := workflow.NewSelector(ctx)
-	var childCount int
-	var childErr error
-	var childCounts counts.Counts
-
-	dispatch := func(ids []string) error {
-		cctx := workflow.WithChildOptions(ctx, childWfOpts)
-		fut := workflow.ExecuteChildWorkflow(cctx, IngestItemBatchWorkflow, IngestItemBatchInput{Identifiers: ids})
-		var cwe workflow.Execution
-		if err := fut.GetChildWorkflowExecution().Get(ctx, &cwe); err != nil {
-			return err
-		}
-		childSelector.AddFuture(fut, func(f workflow.Future) {
-			childErr = f.Get(ctx, &childCounts)
-		})
-		childCount++
-		return nil
-	}
-
-	page := 1
-	collected := 0
-	var pending []string
-	for {
-		var listOut ListItemsOutput
-		err := workflow.ExecuteActivity(ctx, ListCollectionItemsActivity, ListItemsInput{
-			CollectionID: in.CollectionID,
-			Page:         page,
-			PageSize:     pageSize,
-		}).Get(ctx, &listOut)
+		err := workflow.ExecuteActivity(
+			ctx, ProcessCrawlItemActivity,
+			ProcessCrawlItemInput{ItemId: itemId}).Get(ctx, &processOut)
 		if err != nil {
 			return out, err
 		}
-		for _, id := range listOut.Identifiers {
-			if isSkippableItem(id) {
-				l.Info("skipping item", "identifier", id)
-				continue
-			}
-			if in.Limit > 0 && collected >= in.Limit {
-				break
-			}
-			pending = append(pending, id)
-			collected++
-		}
-		for len(pending) >= itemsPerChild {
-			chunk := pending[:itemsPerChild]
-			pending = pending[itemsPerChild:]
-			if err := dispatch(chunk); err != nil {
-				return out, err
-			}
-		}
-		if in.Limit > 0 && collected >= in.Limit {
-			break
-		}
-		if !listOut.HasMore {
-			break
-		}
-		page++
-	}
-	if len(pending) > 0 {
-		if err := dispatch(pending); err != nil {
-			return out, err
-		}
+		out.PdfLines += processOut.PdfLines
+		out.PdfsWanted += processOut.PdfsWanted
+		out.PdfsAcquired += processOut.PdfsAcquired
 	}
 
-	for range childCount {
-		childSelector.Select(ctx)
-		if childErr != nil {
-			return out, childErr
-		}
-		out = out.Add(childCounts)
-	}
-
-	l.Info(fmt.Sprintf("collection ingest done for %s: %#v", in.CollectionID, out))
 	return out, nil
 }
 
-// IngestItemBatchWorkflow handles a small group of items, one at a time:
-// fetch the rollup CDX, then run a single per-item activity that processes
-// the whole item internally (aligning with blobproc's 10-minute spool cycle).
-func IngestItemBatchWorkflow(ctx workflow.Context, in IngestItemBatchInput) (counts.Counts, error) {
-	out := counts.Counts{}
+type ListCollectionInput struct {
+	CollectionName string
+}
 
-	ao := workflow.ActivityOptions{
-		StartToCloseTimeout:    2 * time.Hour,
-		ScheduleToCloseTimeout: 6 * time.Hour,
-		HeartbeatTimeout:       3 * time.Minute,
-		TaskQueue:              viper.GetString("periodic_ingest.task_queue"),
-		RetryPolicy: &temporal.RetryPolicy{
-			BackoffCoefficient: 1.5,
-			InitialInterval:    30 * time.Second,
-			MaximumInterval:    90 * time.Second,
-		},
-	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
+type ListCollectionOutput struct {
+	ItemIds []string
+}
 
-	for _, identifier := range in.Identifiers {
-		var rows []cdxfile.Row
-		if err := workflow.ExecuteActivity(ctx, FetchItemCDXActivity, identifier).Get(ctx, &rows); err != nil {
-			return out, err
-		}
-		var itemCounts counts.Counts
-		if err := workflow.ExecuteActivity(ctx, ProcessItemActivity, ProcessItemInput{
-			Identifier: identifier,
-			Rows:       rows,
-		}).Get(ctx, &itemCounts); err != nil {
-			return out, err
-		}
-		out = out.Add(itemCounts)
+func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCollectionOutput, error) {
+	out := ListCollectionOutput{
+		ItemIds: []string{},
 	}
+	client := &http.Client{Timeout: 120 * time.Second}
+	page := 1
+
+	for true {
+		ids, hasMore, err := ia.SearchCollection(
+			ctx, client, in.CollectionName, page, itemsPerPage)
+		if err != nil {
+			return out, fmt.Errorf("failed to search '%s': %w", in.CollectionName, err)
+		}
+
+		for _, id := range ids {
+			if !strings.HasSuffix(id, "-CRL") {
+				out.ItemIds = append(out.ItemIds, id)
+			}
+		}
+
+		if !hasMore {
+			break
+		}
+
+		page += 1
+	}
+
 	return out, nil
 }
 
-// ListCollectionItemsActivity wraps ia.SearchCollection so the parent
-// workflow can page through a collection.
-func ListCollectionItemsActivity(ctx context.Context, in ListItemsInput) (ListItemsOutput, error) {
-	client := &http.Client{Timeout: 60 * time.Second}
-	ids, hasMore, err := ia.SearchCollection(ctx, client, in.CollectionID, in.Page, in.PageSize)
-	if err != nil {
-		return ListItemsOutput{}, err
-	}
-	return ListItemsOutput{Identifiers: ids, HasMore: hasMore}, nil
+type ProcessCrawlItemInput struct {
+	ItemId string
 }
 
-// FetchItemCDXActivity locates an item's rollup CDX, downloads it, and
-// returns parsed PDF rows. Filtering inside the activity keeps the returned
-// payload proportional to the PDF count rather than the total record count.
-func FetchItemCDXActivity(ctx context.Context, identifier string) ([]cdxfile.Row, error) {
-	// Timeout is per-request; the rollup CDX can be ~100MB so allow plenty.
+func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (PeriodicCounts, error) {
+	out := PeriodicCounts{}
 	client := &http.Client{Timeout: 10 * time.Minute}
+	l := activity.GetLogger(ctx)
 
 	activity.RecordHeartbeat(ctx, "metadata")
-	files, err := ia.ItemFiles(ctx, client, identifier)
+	files, err := ia.ItemFiles(ctx, client, in.ItemId)
 	if err != nil {
-		return nil, fmt.Errorf("metadata for %s: %w", identifier, err)
+		return out, fmt.Errorf("metadata for %s: %w", in.ItemId, err)
 	}
 	rollup, err := ia.FindRollupCDX(files)
 	if err != nil {
-		return nil, fmt.Errorf("find rollup CDX for %s: %w", identifier, err)
+		return out, fmt.Errorf("find rollup CDX for %s: %w", in.ItemId, err)
 	}
 
 	activity.RecordHeartbeat(ctx, "download-cdx")
-	rdr, err := ia.OpenFile(ctx, client, identifier, rollup)
+	rdr, err := ia.OpenFile(ctx, client, in.ItemId, rollup)
 	if err != nil {
-		return nil, fmt.Errorf("open rollup CDX %s/%s: %w", identifier, rollup, err)
+		return out, fmt.Errorf("open rollup CDX %s/%s: %w", in.ItemId, rollup, err)
 	}
 	defer rdr.Close()
 
 	activity.RecordHeartbeat(ctx, "parse-cdx")
-	stopHB := heartbeat(ctx, "parse-cdx-progress")
-	rows, err := cdxfile.Parse(rdr, cdxfile.PDFFilter)
-	stopHB()
+	pdfLines, err := cdxfile.Parse(rdr, cdxfile.PDFFilter)
 	if err != nil {
-		return nil, fmt.Errorf("parse rollup CDX %s/%s: %w", identifier, rollup, err)
+		return out, fmt.Errorf("parse rollup CDX %s/%s: %w", in.ItemId, rollup, err)
 	}
-	return rows, nil
-}
 
-// taskState carries one row through the per-item pipeline. Fields populate
-// as the row progresses through stages.
-type taskState struct {
-	row      cdxfile.Row
-	sha1hex  string
-	warcItem string
-	warcFile string
-	pdfBytes []byte // populated after stage 2; freed after processing
-}
+	out.PdfLines = len(pdfLines)
 
-// ProcessItemActivity is the per-item leaf. It runs three internal stages
-// over a single item's PDF rows:
-//
-//  1. parallel fatcat probes (skip what's already known + indexed)
-//  2. parallel petabox Range-GET + WARC payload extract
-//  3. parallel in-process PDF processing (pdfextract + GROBID, derivatives
-//     written through to S3) followed by processResult on the in-memory output
-//
-// Stage 3 used to be a submit/poll/fetch round-trip to blobprocd, gated on its
-// ~10-minute systemd-timer spool cycle. It now calls blobproc.ProcessPDF
-// directly, so there is no spool latency floor. See trawler/daily/BLOBPROC-INLINE.md.
-func ProcessItemActivity(ctx context.Context, in ProcessItemInput) (counts.Counts, error) {
-	l := activity.GetLogger(ctx)
-	out := counts.Counts{}
-	// Per-request timeout bounds hangs from stuck TCP reads (DNS blips,
-	// fatcat hiccups, slow petabox reads). Has to be larger than any single
-	// legitimate request but should still finish well under 5 minutes. The
-	// PDF-processing stage uses its own clients (GROBID + S3), not this one.
-	client := &http.Client{Timeout: 5 * time.Minute}
 	processor, err := pdf.NewProcessor(func(msg string) {
 		activity.RecordHeartbeat(ctx, msg)
 	})
-	if err != nil {
-		return out, fmt.Errorf("pdf processor init failed: %w", err)
-	}
 
-	// Stage 0: decode + validate rows into task states.
-	tasks := make([]*taskState, 0, len(in.Rows))
-	for _, row := range in.Rows {
-		warcItem, warcFile := row.WARCItemAndFile()
+	for _, pdfLine := range pdfLines {
+		warcItem, warcFile := pdfLine.WARCItemAndFile()
 		if warcItem == "" {
-			warcItem = in.Identifier
+			warcItem = in.ItemId
 		}
-		sha1hex, err := decodeSha1Base32(row.Sha1Base32)
+		sha1, err := decodeSha1Base32(pdfLine.Sha1Base32)
 		if err != nil {
-			l.Warn("skipping row with bad sha1", "sha1_b32", row.Sha1Base32, "err", err.Error())
-			out.Pdfs.Failed++
+			l.Warn("skipping row with bad sha1", "sha1_b32", pdfLine.Sha1Base32, "err", err.Error())
 			continue
 		}
-		tasks = append(tasks, &taskState{row: row, sha1hex: sha1hex, warcItem: warcItem, warcFile: warcFile})
-	}
-	if len(tasks) == 0 {
-		return out, nil
-	}
 
-	// Stage 1: parallel fatcat probes.
-	activity.RecordHeartbeat(ctx, "stage-1-fatcat-probes")
-	stopHB := heartbeat(ctx, "stage-1-progress")
-	tasks, skipped, err := filterKnown(ctx, client, tasks)
-	stopHB()
-	if err != nil {
-		return out, fmt.Errorf("fatcat probe: %w", err)
-	}
-	out.Pdfs.Skipped += skipped
-	l.Info("fatcat probe complete", "item", in.Identifier, "skipped", skipped, "remaining", len(tasks))
-	if len(tasks) == 0 {
-		return out, nil
-	}
-
-	// Stage 2: parallel petabox fetch + WARC extract.
-	activity.RecordHeartbeat(ctx, "stage-2-fetch-warc")
-	stopHB = heartbeat(ctx, "stage-2-progress")
-	tasks, failed := fetchAndExtractWARC(ctx, client, tasks)
-	stopHB()
-	out.Pdfs.Failed += failed
-	l.Info("warc fetch complete", "item", in.Identifier, "ready_to_submit", len(tasks), "fetch_failures", failed)
-	if len(tasks) == 0 {
-		return out, nil
-	}
-
-	// Stage 3: in-process PDF processing (pdfextract + GROBID, derivatives
-	// written through to S3) followed by processResult, run in parallel. Each
-	// task drops its PDF bytes after processing so memory stays bounded to
-	// ~stageConcurrency PDFs.
-	activity.RecordHeartbeat(ctx, "stage-3-process-pdf")
-	stopHB = heartbeat(ctx, "stage-3-progress")
-	processed, failedFinal := processTasks(ctx, processor, tasks)
-	stopHB()
-	out.Pdfs.Processed += processed
-	out.Pdfs.Failed += failedFinal
-	l.Info("processed item",
-		"item", in.Identifier,
-		"processed", processed,
-		"failed", failedFinal,
-		"skipped", out.Pdfs.Skipped)
-
-	return out, nil
-}
-
-// filterKnown probes fatcat in parallel and returns the tasks whose sha1
-// isn't yet attached to a file with URLs (the keep set), plus the count of
-// already-indexed tasks.
-func filterKnown(ctx context.Context, client *http.Client, tasks []*taskState) (kept []*taskState, skipped int, err error) {
-	knownMap := make(map[string]bool, len(tasks))
-	var (
-		mu       sync.Mutex
-		probeErr error
-		wg       sync.WaitGroup
-		sem      = make(chan struct{}, stageConcurrency)
-	)
-	for _, t := range tasks {
-		select {
-		case <-ctx.Done():
-			return nil, 0, ctx.Err()
-		case sem <- struct{}{}:
+		activity.RecordHeartbeat(ctx, "sha1-lookup")
+		fid, err := fatcat2.LookupSha1(client, sha1)
+		if err != nil {
+			return out, fmt.Errorf("could not look up sha1 in fc2: %w", err)
 		}
-		wg.Add(1)
-		go func(t *taskState) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			fid, err := fatcat2.LookupSha1(client, t.sha1hex)
-			if err != nil {
-				mu.Lock()
-				if probeErr == nil {
-					probeErr = fmt.Errorf("LookupSha1 %s: %w", t.sha1hex, err)
-				}
-				mu.Unlock()
-				return
-			}
-			if fid == nil {
-				return
-			}
+
+		if fid != nil {
+			activity.RecordHeartbeat(ctx, "file-lookup")
 			file, err := fatcat2.GetFile(client, *fid)
 			if err != nil {
-				mu.Lock()
-				if probeErr == nil {
-					probeErr = fmt.Errorf("GetFile %s: %w", t.sha1hex, err)
-				}
-				mu.Unlock()
-				return
+				return out, fmt.Errorf("could not get file '%s' from fc2: '%w'", fid, err)
 			}
 			if len(file.URLs) > 0 {
-				mu.Lock()
-				knownMap[t.sha1hex] = true
-				mu.Unlock()
+				l.Info("skipping known file", "sha1", sha1, "fid", fid)
 			}
-		}(t)
-	}
-	wg.Wait()
-	if probeErr != nil {
-		return nil, 0, probeErr
-	}
-	for _, t := range tasks {
-		if knownMap[t.sha1hex] {
-			skipped++
-			continue
 		}
-		kept = append(kept, t)
-	}
-	return kept, skipped, nil
-}
 
-// fetchAndExtractWARC reads each task's WARC record from petabox in parallel
-// and extracts the HTTP response payload into task.pdfBytes. Per-task
-// failures are skipped (returned as count) rather than failing the activity.
-func fetchAndExtractWARC(ctx context.Context, client *http.Client, tasks []*taskState) (kept []*taskState, failed int) {
-	type outcome struct {
-		t  *taskState
-		ok bool
-	}
-	results := make([]outcome, len(tasks))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, stageConcurrency)
-	for i, t := range tasks {
-		select {
-		case <-ctx.Done():
-			return nil, failed
-		case sem <- struct{}{}:
-		}
-		wg.Add(1)
-		go func(i int, t *taskState) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			raw, err := ia.ReadRange(ctx, client, t.warcItem, t.warcFile, t.row.WarcOffset, t.row.WarcSize)
-			if err != nil {
-				slog.Warn("petabox range read failed", "sha1", t.sha1hex, "err", err.Error())
-				results[i] = outcome{t: t, ok: false}
-				return
-			}
-			pdfBs, err := extractWARCPayload(raw)
-			if err != nil {
-				slog.Warn("warc extract failed", "sha1", t.sha1hex, "err", err.Error())
-				results[i] = outcome{t: t, ok: false}
-				return
-			}
-			t.pdfBytes = pdfBs
-			results[i] = outcome{t: t, ok: true}
-		}(i, t)
-	}
-	wg.Wait()
-	for _, r := range results {
-		if r.t == nil {
-			continue
-		}
-		if !r.ok {
-			failed++
-			continue
-		}
-		kept = append(kept, r.t)
-	}
-	return kept, failed
-}
+		out.PdfsWanted++
 
-// processTasks runs blobproc.ProcessPDF in-process for each task in parallel
-// (pdfextract + GROBID, derivatives written through to S3), then runs
-// processResult on the in-memory output. Each task drops its PDF bytes after
-// processing. Per-task failures are counted, not propagated, so one bad PDF
-// doesn't abort the item.
-func processTasks(ctx context.Context, processor *pdf.Processor, tasks []*taskState) (processed, failed int) {
-	var (
-		wg  sync.WaitGroup
-		mu  sync.Mutex
-		sem = make(chan struct{}, stageConcurrency)
-	)
-	for _, t := range tasks {
-		select {
-		case <-ctx.Done():
-			return processed, failed
-		case sem <- struct{}{}:
+		activity.RecordHeartbeat(ctx, "range-read")
+		raw, err := ia.ReadRange(ctx, client,
+			warcItem, warcFile, pdfLine.WarcOffset, pdfLine.WarcSize)
+		if err != nil {
+			return out, fmt.Errorf("range read failed: %w", err)
 		}
-		wg.Add(1)
-		go func(t *taskState) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			content, err := processor.Process(ctx, t.pdfBytes, t.sha1hex)
-			t.pdfBytes = nil
-			if err != nil {
-				slog.Warn("pdf processing failed", "sha1", t.sha1hex, "err", err.Error())
-				mu.Lock()
-				failed++
-				mu.Unlock()
-				return
-			}
-			if err := processResult(ctx, t.sha1hex, content); err != nil {
-				var gpe *GrobidParseError
-				if errors.As(err, &gpe) {
-					slog.Warn("grobid parse failed", "sha1", t.sha1hex)
-				} else {
-					slog.Warn("processResult failed", "sha1", t.sha1hex, "err", err.Error())
-				}
-				mu.Lock()
-				failed++
-				mu.Unlock()
-				return
-			}
-			mu.Lock()
-			processed++
-			mu.Unlock()
-		}(t)
-	}
-	wg.Wait()
-	return processed, failed
-}
 
-// heartbeat fires an activity heartbeat every 60s until the returned stop
-// function is called. Use to keep a long parallel stage alive against the
-// HeartbeatTimeout while individual goroutines may be blocked on I/O.
-func heartbeat(ctx context.Context, msg string) (stop func()) {
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(60 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				activity.RecordHeartbeat(ctx, msg)
-			}
+		activity.RecordHeartbeat(ctx, "pdf-extract")
+		pdfBs, err := extractWARCPayload(raw)
+		if err != nil {
+			return out, fmt.Errorf("could not extract pdf bytes from warc: %w", err)
 		}
-	}()
-	return func() {
-		select {
-		case <-done:
-		default:
-			close(done)
+
+		activity.RecordHeartbeat(ctx, "pdf-process")
+		pdfContent, err := processor.Process(ctx, pdfBs, sha1)
+		if err != nil {
+			return out, fmt.Errorf("pdf processing failed: %w", err)
 		}
+
+		// TODO create fc2 entities
+		// TODO ES ingest
 	}
+
+	return out, nil
 }
 
 type GrobidParseError struct {
@@ -598,14 +283,6 @@ func extractWARCPayload(raw []byte) ([]byte, error) {
 		return nil, fmt.Errorf("read HTTP body: %w", err)
 	}
 	return body, nil
-}
-
-// isSkippableItem reports whether an IA item identifier should be skipped
-// by the periodic-ingest pipeline. Today this catches -CRL meta containers
-// (crawl logs, configs, reports — they have no WARCs or rollup CDX). Add
-// further rules here as new meta-item conventions surface.
-func isSkippableItem(id string) bool {
-	return strings.HasSuffix(id, "-CRL")
 }
 
 // decodeSha1Base32 converts the CDX-formatted 32-char base32 sha1 digest to

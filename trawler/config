@@ -52,7 +52,7 @@ items_per_child = 4
 collection_page_size = 100
 
 [fatcat1]
-endpoint = "https://scholar.archive.org/api/fatcat/v1"
+endpoint = "https://scholar.archive.org/_fc/v0"
 
 [crawling]
 cdx_freshness_cutoff = "672h" # four weeks

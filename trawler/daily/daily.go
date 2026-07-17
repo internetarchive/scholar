@@ -139,6 +139,12 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		scrapeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 			StartToCloseTimeout: 4 * 60 * 60 * time.Second,
 			TaskQueue:           in.ExternalTaskQueue,
+			RetryPolicy: &temporal.RetryPolicy{
+				InitialInterval:    time.Second,
+				BackoffCoefficient: 10.0,
+				MaximumInterval:    time.Second * 480,
+				MaximumAttempts:    6,
+			},
 		})
 		scrapeIn := scholkitScrapeInput{
 			Day:      in.Day,

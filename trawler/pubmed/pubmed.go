@@ -17,7 +17,6 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
-	"git.archive.org/webgroup/scholar/trawler/orcid"
 	"github.com/google/uuid"
 	"github.com/internetarchive/scholar/pubmed2json"
 	"github.com/spf13/viper"
@@ -47,7 +46,6 @@ var pubmedReleaseTypeMap = map[string]string{
 	"Legal Case":                   "legal_case",
 	"Legislation":                  "legislation",
 }
-
 
 // containerTypeMap maps Fatcat release types to their parent container type.
 var containerTypeMap = map[string]string{

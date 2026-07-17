@@ -2,11 +2,27 @@ package cleaning
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
 )
+
+// NormalizeOrcid converts various ORCID formats to the canonical dashed form.
+func NormalizeOrcid(orcid string) string {
+	orcid = strings.TrimPrefix(orcid, "https://orcid.org/")
+	orcid = strings.TrimPrefix(orcid, "http://orcid.org/")
+	orcid = strings.TrimSpace(orcid)
+	if strings.Contains(orcid, "-") {
+		return orcid
+	}
+	// 16-digit undashed form
+	if len(orcid) == 16 {
+		return fmt.Sprintf("%s-%s-%s-%s", orcid[0:4], orcid[4:8], orcid[8:12], orcid[12:16])
+	}
+	return orcid
+}
 
 // NormalizeDOI strips common DOI URL prefixes, trims whitespace, and returns
 // a lowercase DOI string. Returns an empty string if the result does not look

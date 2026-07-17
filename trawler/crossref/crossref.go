@@ -16,7 +16,6 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
-	"git.archive.org/webgroup/scholar/trawler/orcid"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/sdk/activity"
@@ -143,8 +142,7 @@ func (cc crossrefContributor) ToReleaseContrib(client *http.Client) (fatcat2.Rel
 		Surname:   cc.Family,
 	}
 	if cc.ORCID != "" {
-		orcidVal := orcid.Normalize(cc.ORCID)
-		id, err := fatcat2.LookupOrcid(client, orcidVal)
+		id, err := fatcat2.LookupOrcid(client, cc.ORCID)
 		if err != nil {
 			return out, err
 		}

@@ -52,11 +52,19 @@ type PeriodicIngestInput struct {
 	CollectionName string
 	// limit how many items are looked at; for debugging
 	Limit int
+	// Override default source label generation
+	SourceOverride string
 }
 
 func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (PeriodicCounts, error) {
 	out := PeriodicCounts{}
 	// l := workflow.GetLogger(ctx)
+	source := in.SourceOverride
+	if source == "" {
+		now := workflow.Now(ctx).Format("2006-01-02")
+		// TODO should this include the run id?
+		source = fmt.Sprintf("ingest-%s-%s", now, in.CollectionName)
+	}
 
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 20 * time.Minute,
@@ -80,10 +88,9 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	ctx = workflow.WithActivityOptions(ctx, ao)
 	var processOut PeriodicCounts
 	for _, itemId := range listOut.ItemIds {
-
 		err := workflow.ExecuteActivity(
 			ctx, ProcessCrawlItemActivity,
-			ProcessCrawlItemInput{ItemId: itemId}).Get(ctx, &processOut)
+			ProcessCrawlItemInput{ItemId: itemId, SourceLabel: source}).Get(ctx, &processOut)
 		if err != nil {
 			return out, err
 		}
@@ -139,7 +146,8 @@ func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCo
 }
 
 type ProcessCrawlItemInput struct {
-	ItemId string
+	ItemId      string
+	SourceLabel string
 }
 
 func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (PeriodicCounts, error) {
@@ -270,7 +278,7 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			// TODO run a basic heuristic on whether or not this seems like a paper:
 			// does it have at least one author, an external ID, an abstract, a title, and a
 			// citation?
-			r, err := grobidToRelease(client, gdoc)
+			r, err := grobidToRelease(client, in.SourceLabel, gdoc)
 			if err != nil {
 				return out, fmt.Errorf("failed to convert grobid to new release: %w", err)
 			}
@@ -280,6 +288,7 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 				return out, fmt.Errorf("could not create release: %w", err)
 			}
 			release.ID = *rid
+			release.Source = in.SourceLabel
 		}
 
 		fid, err := uuid.NewV7()
@@ -291,7 +300,7 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			ID:       fid,
 			Releases: []fatcat2.Release{*release},
 			Mimetype: "application/pdf",
-			Source:   release.Source,
+			Source:   in.SourceLabel,
 			URLs: []fatcat2.FileURL{
 				{
 					Rel:    "wayback",
@@ -310,8 +319,14 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 	return out, nil
 }
 
-func grobidToRelease(client *http.Client, gdoc *tei.GrobidDocument) (fatcat2.Release, error) {
+func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocument) (fatcat2.Release, error) {
+	rid, err := uuid.NewV7()
+	if err != nil {
+		return fatcat2.Release{}, fmt.Errorf("failed making uuid: %w", err)
+	}
+
 	out := fatcat2.Release{
+		ID:          rid,
 		Contribs:    []fatcat2.ReleaseContrib{},
 		ExternalIDs: []fatcat2.ExternalID{},
 		Extra:       map[string]any{},
@@ -322,6 +337,7 @@ func grobidToRelease(client *http.Client, gdoc *tei.GrobidDocument) (fatcat2.Rel
 		Issue:       gdoc.Header.Issue,
 		Title:       gdoc.Header.Title,
 		Type:        "article-journal",
+		Source:      source,
 	}
 	if gdoc.Header.DOI != "" {
 		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
@@ -364,27 +380,48 @@ func grobidToRelease(client *http.Client, gdoc *tei.GrobidDocument) (fatcat2.Rel
 
 	out.Extra["raw_date"] = gdoc.Header.Date
 
-	for _, author := range gdoc.Header.Authors {
-		// TODO
-		fmt.Println(author)
-		//if author.ORCID != "" {
-		//	aid, err := fatcat2.LookupOrcid(client, author.ORCID)
-		//	if err != nil {
-		//		return out, fmt.Errorf("failed to look up author '%s': %w", err)
-		//	}
-		//}
-		//// TODO create authors as needed
-		//// TODO append to contribs array on release
-		//contrib := fatcat2.ReleaseContrib{
-		//	RawName:   author.FullName,
-		//	GivenName: author.GivenName,
-		//	Surname:   author.Surname,
-		//}
+	for i, author := range gdoc.Header.Authors {
+		var aid *uuid.UUID
+		var err error
+		if author.ORCID != "" {
+			aid, err = fatcat2.LookupOrcid(client, author.ORCID)
+			if err != nil {
+				return out, fmt.Errorf("failed to look up author '%s': %w", err)
+			}
+			if aid == nil {
+				creator := fatcat2.Creator{
+					DisplayName: author.FullName,
+					GivenName:   author.GivenName,
+					Surname:     author.Surname,
+					Source:      source,
+					Orcid:       cleaning.NormalizeOrcid(author.ORCID),
+				}
+				aid, err = fatcat2.CreateCreator(client, &creator)
+				if err != nil {
+					return out, fmt.Errorf("could not create creator '%s': %w", creator.Orcid, err)
+				}
+				creator.ID = *aid
+			}
+		}
+		rawAffiliation := author.Affiliation.Institution
+		if author.Affiliation.Department != "" {
+			rawAffiliation += " " + author.Affiliation.Department
+		}
+		contrib := fatcat2.ReleaseContrib{
+			ReleaseID:      &out.ID,
+			CreatorID:      aid,
+			RawName:        author.FullName,
+			GivenName:      author.GivenName,
+			Surname:        author.Surname,
+			Position:       i,
+			Role:           "author",
+			RawAffiliation: rawAffiliation,
+		}
+		out.Contribs = append(out.Contribs, contrib)
 	}
 
 	// TODO stage
 	// TODO references
-	// TODO contribs
 	// TODO extra
 	// TODO abstract
 	// TODO grobid doesn't seem to try and extract license information

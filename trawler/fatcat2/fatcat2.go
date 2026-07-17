@@ -322,8 +322,7 @@ type Creator struct {
 	Surname     string     `json:"surname,omitempty"`
 	Orcid       string     `json:"orcid,omitempty"`
 	LegacyRevID *uuid.UUID `json:"legacy_rev_id"`
-
-	// TODO Entity fields like source, timestamps, etc
+	Source      string     `json:"source,omitempty"`
 }
 
 func CreateCreator(client *http.Client, c *Creator) (*uuid.UUID, error) {
@@ -334,6 +333,7 @@ func CreateCreator(client *http.Client, c *Creator) (*uuid.UUID, error) {
 			return nil, fmt.Errorf("failed to create uuid: %w", err)
 		}
 	}
+
 	legacy, err := lookupLegacyCreator(client, c.Orcid)
 	if err != nil {
 		return nil, fmt.Errorf("legacy lookup failed: %w", err)
@@ -343,8 +343,35 @@ func CreateCreator(client *http.Client, c *Creator) (*uuid.UUID, error) {
 		c.ID = legacy.Ident
 		c.LegacyRevID = &legacy.Revision
 	}
-	// TODO
-	return nil, nil
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	bs, err := json.Marshal(c)
+
+	body := bytes.NewBuffer(bs)
+	req, err := http.NewRequest("POST", fc2url+"/creator", body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
+	}
+
+	if resp.StatusCode == 422 {
+		// container already exists, likely a retry; treat as success
+		return &c.ID, nil
+	}
+
+	if resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code for '%#v' POST: %d; body '%s'", c, resp.StatusCode, b)
+	}
+
+	return &c.ID, nil
 }
 
 // CreateContainer creates a new container in fc2 and returns its ID

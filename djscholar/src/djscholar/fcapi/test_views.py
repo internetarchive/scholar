@@ -1182,6 +1182,48 @@ class TestFileRoutes(EntityCRUDTestCase):
         response = client.post(self.create, data=data, headers=self.auth_headers)
         self.assertEqual(response.status_code, HTTPStatus.BAD_REQUEST)
 
+    def test_add_url(self):
+        url = "https://example.org/a.pdf"
+
+        # unauthenticated
+        response = client.post(f"/file/{self.entity.id}/url",
+                               data=v.FileURLIn(url=url).model_dump_json())
+        self.assertEqual(response.status_code, HTTPStatus.UNAUTHORIZED)
+
+        # file does not exist
+        response = client.post(f"/file/{uuid4()}/url",
+                               data=v.FileURLIn(url=url).model_dump_json(),
+                               headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+
+        # add a new url; rel defaults to "web"
+        existing = self.entity.urls.count()
+        response = client.post(f"/file/{self.entity.id}/url",
+                               data=v.FileURLIn(url=url).model_dump_json(),
+                               headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+        self.assertEqual(self.entity.urls.count(), existing + 1)
+        self.assertEqual(self.entity.urls.get(url=url).rel, "web")
+
+        # adding the same url again is a no-op (200); no duplicate row and the
+        # existing rel is left unchanged even if a different one is sent
+        response = client.post(
+                f"/file/{self.entity.id}/url",
+                data=v.FileURLIn(url=url, rel="repository").model_dump_json(),
+                headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertEqual(self.entity.urls.filter(url=url).count(), 1)
+        self.assertEqual(self.entity.urls.get(url=url).rel, "web")
+
+        # an explicit rel is honored for a genuinely new url
+        url2 = "https://repo.example.org/b.pdf"
+        response = client.post(
+                f"/file/{self.entity.id}/url",
+                data=v.FileURLIn(url=url2, rel="repository").model_dump_json(),
+                headers=self.auth_headers)
+        self.assertEqual(response.status_code, HTTPStatus.CREATED)
+        self.assertEqual(self.entity.urls.get(url=url2).rel, "repository")
+
     def test_bulk_create(self):
         files = []
         for _ in range(10):

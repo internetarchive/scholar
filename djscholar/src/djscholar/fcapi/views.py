@@ -220,6 +220,16 @@ class FileURLSchema(ModelSchema):
         fields = ["rel", "url"]
 
 
+class FileURLIn(ModelSchema):
+    # the target file is taken from the path, so no file_id here. rel defaults
+    # to the model default when omitted.
+    rel: str = "web"
+
+    class Meta:
+        model = m.FileURL
+        fields = ["url"]
+
+
 class FileSchema(ModelSchema):
     releases: list[ReleaseSchema] = []
     urls: list[FileURLSchema] = []
@@ -680,6 +690,18 @@ def create_file(request, file_in: FileSchema) -> HttpResponse:
         m.ReleaseFile.objects.bulk_create(
                 [m.ReleaseFile(release_id=r["id"], file_id=f.id) for r in releases])
     return v2api.create_response(request, "file created", status=HTTPStatus.CREATED)
+
+
+@v2api.post("/file/{ident}/url", auth=api_auth)
+def add_file_url(request, ident: UUID, url_in: FileURLIn) -> HttpResponse:
+    """Add a single URL to an existing file.
+
+    Idempotent: adding a URL already present on the file is a no-op and returns
+    200; a newly added URL returns 201. The rel of an existing URL is left
+    unchanged."""
+    _, created = file_svc.add_url(ident, url_in.rel, url_in.url)
+    code = HTTPStatus.CREATED if created else HTTPStatus.OK
+    return v2api.create_response(request, "url added", status=code)
 
 
 @v2api.put("/file", auth=api_auth)

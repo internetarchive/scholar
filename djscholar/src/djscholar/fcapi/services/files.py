@@ -42,6 +42,19 @@ def schema_metadata(entity: m.File) -> dict:
     return _entity_schema_metadata(entity)
 
 
+def add_url(ident: UUID, rel: str, url: str) -> tuple[m.FileURL, bool]:
+    """Add a URL to an existing file.
+
+    Idempotent on (file, url): if the URL is already present on the file, the
+    existing row is returned unchanged (its rel is not modified). Returns the
+    FileURL and whether it was newly created.
+
+    Raises EntityNotFound if no file has the given ident.
+    """
+    f = get(ident)
+    return m.FileURL.objects.get_or_create(file=f, url=url, defaults={"rel": rel})
+
+
 def get_releases(ident: UUID) -> QuerySet:
     return m.Release.objects.filter(releasefile__file_id=ident)
 

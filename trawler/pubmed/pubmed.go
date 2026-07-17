@@ -414,11 +414,9 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 			// ORCID
 			for _, id := range author.Identifiers {
 				if id.Source == "ORCID" {
-					orcidVal := orcid.Normalize(id.Value)
-					contrib.Extra["orcid"] = orcidVal
-					creatorID, err := fatcat2.LookupOrcid(client, orcidVal)
+					creatorID, err := fatcat2.LookupOrcid(client, id.Value)
 					if err != nil {
-						slog.Warn("pubmed: orcid lookup failed", "orcid", orcidVal, "pmid", pmid, "err", err)
+						slog.Warn("pubmed: orcid lookup failed", "orcid", id.Value, "pmid", pmid, "err", err)
 					} else {
 						contrib.CreatorID = creatorID
 					}

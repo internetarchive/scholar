@@ -679,8 +679,7 @@ func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData
 		panic(err)
 	}
 	q := req.URL.Query()
-	q.Add("extid_type", idtype)
-	q.Add("extid_value", idvalue)
+	q.Add(idtype, idvalue)
 	req.URL.RawQuery = q.Encode()
 	resp, err := c.Do(req)
 	if err != nil {
@@ -726,18 +725,25 @@ func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData
 }
 
 func lookupLegacyContainer(c *http.Client, issnl string) (*LegacyData, error) {
-	return lookupLegacy(c, "lookup_container", "issnl", issnl)
+	return lookupLegacy(c, "container/lookup", "issnl", issnl)
+}
+
+func lookupLegacyCreator(c *http.Client, orcid string) (*LegacyData, error) {
+	return lookupLegacy(c, "creator/lookup", "orcid", orcid)
 }
 
 func lookupLegacyRelease(c *http.Client, idtype, idvalue string) (*LegacyData, error) {
-	return lookupLegacy(c, "lookup_release", idtype, idvalue)
+	return lookupLegacy(c, "release/lookup", idtype, idvalue)
 }
 
 func lookupLegacyFile(c *http.Client, sha1 string) (*LegacyData, error) {
-	return lookupLegacy(c, "lookup_file", "sha1", sha1)
+	return lookupLegacy(c, "file/lookup", "sha1", sha1)
 }
 
 func lookup(c *http.Client, entityType, idType, idValue string) (*uuid.UUID, error) {
+	if idValue == "" {
+		return nil, nil
+	}
 	fc2url := viper.GetString("fatcat2.endpoint")
 	req, err := http.NewRequest("GET", fc2url+"/"+entityType+"/lookup", nil)
 	if err != nil {
@@ -789,14 +795,24 @@ func LookupPmid(c *http.Client, pmid string) (*uuid.UUID, error) {
 	return lookup(c, "release", "pmid", pmid)
 }
 
+// LookupPmcid returns the ID of a fatcat2 Release with the given PMCID, if any.
+func LookupPmcid(c *http.Client, pmcid string) (*uuid.UUID, error) {
+	return lookup(c, "release", "pmcid", pmcid)
+}
+
 // LookupArxiv returns the ID of a fatcat2 Release with the given arXiv ID, if any.
 func LookupArxiv(c *http.Client, arxivID string) (*uuid.UUID, error) {
 	return lookup(c, "release", "arxiv", arxivID)
 }
 
+// LookupRelease returns the ID of a fatcat2 Release with the given id type and value, if any.
+func LookupRelease(c *http.Client, idType, idValue string) (*uuid.UUID, error) {
+	return lookup(c, "release", idType, idValue)
+}
+
 // LookupOrcid returns the ID of a fatcat2 Creator with the given orcid, if any.
 func LookupOrcid(c *http.Client, orcid string) (*uuid.UUID, error) {
-	return lookup(c, "creator", "orcid", orcid)
+	return lookup(c, "creator", "orcid", cleaning.NormalizeOrcid(orcid))
 }
 
 // LookupIssnl returns the ID of a fatcat2 Container with the given ISSNL, if any.

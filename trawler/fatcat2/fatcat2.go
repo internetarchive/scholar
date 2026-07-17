@@ -689,12 +689,16 @@ func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData
 		return nil, nil
 	}
 
+	if resp.StatusCode == 400 {
+		return nil, nil
+	}
+
 	if resp.StatusCode != 200 {
 		// NB invalid issnls crash the server (500). if we get bad data from
 		// crossref it will stop the activity cold. might have to patch fc1 to
 		// return a 400.
 		return nil, fmt.Errorf(
-			"did not get 200 nor 404 from fc1 for %s of '%s' lookup: %d",
+			"did not get 200, 400, nor 404 from fc1 for %s of '%s' lookup: %d",
 			idtype, idvalue, resp.StatusCode)
 	}
 

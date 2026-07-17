@@ -434,8 +434,46 @@ func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocumen
 		}
 	}
 
+	for _, citation := range gdoc.Citations {
+		rawRef := fatcat2.RawRef{
+			Index:   citation.Index,
+			Locator: citation.FirstPage,
+			Title:   citation.Title,
+			Extra:   map[string]any{},
+		}
+		if len(citation.Date) >= 4 {
+			year, _ := strconv.Atoi(citation.Date[0:4])
+			rawRef.Year = year
+		}
+
+		rawRef.ContainerName = citation.Journal
+
+		if citation.Unstructured != "" {
+			rawRef.Extra["unstructured"] = citation.Unstructured
+		}
+
+		authorNames := []string{}
+		for _, author := range citation.Authors {
+			authorNames = append(authorNames, author.FullName)
+		}
+		if len(authorNames) > 0 {
+			rawRef.Extra["authors"] = authorNames
+		}
+
+		if citation.Volume != "" {
+			rawRef.Extra["volume"] = citation.Volume
+		}
+
+		if citation.Pages != "" {
+			rawRef.Extra["pages"] = citation.Pages
+		}
+
+		if citation.LastPage != "" {
+			rawRef.Extra["last_page"] = citation.LastPage
+		}
+	}
+
 	// TODO stage
-	// TODO references
 	// TODO extra
 	// TODO grobid doesn't seem to try and extract license information
 

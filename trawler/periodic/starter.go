@@ -14,9 +14,7 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
-// StartCollectionIngest fires an IngestCollectionWorkflow for the given
-// input and returns immediately (fire-and-forget).
-func StartCollectionIngest(in IngestCollectionInput) error {
+func StartCollectionIngest(in PeriodicIngestInput) error {
 	ctx := context.Background()
 	c, err := temporal.SetupTemporal(ctx)
 	if err != nil {
@@ -36,13 +34,13 @@ func StartCollectionIngest(in IngestCollectionInput) error {
 			ID:        workflowID,
 			TaskQueue: viper.GetString("periodic_ingest.task_queue"),
 		},
-		IngestCollectionWorkflow,
+		PeriodicIngestWorkflow,
 		in)
 	if err != nil {
 		return fmt.Errorf("could not start workflow %s: %w", workflowID, err)
 	}
 
-	log.Printf("dispatched %s (collection=%s, limit=%d)", workflowID, in.CollectionID, in.Limit)
+	log.Printf("dispatched %s (collection=%s, limit=%d)", workflowID, in.CollectionName, in.Limit)
 	return nil
 }
 
@@ -62,11 +60,9 @@ func StartWorker() error {
 			},
 		})
 
-	w.RegisterWorkflow(IngestCollectionWorkflow)
-	w.RegisterWorkflow(IngestItemBatchWorkflow)
-	w.RegisterActivity(ListCollectionItemsActivity)
-	w.RegisterActivity(FetchItemCDXActivity)
-	w.RegisterActivity(ProcessItemActivity)
+	w.RegisterWorkflow(PeriodicIngestWorkflow)
+	w.RegisterActivity(ListCollectionActivity)
+	w.RegisterActivity(ProcessCrawlItemActivity)
 
 	err = w.Run(worker.InterruptCh())
 	if err != nil {

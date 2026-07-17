@@ -18,13 +18,17 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/cdx/cdxfile"
+	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/ia"
 	"git.archive.org/webgroup/scholar/trawler/pdf"
+	"github.com/google/uuid"
 	warc "github.com/internetarchive/gowarc"
 	"github.com/miku/grobidclient/tei"
 	"go.temporal.io/sdk/activity"
@@ -36,8 +40,6 @@ const (
 	itemsPerPage = 100
 	taskQueue    = "periodic_ingest"
 )
-
-// NEW BESPOKE HERE
 
 type PeriodicCounts struct {
 	PdfLines     int
@@ -64,7 +66,9 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	err := workflow.ExecuteActivity(
 		workflow.WithActivityOptions(ctx, ao),
 		ListCollectionActivity,
-		ListCollectionInput{CollectionName: in.CollectionName}).Get(ctx, &listOut)
+		ListCollectionInput{
+			CollectionName: in.CollectionName,
+			Limit:          in.Limit}).Get(ctx, &listOut)
 	if err != nil {
 		return out, err
 	}
@@ -93,6 +97,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 
 type ListCollectionInput struct {
 	CollectionName string
+	Limit          int
 }
 
 type ListCollectionOutput struct {
@@ -117,6 +122,10 @@ func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCo
 			if !strings.HasSuffix(id, "-CRL") {
 				out.ItemIds = append(out.ItemIds, id)
 			}
+		}
+
+		if len(ids) >= in.Limit {
+			break
 		}
 
 		if !hasMore {
@@ -179,19 +188,19 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 		}
 
 		activity.RecordHeartbeat(ctx, "sha1-lookup")
-		fid, err := fatcat2.LookupSha1(client, sha1)
+		extantFid, err := fatcat2.LookupSha1(client, sha1)
 		if err != nil {
 			return out, fmt.Errorf("could not look up sha1 in fc2: %w", err)
 		}
 
-		if fid != nil {
+		if extantFid != nil {
 			activity.RecordHeartbeat(ctx, "file-lookup")
-			file, err := fatcat2.GetFile(client, *fid)
+			file, err := fatcat2.GetFile(client, *extantFid)
 			if err != nil {
-				return out, fmt.Errorf("could not get file '%s' from fc2: '%w'", fid, err)
+				return out, fmt.Errorf("could not get file '%s' from fc2: '%w'", extantFid, err)
 			}
 			if len(file.URLs) > 0 {
-				l.Info("skipping known file", "sha1", sha1, "fid", fid)
+				l.Info("skipping known file", "sha1", sha1, "fid", extantFid)
 			}
 		}
 
@@ -216,9 +225,171 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			return out, fmt.Errorf("pdf processing failed: %w", err)
 		}
 
+		gdoc, err := tei.ParseDocument(bytes.NewReader(pdfContent.GrobidXML))
+		if err != nil {
+			return out, fmt.Errorf("grobid parsing failed: %w", err)
+		}
+
+		pairs := [][]string{
+			[]string{"doi", gdoc.Header.DOI},
+			[]string{"pmid", gdoc.Header.PMID},
+			[]string{"pmcid", gdoc.Header.PMCID},
+			[]string{"arxiv", gdoc.Header.ArxivID},
+		}
+
+		// TODO if all of the ext ids are empty we should probably just log and
+		// move on. it might not be an academic PDF or we might make a release/file
+		// combo that ends up orphaned from a later, DOI'ed release.
+
+		var rid *uuid.UUID
+		var idType string
+		err = nil
+
+		for _, pair := range pairs {
+			idType = pair[0]
+			rid, err = fatcat2.LookupRelease(client, idType, pair[1])
+			if err != nil {
+				return out, fmt.Errorf("fc2 release lookup failed: %w", err)
+			}
+
+			if rid != nil {
+				break
+			}
+		}
+
+		var release *fatcat2.Release
+
+		if rid != nil {
+			// have a release we can add a file to
+			r, err := fatcat2.GetRelease(client, *rid)
+			if err != nil {
+				return out, fmt.Errorf("failed to get release '%s': %w", rid, err)
+			}
+			release = &r
+		} else {
+			// TODO run a basic heuristic on whether or not this seems like a paper:
+			// does it have at least one author, an external ID, an abstract, a title, and a
+			// citation?
+			r, err := grobidToRelease(client, gdoc)
+			if err != nil {
+				return out, fmt.Errorf("failed to convert grobid to new release: %w", err)
+			}
+			release = &r
+			rid, err := fatcat2.CreateRelease(client, *release)
+			if err != nil {
+				return out, fmt.Errorf("could not create release: %w", err)
+			}
+			release.ID = *rid
+		}
+
+		fid, err := uuid.NewV7()
+		if err != nil {
+			return out, fmt.Errorf("uuid creation failed: %w", err)
+		}
+
+		file := fatcat2.File{
+			ID:       fid,
+			Releases: []fatcat2.Release{*release},
+			Mimetype: "application/pdf",
+			Source:   release.Source,
+			URLs: []fatcat2.FileURL{
+				{
+					Rel:    "wayback",
+					URL:    pdfLine.URL,
+					FileID: fid,
+				},
+			},
+		}
+
+		_, err = fatcat2.CreateFile(client, &file)
+
 		// TODO create fc2 entities
 		// TODO ES ingest
 	}
+
+	return out, nil
+}
+
+func grobidToRelease(client *http.Client, gdoc *tei.GrobidDocument) (fatcat2.Release, error) {
+	out := fatcat2.Release{
+		Contribs:    []fatcat2.ReleaseContrib{},
+		ExternalIDs: []fatcat2.ExternalID{},
+		Extra:       map[string]any{},
+		Language:    cleaning.NormalizeLanguage(gdoc.LanguageCode),
+		Publisher:   gdoc.Header.Publisher,
+		Volume:      gdoc.Header.Volume,
+		Pages:       gdoc.Header.Pages,
+		Issue:       gdoc.Header.Issue,
+		Title:       gdoc.Header.Title,
+		Type:        "article-journal",
+	}
+	if gdoc.Header.DOI != "" {
+		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
+			Type: "doi", Value: gdoc.Header.DOI,
+		})
+	}
+	if gdoc.Header.PMID != "" {
+		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
+			Type: "pmid", Value: gdoc.Header.PMID,
+		})
+	}
+	if gdoc.Header.PMCID != "" {
+		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
+			Type: "PMCID", Value: gdoc.Header.PMCID,
+		})
+	}
+	if gdoc.Header.ArxivID != "" {
+		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
+			Type: "arxiv", Value: gdoc.Header.ArxivID,
+		})
+	}
+
+	// TODO should i handle ISSN in header?
+
+	if len(gdoc.Header.Date) == 10 {
+		d, err := time.Parse("2006-01-02", gdoc.Header.Date)
+		if err == nil {
+			rd := fatcat2.ReleaseDate(d)
+			out.ReleaseDate = &rd
+		}
+	} else if len(gdoc.Header.Date) > 4 {
+		yearPrefixRe := regexp.MustCompile("^[0-9]{4}-")
+		if yearPrefixRe.MatchString(gdoc.Header.Date) {
+			year, err := strconv.Atoi(gdoc.Header.Date[0:4])
+			if err == nil {
+				out.ReleaseYear = year
+			}
+		}
+	}
+
+	out.Extra["raw_date"] = gdoc.Header.Date
+
+	for _, author := range gdoc.Header.Authors {
+		// TODO
+		fmt.Println(author)
+		//if author.ORCID != "" {
+		//	aid, err := fatcat2.LookupOrcid(client, author.ORCID)
+		//	if err != nil {
+		//		return out, fmt.Errorf("failed to look up author '%s': %w", err)
+		//	}
+		//}
+		//// TODO create authors as needed
+		//// TODO append to contribs array on release
+		//contrib := fatcat2.ReleaseContrib{
+		//	RawName:   author.FullName,
+		//	GivenName: author.GivenName,
+		//	Surname:   author.Surname,
+		//}
+	}
+
+	// TODO stage
+	// TODO references
+	// TODO contribs
+	// TODO extra
+	// TODO abstract
+	// TODO grobid doesn't seem to try and extract license information
+
+	// TODO can anything be done about container?
 
 	return out, nil
 }

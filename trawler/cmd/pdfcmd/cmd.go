@@ -48,9 +48,9 @@ var ingestCmd = &cobra.Command{
 		if id == "" {
 			return fmt.Errorf("could not extract collection id from %q", args[0])
 		}
-		return periodic.StartCollectionIngest(periodic.IngestCollectionInput{
-			CollectionID: id,
-			Limit:        ingestLimit,
+		return periodic.StartCollectionIngest(periodic.PeriodicIngestInput{
+			CollectionName: id,
+			Limit:          ingestLimit,
 		})
 	},
 }

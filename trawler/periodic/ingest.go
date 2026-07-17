@@ -12,6 +12,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/base32"
 	"encoding/hex"
 	"fmt"
@@ -420,10 +421,22 @@ func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocumen
 		out.Contribs = append(out.Contribs, contrib)
 	}
 
+	if gdoc.Abstract != "" {
+		abs := cleaning.CleanString(cleaning.DeTag(gdoc.Abstract))
+		if len(abs) > cleaning.MinAbstractLength {
+			h := sha1.Sum([]byte(abs))
+			out.Abstracts = append(out.Abstracts, fatcat2.Abstract{
+				MIMEType: "application/xml+jats",
+				Content:  abs,
+				Language: cleaning.NormalizeLanguage(gdoc.LanguageCode),
+				SHA1:     fmt.Sprintf("%x", h),
+			})
+		}
+	}
+
 	// TODO stage
 	// TODO references
 	// TODO extra
-	// TODO abstract
 	// TODO grobid doesn't seem to try and extract license information
 
 	// TODO can anything be done about container?

@@ -316,21 +316,45 @@ func (f *File) SetMetadata(bs []byte) error {
 }
 
 type Creator struct {
-	ID          uuid.UUID `json:"id,omitzero"`
-	DisplayName string    `json:"display_name,omitempty"`
-	GivenName   string    `json:"given_name,omitempty"`
-	Surname     string    `json:"surname,omitempty"`
-	Orcid       string    `json:"orcid,omitempty"`
+	ID          uuid.UUID  `json:"id,omitzero"`
+	DisplayName string     `json:"display_name,omitempty"`
+	GivenName   string     `json:"given_name,omitempty"`
+	Surname     string     `json:"surname,omitempty"`
+	Orcid       string     `json:"orcid,omitempty"`
+	LegacyRevID *uuid.UUID `json:"legacy_rev_id"`
 
 	// TODO Entity fields like source, timestamps, etc
+}
+
+func CreateCreator(client *http.Client, c *Creator) (*uuid.UUID, error) {
+	var err error
+	if c.ID == uuid.Nil {
+		c.ID, err = uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create uuid: %w", err)
+		}
+	}
+	legacy, err := lookupLegacyCreator(client, c.Orcid)
+	if err != nil {
+		return nil, fmt.Errorf("legacy lookup failed: %w", err)
+	}
+
+	if legacy != nil {
+		c.ID = legacy.Ident
+		c.LegacyRevID = &legacy.Revision
+	}
+	// TODO
+	return nil, nil
 }
 
 // CreateContainer creates a new container in fc2 and returns its ID
 func CreateContainer(client *http.Client, c *Container) (*uuid.UUID, error) {
 	var err error
-	c.ID, err = uuid.NewV7()
-	if err != nil {
-		return nil, fmt.Errorf("uuid creation failed: %w", err)
+	if c.ID == uuid.Nil {
+		c.ID, err = uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("uuid creation failed: %w", err)
+		}
 	}
 
 	legacy, err := lookupLegacyContainer(client, c.ISSNL)
@@ -423,9 +447,11 @@ func CreateFile(client *http.Client, f *File) (*uuid.UUID, error) {
 // CreateRelease creates a new release in fc2 and returns its ID
 func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 	var err error
-	r.ID, err = uuid.NewV7()
-	if err != nil {
-		return nil, fmt.Errorf("uuid creation failed: %w", err)
+	if r.ID == uuid.Nil {
+		r.ID, err = uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("uuid creation failed: %w", err)
+		}
 	}
 
 	if len(r.ExternalIDs) == 0 {

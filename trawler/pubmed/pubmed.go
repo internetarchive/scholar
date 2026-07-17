@@ -23,8 +23,6 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
-const minAbstractLength = 75
-
 // pubmedReleaseTypeMap maps PubMed PublicationType strings to Fatcat release types.
 // Types not in this map result in a nil release type (unknown).
 // Special cases (retraction, withdrawn, correction) are handled separately.
@@ -341,7 +339,7 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 				}
 			}
 			content = strings.Join(parts, "\n")
-			if len(content) >= minAbstractLength {
+			if len(content) >= cleaning.MinAbstractLength {
 				h := sha1.Sum([]byte(content))
 				release.Abstracts = append(release.Abstracts, fatcat2.Abstract{
 					Content:  content,
@@ -352,7 +350,7 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 			}
 		} else {
 			for _, at := range art.Abstract.Texts {
-				if len(at.Text) < minAbstractLength {
+				if len(at.Text) < cleaning.MinAbstractLength {
 					continue
 				}
 				h := sha1.Sum([]byte(at.Text))
@@ -374,7 +372,7 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 			}
 		}
 		for _, at := range oa.Texts {
-			if len(at.Text) < minAbstractLength {
+			if len(at.Text) < cleaning.MinAbstractLength {
 				continue
 			}
 			h := sha1.Sum([]byte(at.Text))

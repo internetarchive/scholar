@@ -19,7 +19,6 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
-const minAbstractLength = 10
 const maxAbstractLength = 32000
 const maxPublisherLength = 80
 
@@ -761,7 +760,7 @@ func dataciteToFc(doc *dataciteDoc, source string) *fatcat2.Release {
 			continue
 		}
 		text := strings.TrimSpace(desc.Description)
-		if len(text) < minAbstractLength {
+		if len(text) < cleaning.MinAbstractLength {
 			continue
 		}
 		if len(text) > maxAbstractLength {

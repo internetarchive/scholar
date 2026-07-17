@@ -17,7 +17,6 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
-const minAbstractLength = 75
 const maxAuthors = 2000
 
 // arxivRecord is the deserializable flat representation of an arXiv OAI-PMH
@@ -166,7 +165,7 @@ func contribs(authors []arxivAuthor) []fatcat2.ReleaseContrib {
 // meets the minimum length.
 func abstract(text string) []fatcat2.Abstract {
 	text = strings.TrimSpace(text)
-	if len(text) < minAbstractLength {
+	if len(text) < cleaning.MinAbstractLength {
 		return nil
 	}
 	h := sha1.Sum([]byte(text))

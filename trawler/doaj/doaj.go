@@ -17,7 +17,6 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
-const minAbstractLength = 75
 const maxAuthors = 2000
 
 // doajRecord is the deserializable flat representation of a DOAJ OAI-PMH
@@ -117,7 +116,6 @@ func releaseYear(s string) int {
 	return y
 }
 
-
 // licenseSlug converts a CC license URL to a fatcat license slug.
 // e.g. "https://creativecommons.org/licenses/by/4.0/" → "cc-by"
 func licenseSlug(ref string) string {
@@ -166,7 +164,7 @@ func contribs(authors []doajAuthor) []fatcat2.ReleaseContrib {
 // abstract builds a fatcat2.Abstract if the text meets the minimum length.
 func abstract(text string) []fatcat2.Abstract {
 	text = strings.TrimSpace(text)
-	if len(text) < minAbstractLength {
+	if len(text) < cleaning.MinAbstractLength {
 		return nil
 	}
 	h := sha1.Sum([]byte(text))

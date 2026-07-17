@@ -9,6 +9,8 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+const MinAbstractLength = 75
+
 // NormalizeOrcid converts various ORCID formats to the canonical dashed form.
 func NormalizeOrcid(orcid string) string {
 	orcid = strings.TrimPrefix(orcid, "https://orcid.org/")

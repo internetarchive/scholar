@@ -29,8 +29,6 @@ import (
 // - create a file entry in fatcat2
 // - extract fulltext and ingest into elasticsearch
 
-const minAbstractLength = 75
-
 // containerTypeMap maps from fatcat release types to their assumed parent container type
 var containerTypeMap = map[string]string{
 	"article-journal":  "journal",
@@ -437,7 +435,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (*fatcat2.Release, error
 	// TODO find out if any release has more than one abstract in database
 	release.Abstracts = []fatcat2.Abstract{}
 	abs := cleaning.CleanString(cleaning.DeTag(xrefdoc.Abstract))
-	if len(abs) > minAbstractLength {
+	if len(abs) > cleaning.MinAbstractLength {
 		h := sha1.Sum([]byte(abs))
 		release.Abstracts = append(release.Abstracts, fatcat2.Abstract{
 			MIMEType: "application/xml+jats",

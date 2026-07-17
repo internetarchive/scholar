@@ -4,13 +4,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"git.archive.org/webgroup/scholar/trawler/cleaning"
 )
 
 func Test_doajID(t *testing.T) {
 	cases := []struct {
-		name       string
-		rec        doajRecord
-		expected   string
+		name     string
+		rec      doajRecord
+		expected string
 	}{
 		{
 			name:     "ID field takes priority",
@@ -283,7 +285,7 @@ func Test_doajToFc(t *testing.T) {
 		StartPage:       "100",
 		EndPage:         "110",
 		Publisher:       "Test Publisher",
-		Abstract:        strings.Repeat("x", minAbstractLength),
+		Abstract:        strings.Repeat("x", cleaning.MinAbstractLength),
 		Authors: []doajAuthor{
 			{Name: "Smith, Jane", Affiliation: "MIT"},
 			{Name: "Doe, John"},

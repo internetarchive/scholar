@@ -620,6 +620,42 @@ func ReleaseFiles(c *http.Client, rid uuid.UUID) ([]File, error) {
 	return p.Items, nil
 }
 
+// FileReleases returns the releases associated with a file in fc2. NB the
+// endpoint is paginated; only the first page is returned.
+func FileReleases(c *http.Client, fid uuid.UUID) ([]Release, error) {
+	type payload struct {
+		Items []Release
+	}
+	out := []Release{}
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/file/"+fid.String()+"/releases", nil)
+	if err != nil {
+		panic(err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("fc2 /file/%s/releases failed: %w", fid.String(), err)
+	}
+	defer resp.Body.Close()
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return out, fmt.Errorf("could not read file '%s' releases: %w", fid.String(), err)
+	}
+
+	if resp.StatusCode != 200 {
+		return out, fmt.Errorf("fc2 /file/%s/releases returned %d: %s", fid.String(), resp.StatusCode, bs)
+	}
+
+	var p payload
+	err = json.Unmarshal(bs, &p)
+	if err != nil {
+		return out, fmt.Errorf("could not unmarshal file '%s' releases: %w", fid.String(), err)
+	}
+
+	return p.Items, nil
+}
+
 // TODO generalize
 func GetRelease(c *http.Client, id uuid.UUID) (Release, error) {
 	out := Release{}

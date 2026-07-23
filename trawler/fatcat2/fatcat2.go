@@ -291,7 +291,6 @@ type File struct {
 // SetMetadata takes a byte array and sets the various checksum fields and the
 // byte size field on this File struct
 func (f *File) SetMetadata(bs []byte) error {
-
 	md5h := md5.New()
 	if _, err := io.Copy(md5h, bytes.NewBuffer(bs)); err != nil {
 		return fmt.Errorf("could not md5 sum pdf bytes: %w", err)
@@ -472,6 +471,49 @@ func CreateFile(client *http.Client, f *File) (*uuid.UUID, error) {
 	}
 
 	return &f.ID, nil
+}
+
+// AddFileURL adds a single URL to an existing file in fc2. It is idempotent:
+// adding a URL already present on the file is a no-op. Only the rel and url of
+// the supplied FileURL are sent; an empty rel lets the server apply its default
+// ("web"). The returned bool is true if the URL was newly added (HTTP 201) and
+// false if it already existed (HTTP 200).
+func AddFileURL(client *http.Client, fileID uuid.UUID, u FileURL) (bool, error) {
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	bs, err := json.Marshal(struct {
+		Rel string `json:"rel,omitempty"`
+		URL string `json:"url"`
+	}{Rel: u.Rel, URL: u.URL})
+	if err != nil {
+		return false, fmt.Errorf("file url marshal failed: %w", err)
+	}
+
+	body := bytes.NewBuffer(bs)
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/file/%s/url", fc2url, fileID), body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("file url POST failed for file %q url %q: %w", fileID, u.URL, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case 201:
+		return true, nil
+	case 200:
+		return false, nil
+	default:
+		b, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("unexpected status code for file %q url %q POST: %d; body '%s'",
+			fileID, u.URL, resp.StatusCode, b)
+	}
 }
 
 // CreateRelease creates a new release in fc2 and returns its ID

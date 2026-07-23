@@ -360,6 +360,7 @@ func CreateCreator(client *http.Client, c *Creator) (*uuid.UUID, error) {
 	if err != nil {
 		return nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode == 422 {
 		// container already exists, likely a retry; treat as success
@@ -411,6 +412,7 @@ func CreateContainer(client *http.Client, c *Container) (*uuid.UUID, error) {
 	if err != nil {
 		return nil, fmt.Errorf("container POST failed for '%#v': %w", c, err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode == 422 {
 		// container already exists, likely a retry; treat as success
@@ -462,6 +464,7 @@ func CreateFile(client *http.Client, f *File) (*uuid.UUID, error) {
 	if err != nil {
 		return nil, fmt.Errorf("file POST failed for '%#v': %w", f, err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 201 {
 		b, _ := io.ReadAll(resp.Body)
@@ -525,6 +528,7 @@ func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 	if err != nil {
 		return nil, fmt.Errorf("release POST failed for '%#v': %w", r, err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode == 409 {
 		// release already exists, likely a retry; treat as success
@@ -554,6 +558,7 @@ func ReleaseFiles(c *http.Client, rid uuid.UUID) ([]File, error) {
 	if err != nil {
 		return out, fmt.Errorf("fc2 /release/%s/files failed: %w", rid.String(), err)
 	}
+	defer resp.Body.Close()
 
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -586,6 +591,7 @@ func GetRelease(c *http.Client, id uuid.UUID) (Release, error) {
 	if err != nil {
 		return out, fmt.Errorf("fc2 /release/%s failed: %w", id.String(), err)
 	}
+	defer resp.Body.Close()
 
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -616,6 +622,7 @@ func GetFile(c *http.Client, id uuid.UUID) (File, error) {
 	if err != nil {
 		return out, fmt.Errorf("fc2 /file/%s failed: %w", id.String(), err)
 	}
+	defer resp.Body.Close()
 
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -647,6 +654,7 @@ func GetContainer(c *http.Client, id uuid.UUID) (Container, error) {
 	if err != nil {
 		return out, fmt.Errorf("fc2 /container/%s failed: %w", id.String(), err)
 	}
+	defer resp.Body.Close()
 
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -678,6 +686,7 @@ func GetCreator(c *http.Client, id uuid.UUID) (Creator, error) {
 	if err != nil {
 		return out, fmt.Errorf("fc2 /creator/%s failed: %w", id.String(), err)
 	}
+	defer resp.Body.Close()
 
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -712,6 +721,7 @@ func lookupLegacy(c *http.Client, endpoint, idtype, idvalue string) (*LegacyData
 	if err != nil {
 		return nil, fmt.Errorf("fc1 lookup failed for %s of '%s': %w", idtype, idvalue, err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
 		return nil, nil
 	}
@@ -789,6 +799,7 @@ func lookup(c *http.Client, entityType, idType, idValue string) (*uuid.UUID, err
 	if err != nil {
 		return nil, fmt.Errorf("fc2 lookup failed for '%s': %w", idValue, err)
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode == 404 {
 		return nil, nil

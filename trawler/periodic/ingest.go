@@ -15,9 +15,9 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -28,24 +28,40 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/ia"
+	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/pdf"
 	"github.com/google/uuid"
 	warc "github.com/internetarchive/gowarc"
 	"github.com/miku/grobidclient/tei"
+	"github.com/spf13/viper"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
 const (
-	// TODO config?
 	itemsPerPage = 100
 	taskQueue    = "periodic_ingest"
 )
 
 type PeriodicCounts struct {
-	PdfLines     int
-	PdfsWanted   int
-	PdfsAcquired int
+	Lines             int
+	LinesSkipped      int
+	FilesUpdated      int
+	PdfsAddedToDB     int
+	PdfsAddedToES     int
+	FulltextAddedToES int
+}
+
+func (c PeriodicCounts) Add(oc PeriodicCounts) PeriodicCounts {
+	return PeriodicCounts{
+		Lines:             c.Lines + oc.Lines,
+		LinesSkipped:      c.LinesSkipped + oc.LinesSkipped,
+		PdfsAddedToDB:     c.PdfsAddedToDB + oc.PdfsAddedToDB,
+		PdfsAddedToES:     c.PdfsAddedToES + oc.PdfsAddedToES,
+		FulltextAddedToES: c.FulltextAddedToES + oc.FulltextAddedToES,
+		FilesUpdated:      c.FilesUpdated + oc.FilesUpdated,
+	}
 }
 
 type PeriodicIngestInput struct {
@@ -68,8 +84,14 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	}
 
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 20 * time.Minute,
+		StartToCloseTimeout: 2 * time.Hour,
 		TaskQueue:           taskQueue,
+		HeartbeatTimeout:    10 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			BackoffCoefficient: 1.5,
+			InitialInterval:    30 * time.Second,
+			MaximumInterval:    180 * time.Second,
+		},
 	}
 	var listOut ListCollectionOutput
 	err := workflow.ExecuteActivity(
@@ -95,9 +117,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 		if err != nil {
 			return out, err
 		}
-		out.PdfLines += processOut.PdfLines
-		out.PdfsWanted += processOut.PdfsWanted
-		out.PdfsAcquired += processOut.PdfsAcquired
+		out = out.Add(processOut)
 	}
 
 	return out, nil
@@ -156,6 +176,9 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 	client := &http.Client{Timeout: 10 * time.Minute}
 	l := activity.GetLogger(ctx)
 
+	//
+	// pull petabox item file list, get its CDX file, filter the CDX down to pdfs.
+	//
 	activity.RecordHeartbeat(ctx, "metadata")
 	files, err := ia.ItemFiles(ctx, client, in.ItemId)
 	if err != nil {
@@ -179,45 +202,78 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 		return out, fmt.Errorf("parse rollup CDX %s/%s: %w", in.ItemId, rollup, err)
 	}
 
-	out.PdfLines = len(pdfLines)
+	out.Lines = len(pdfLines)
 
-	processor, err := pdf.NewProcessor(func(msg string) {
-		activity.RecordHeartbeat(ctx, msg)
-	})
-
+	//
+	// loop over each pdf cdx line and check to see if we want to read it from petabox and process.
+	//
 	for _, pdfLine := range pdfLines {
-		warcItem, warcFile := pdfLine.WARCItemAndFile()
-		if warcItem == "" {
-			warcItem = in.ItemId
-		}
 		sha1, err := decodeSha1Base32(pdfLine.Sha1Base32)
 		if err != nil {
 			l.Warn("skipping row with bad sha1", "sha1_b32", pdfLine.Sha1Base32, "err", err.Error())
+			out.LinesSkipped++
 			continue
 		}
 
-		activity.RecordHeartbeat(ctx, "sha1-lookup")
+		//
+		// the conditions that mean we can avoid petabox read:
+		// 1. sha1 is in fatcat file index
+		// 2. sha1 is in full text index
+		// 3. file record exists already in DB and is connected to a release with an external ID
+		//
+		// we start here because petabox reads are expensive.
+		//
+		fileInES, err := indexing.ElasticDocExists(client,
+			viper.GetString("indexing.fatcat_file_ix"), "sha1", sha1)
+		if err != nil {
+			return out, fmt.Errorf("fatcat_file existence check failed: %w", err)
+		}
+
+		fulltextInES, err := indexing.ElasticDocExists(client,
+			viper.GetString("indexing.fulltext_ix"), "fulltext.file_sha1", sha1)
+		if err != nil {
+			return out, fmt.Errorf("scholar_fulltext existence check failed: %w", err)
+		}
+
 		extantFid, err := fatcat2.LookupSha1(client, sha1)
 		if err != nil {
 			return out, fmt.Errorf("could not look up sha1 in fc2: %w", err)
 		}
 
+		extantFileReleases := []fatcat2.Release{}
+		var extantFileHasParent bool
+
 		if extantFid != nil {
-			activity.RecordHeartbeat(ctx, "file-lookup")
-			file, err := fatcat2.GetFile(client, *extantFid)
+			extantFileReleases, err = fatcat2.FileReleases(client, *extantFid)
 			if err != nil {
-				return out, fmt.Errorf("could not get file '%s' from fc2: '%w'", extantFid, err)
+				return out, fmt.Errorf("could not get releases for '%s': %w", extantFid, err)
 			}
-			if len(file.URLs) > 0 {
-				l.Info("skipping known file", "sha1", sha1, "fid", extantFid)
+			if len(extantFileReleases) > 0 {
+				extidCount := 0
+				for _, rel := range extantFileReleases {
+					extidCount += len(rel.ExternalIDs)
+				}
+				if extidCount > 0 {
+					extantFileHasParent = true
+				}
 			}
 		}
 
-		out.PdfsWanted++
+		if fileInES && fulltextInES && extantFileHasParent {
+			l.Info("skipping known and indexed sha1", "sha1_b32", pdfLine.Sha1Base32, "fid", extantFid)
+			out.LinesSkipped++
+			continue
+		}
 
+		//
+		// get PDF bytes from petabox, run through grobid, parse Grobid XML.
+		//
 		activity.RecordHeartbeat(ctx, "range-read")
-		raw, err := ia.ReadRange(ctx, client,
-			warcItem, warcFile, pdfLine.WarcOffset, pdfLine.WarcSize)
+		warcItem, warcFile := pdfLine.WARCItemAndFile()
+		if warcItem == "" {
+			warcItem = in.ItemId
+		}
+		raw, err := ia.ReadRange(ctx, client, warcItem, warcFile, pdfLine.WarcOffset, pdfLine.WarcSize)
 		if err != nil {
 			return out, fmt.Errorf("range read failed: %w", err)
 		}
@@ -228,6 +284,13 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			return out, fmt.Errorf("could not extract pdf bytes from warc: %w", err)
 		}
 
+		processor, err := pdf.NewProcessor(func(msg string) {
+			activity.RecordHeartbeat(ctx, msg)
+		})
+		if err != nil {
+			return out, fmt.Errorf("could not create pdf processor: %w", err)
+		}
+
 		activity.RecordHeartbeat(ctx, "pdf-process")
 		pdfContent, err := processor.Process(ctx, pdfBs, sha1)
 		if err != nil {
@@ -236,7 +299,8 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 
 		gdoc, err := tei.ParseDocument(bytes.NewReader(pdfContent.GrobidXML))
 		if err != nil {
-			return out, fmt.Errorf("grobid parsing failed: %w", err)
+			l.Warn("failed to parse grobid xml", "sha1", sha1, "error", err.Error())
+			continue
 		}
 
 		pairs := [][]string{
@@ -246,17 +310,20 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			[]string{"arxiv", gdoc.Header.ArxivID},
 		}
 
-		// TODO if all of the ext ids are empty we should probably just log and
-		// move on. it might not be an academic PDF or we might make a release/file
-		// combo that ends up orphaned from a later, DOI'ed release.
-
 		var rid *uuid.UUID
-		var idType string
 		err = nil
 
+		var hasExtId bool
+
 		for _, pair := range pairs {
-			idType = pair[0]
-			rid, err = fatcat2.LookupRelease(client, idType, pair[1])
+			idType := pair[0]
+			idVal := pair[1]
+			if idVal != "" {
+				hasExtId = true
+			} else {
+				continue
+			}
+			rid, err = fatcat2.LookupRelease(client, idType, idVal)
 			if err != nil {
 				return out, fmt.Errorf("fc2 release lookup failed: %w", err)
 			}
@@ -266,60 +333,151 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			}
 		}
 
-		var release *fatcat2.Release
-
-		if rid != nil {
-			// have a release we can add a file to
-			r, err := fatcat2.GetRelease(client, *rid)
-			if err != nil {
-				return out, fmt.Errorf("failed to get release '%s': %w", rid, err)
-			}
-			release = &r
-		} else {
-			// TODO run a basic heuristic on whether or not this seems like a paper:
-			// does it have at least one author, an external ID, an abstract, a title, and a
-			// citation?
-			r, err := grobidToRelease(client, in.SourceLabel, gdoc)
-			if err != nil {
-				return out, fmt.Errorf("failed to convert grobid to new release: %w", err)
-			}
-			release = &r
-			rid, err := fatcat2.CreateRelease(client, *release)
-			if err != nil {
-				return out, fmt.Errorf("could not create release: %w", err)
-			}
-			release.ID = *rid
-			release.Source = in.SourceLabel
+		if !hasExtId {
+			l.Warn("skipping parsed PDF with no external ID", "sha1_b32", pdfLine.Sha1Base32)
+			continue
 		}
 
-		fid, err := uuid.NewV7()
+		if rid == nil {
+			l.Warn("skipping parsed PDF with no matching release", "sha1_b32", pdfLine.Sha1Base32)
+			// TODO we might add releases in the future; see grobidToRelease
+			continue
+		}
+
+		release, err := fatcat2.GetRelease(client, *rid)
 		if err != nil {
-			return out, fmt.Errorf("uuid creation failed: %w", err)
+			return out, fmt.Errorf("could not get release '%s': %w", rid, err)
 		}
 
-		file := fatcat2.File{
-			ID:       fid,
-			Releases: []fatcat2.Release{*release},
-			Mimetype: "application/pdf",
-			Source:   in.SourceLabel,
-			URLs: []fatcat2.FileURL{
-				{
-					Rel:    "wayback",
-					URL:    pdfLine.URL,
-					FileID: fid,
+		var fid uuid.UUID
+		var file *fatcat2.File
+		if extantFid != nil {
+			fid = *extantFid
+			f, err := fatcat2.GetFile(client, fid)
+			if err != nil {
+				return out, fmt.Errorf("could not get file '%s': %w", fid, err)
+			}
+			file = &f
+			var foundUrl bool
+			for _, u := range file.URLs {
+				if u.URL == pdfLine.URL {
+					foundUrl = true
+				}
+			}
+			if !foundUrl {
+				_, err = fatcat2.AddFileURL(client, fid, fatcat2.FileURL{
+					URL: pdfLine.URL,
+					Rel: "wayback",
+				})
+				if err != nil {
+					return out, fmt.Errorf("could not update fid '%s' with url '%s': %w", fid, pdfLine.URL, err)
+				}
+				out.FilesUpdated++
+			}
+			// `extantFileReleases` contains any releases we found connected to a file
+			// record with the found sha1; `release` is a release record we found
+			// looking up the external ID we found in the parsed grobid. `release`
+			// *should* be in `extantFileReleases` but it's not guaranteed.
+			var foundRelease bool
+			for _, r := range extantFileReleases {
+				if r.ID == release.ID {
+					foundRelease = true
+				}
+			}
+			if !foundRelease && len(extantFileReleases) > 0 {
+				l.Warn("found probable dupe releases", "fid", fid,
+					"ridBySha1", extantFileReleases[0].ID, "ridByExtId", release.ID)
+			}
+		} else {
+			fid, err = uuid.NewV7()
+			if err != nil {
+				return out, fmt.Errorf("uuid creation failed: %w", err)
+			}
+			file = &fatcat2.File{
+				ID:       fid,
+				Releases: []fatcat2.Release{release},
+				Mimetype: "application/pdf",
+				Source:   in.SourceLabel,
+				URLs: []fatcat2.FileURL{
+					{
+						Rel:    "wayback",
+						URL:    pdfLine.URL,
+						FileID: fid,
+					},
 				},
-			},
+			}
+			if err = file.SetMetadata(pdfBs); err != nil {
+				return out, fmt.Errorf("could not compute pdf metadata: %w", err)
+			}
+			_, err = fatcat2.CreateFile(client, file)
+			if err != nil {
+				return out, fmt.Errorf("failed to create file '%s': %w", file.Sha1, err)
+			}
+			out.PdfsAddedToDB++
 		}
 
-		_, err = fatcat2.CreateFile(client, &file)
+		//
+		// check on sha1 in the two relevant ES indices. We're particular about
+		// this for idempotency.
+		//
+		if !fileInES {
+			fileDoc := indexing.PrepareFatcatFileDoc(*file)
+			bs, err := json.Marshal(fileDoc)
+			if err != nil {
+				return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
+			}
+			err = indexing.DoElasticIndex(client,
+				viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
+			if err != nil {
+				return out, fmt.Errorf("failed to index file: %w", err)
+			}
+			out.PdfsAddedToES++
+		}
 
-		// TODO create fc2 entities
-		// TODO ES ingest
+		activity.RecordHeartbeat(ctx, "file-indexed")
+
+		if !fulltextInES {
+			var container *fatcat2.Container
+			if release.ContainerID != nil {
+				c, err := fatcat2.GetContainer(client, *release.ContainerID)
+				if err != nil {
+					return out, fmt.Errorf("failed to look up container '%s': %w", release.ContainerID, err)
+				}
+				container = &c
+			}
+			tctx := indexing.FulltextTransformCtx{
+				HttpClient: client,
+				Release:    release,
+				Container:  container,
+				File:       file,
+				GrobidXML:  pdfContent.GrobidXML,
+				PdfText:    pdfContent.PdfText,
+			}
+
+			esDoc := indexing.PrepareFulltextDoc(tctx)
+
+			bs, err := json.Marshal(esDoc)
+			if err != nil {
+				return out, fmt.Errorf("es doc serialization failed: %w", err)
+			}
+
+			err = indexing.DoElasticIndex(client, viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
+			if err != nil {
+				return out, fmt.Errorf("failed to full text ingest '%s': %w", fid, err)
+			}
+			out.FulltextAddedToES++
+		}
 	}
 
 	return out, nil
 }
 
+// grobidToRelease converts what metadata we extract from a PDF into a fatcat2
+// release. This is currently unused as the quality of this release is stubby
+// and at this time we aren't handling release updates in the daily crawl. If
+// the daily crawl is modified to notice when a release could benefit from the
+// addition of new metadata from an upstream source we can make use of this
+// function when ingesting CDX.
 func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocument) (fatcat2.Release, error) {
 	rid, err := uuid.NewV7()
 	if err != nil {
@@ -359,6 +517,11 @@ func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocumen
 		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
 			Type: "arxiv", Value: gdoc.Header.ArxivID,
 		})
+		out.Stage = "submitted"
+	}
+
+	if out.Stage == "" {
+		out.Stage = "published"
 	}
 
 	// TODO should i handle ISSN in header?
@@ -387,7 +550,7 @@ func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocumen
 		if author.ORCID != "" {
 			aid, err = fatcat2.LookupOrcid(client, author.ORCID)
 			if err != nil {
-				return out, fmt.Errorf("failed to look up author '%s': %w", err)
+				return out, fmt.Errorf("failed to look up author '%s': %w", author.ORCID, err)
 			}
 			if aid == nil {
 				creator := fatcat2.Creator{
@@ -473,9 +636,12 @@ func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocumen
 		}
 	}
 
-	// TODO stage
-	// TODO extra
-	// TODO grobid doesn't seem to try and extract license information
+	out.Extra["grobid_version"] = gdoc.GrobidVersion
+	if gdoc.Annex != "" {
+		out.Extra["annex"] = gdoc.Annex
+	}
+
+	// grobid doesn't seem to try and extract license information :(
 
 	// TODO can anything be done about container?
 
@@ -492,28 +658,6 @@ func (e *GrobidParseError) Error() string {
 }
 
 func (e *GrobidParseError) Unwrap() error { return e.Err }
-
-// processResult is a stub for downstream handling of blobproc results.
-// TODO: implement real downstream handling (indexing into ES, attaching the
-// file to fatcat, etc).
-func processResult(ctx context.Context, sha1hex string, content pdf.Content) error {
-	gdoc, err := tei.ParseDocument(bytes.NewReader(content.GrobidXML))
-	if err != nil {
-		return &GrobidParseError{Sha1: sha1hex, Err: err}
-	}
-
-	// TODO support non-DOI ext ids
-	if gdoc.Header.DOI == "" {
-		return nil
-	}
-
-	fmt.Printf("DBG %#v\n", gdoc)
-	slog.Info("processed blobproc result",
-		"sha1", sha1hex,
-		"grobid_xml_len", len(content.GrobidXML),
-		"pdf_text_len", len(content.PdfText))
-	return nil
-}
 
 // extractWARCPayload reads one WARC record (gzipped) out of raw bytes and
 // returns the HTTP response body bytes. Expects exactly one record per

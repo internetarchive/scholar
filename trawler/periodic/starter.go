@@ -29,10 +29,13 @@ func StartCollectionIngest(in PeriodicIngestInput) error {
 
 	workflowID := fmt.Sprintf("periodic_ingest_collection_%s", uid)
 
+	taskQueue := viper.GetString("periodic.task_queue")
+	in.TaskQueue = taskQueue
+
 	_, err = c.ExecuteWorkflow(ctx,
 		client.StartWorkflowOptions{
 			ID:        workflowID,
-			TaskQueue: viper.GetString("periodic_ingest.task_queue"),
+			TaskQueue: taskQueue,
 		},
 		PeriodicIngestWorkflow,
 		in)
@@ -53,7 +56,7 @@ func StartWorker() error {
 	defer c.Close()
 
 	w := worker.New(c,
-		viper.GetString("periodic_ingest.task_queue"),
+		viper.GetString("periodic.task_queue"),
 		worker.Options{
 			Interceptors: []interceptor.WorkerInterceptor{
 				temporalsentry.New(),

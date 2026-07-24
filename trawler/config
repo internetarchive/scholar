@@ -19,6 +19,9 @@ chunk_size = 102400
 # ~10k events. Defaults to 2000 if unset or <= 0.
 lines_per_can = 2000
 
+[periodic]
+task_queue = "periodic_ingest"
+
 [s3]
 endpoint = "wbgrp-svc314.us.archive.org:8333"
 access_id = ""
@@ -45,11 +48,6 @@ internal_task_queue = "pubmed_crawl_internal"
 external_task_queue = "pubmed_crawl_external"
 every = "86400s"
 scholkit_s3_bucket = "scholkit"
-
-[periodic_ingest]
-task_queue = "periodic_ingest_internal"
-items_per_child = 4
-collection_page_size = 100
 
 [fatcat1]
 endpoint = "https://scholar.archive.org/_fc/v0"

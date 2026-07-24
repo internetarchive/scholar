@@ -41,7 +41,6 @@ import (
 
 const (
 	itemsPerPage = 100
-	taskQueue    = "periodic_ingest"
 )
 
 type PeriodicCounts struct {
@@ -71,11 +70,17 @@ type PeriodicIngestInput struct {
 	Limit int
 	// Override default source label generation
 	SourceOverride string
+	// TaskQueue is the Temporal task queue the workflow's activities are
+	// scheduled on. It's resolved from config by the caller (see
+	// StartCollectionIngest) rather than read inside the workflow, so workflow
+	// replays stay deterministic even if process config changes.
+	TaskQueue string
 }
 
 func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (PeriodicCounts, error) {
 	out := PeriodicCounts{}
 	// l := workflow.GetLogger(ctx)
+	taskQueue := in.TaskQueue
 	source := in.SourceOverride
 	if source == "" {
 		now := workflow.Now(ctx).Format("2006-01-02")

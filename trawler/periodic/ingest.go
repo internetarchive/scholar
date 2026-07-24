@@ -79,8 +79,11 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	source := in.SourceOverride
 	if source == "" {
 		now := workflow.Now(ctx).Format("2006-01-02")
-		// TODO should this include the run id?
-		source = fmt.Sprintf("ingest-%s-%s", now, in.CollectionName)
+		runid := workflow.GetInfo(ctx).WorkflowExecution.RunID
+		if len(runid) > 8 {
+			runid = runid[:8]
+		}
+		source = fmt.Sprintf("ingest-%s-%s-%s", now, in.CollectionName, runid)
 	}
 
 	ao := workflow.ActivityOptions{
@@ -303,26 +306,16 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			continue
 		}
 
-		pairs := [][]string{
-			[]string{"doi", gdoc.Header.DOI},
-			[]string{"pmid", gdoc.Header.PMID},
-			[]string{"pmcid", gdoc.Header.PMCID},
-			[]string{"arxiv", gdoc.Header.ArxivID},
+		extIds := findExtIds(*gdoc)
+		if len(extIds) == 0 {
+			l.Warn("skipping parsed PDF with no external ID", "sha1_b32", pdfLine.Sha1Base32)
+			continue
 		}
 
 		var rid *uuid.UUID
-		err = nil
-
-		var hasExtId bool
-
-		for _, pair := range pairs {
+		for _, pair := range extIds {
 			idType := pair[0]
 			idVal := pair[1]
-			if idVal != "" {
-				hasExtId = true
-			} else {
-				continue
-			}
 			rid, err = fatcat2.LookupRelease(client, idType, idVal)
 			if err != nil {
 				return out, fmt.Errorf("fc2 release lookup failed: %w", err)
@@ -331,11 +324,6 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			if rid != nil {
 				break
 			}
-		}
-
-		if !hasExtId {
-			l.Warn("skipping parsed PDF with no external ID", "sha1_b32", pdfLine.Sha1Base32)
-			continue
 		}
 
 		if rid == nil {
@@ -377,7 +365,9 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			// `extantFileReleases` contains any releases we found connected to a file
 			// record with the found sha1; `release` is a release record we found
 			// looking up the external ID we found in the parsed grobid. `release`
-			// *should* be in `extantFileReleases` but it's not guaranteed.
+			// *should* be in `extantFileReleases` but it's not guaranteed. Ideally,
+			// these different releases would be merged but for now we just log about
+			// it.
 			var foundRelease bool
 			for _, r := range extantFileReleases {
 				if r.ID == release.ID {
@@ -470,6 +460,29 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 	}
 
 	return out, nil
+}
+
+// findExtIds determines which external IDs we care about are defined on a
+// grobid document. We return a list of pairs so we can prioritize which ones
+// we later look up a release for.
+func findExtIds(gdoc tei.GrobidDocument) [][]string {
+	out := [][]string{}
+	pairs := [][]string{
+		[]string{"doi", gdoc.Header.DOI},
+		[]string{"pmid", gdoc.Header.PMID},
+		[]string{"pmcid", gdoc.Header.PMCID},
+		[]string{"arxiv", gdoc.Header.ArxivID},
+	}
+	for _, pair := range pairs {
+		idType := pair[0]
+		idVal := pair[1]
+		if idVal != "" {
+			out = append(out, []string{idType, idVal})
+		} else {
+			continue
+		}
+	}
+	return out
 }
 
 // grobidToRelease converts what metadata we extract from a PDF into a fatcat2

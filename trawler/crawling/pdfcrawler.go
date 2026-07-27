@@ -98,14 +98,15 @@ func (c PDFCrawler) fetchWaybackNoRedirect(URL string, ts time.Time) (*http.Resp
 }
 
 func (c PDFCrawler) toWaybackURL(URL string, ts time.Time) string {
-	u, err := url.Parse(c.WaybackEndpoint)
-	if err != nil {
-		panic(err)
-	}
 	// TODO this should live elsewhere; it's been propagating (cdx, spnclient)
 	timeFormat := "20060102150405"
 	timestamp := ts.Format(timeFormat)
-	return u.JoinPath(timestamp+"id_/", URL).String()
+	// Append URL verbatim so its scheme "://" and any query string survive.
+	// url.JoinPath path-cleans "://" down to ":/", yielding a malformed
+	// (though wayback-tolerated) replay URL that then gets stored on file
+	// records.
+	endpoint := strings.TrimRight(c.WaybackEndpoint, "/")
+	return fmt.Sprintf("%s/%sid_/%s", endpoint, timestamp, URL)
 }
 
 func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) (*http.Response, error) {

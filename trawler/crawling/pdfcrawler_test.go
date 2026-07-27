@@ -4,10 +4,29 @@ import (
 	"bytes"
 	"embed"
 	"testing"
+	"time"
 )
 
 //go:embed htmlsamples/*.html
 var samples embed.FS
+
+func Test_toWaybackURL(t *testing.T) {
+	c := PDFCrawler{WaybackEndpoint: "https://web.archive.org/web/"}
+	ts := time.Date(2025, 8, 25, 17, 41, 38, 0, time.UTC)
+
+	got := c.toWaybackURL("http://verlag.nhm-wien.ac.at/pdfs/113A_373510_Janssen.pdf", ts)
+	want := "https://web.archive.org/web/20250825174138id_/http://verlag.nhm-wien.ac.at/pdfs/113A_373510_Janssen.pdf"
+	if got != want {
+		t.Errorf("scheme not preserved:\n got %q\nwant %q", got, want)
+	}
+
+	// A query string must survive intact (url.JoinPath would have escaped '?').
+	got = c.toWaybackURL("https://ex.com/a?id=5&x=1", ts)
+	want = "https://web.archive.org/web/20250825174138id_/https://ex.com/a?id=5&x=1"
+	if got != want {
+		t.Errorf("query not preserved:\n got %q\nwant %q", got, want)
+	}
+}
 
 func Test_maybeRewrite(t *testing.T) {
 	cs := []struct {

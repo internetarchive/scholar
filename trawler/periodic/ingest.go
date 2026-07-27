@@ -16,6 +16,7 @@ import (
 	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,6 +43,11 @@ import (
 const (
 	itemsPerPage = 100
 )
+
+// ErrTruncatedCapture marks a WARC record the crawler flagged as truncated
+// (WARC-Truncated header): the stored payload is incomplete, so callers skip
+// the row rather than treating the short HTTP body as a hard error.
+var ErrTruncatedCapture = errors.New("warc capture truncated at crawl time")
 
 type PeriodicCounts struct {
 	Lines             int
@@ -303,6 +309,15 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 
 		activity.RecordHeartbeat(ctx, "pdf-extract")
 		pdfBs, err := extractWARCPayload(raw)
+		if errors.Is(err, ErrTruncatedCapture) {
+			// Expected data condition, not a failure: the crawler stored only
+			// part of this PDF. Skip and move on. Any other extraction error
+			// stays fatal so a real bug still surfaces.
+			l.Warn("skipping truncated capture",
+				"url", pdfLine.URL, "sha1_b32", pdfLine.Sha1Base32, "reason", err.Error())
+			out.LinesSkipped++
+			continue
+		}
 		if err != nil {
 			return out, fmt.Errorf("could not extract pdf bytes from warc: %w", err)
 		}
@@ -707,6 +722,15 @@ func extractWARCPayload(raw []byte) ([]byte, error) {
 		return nil, fmt.Errorf("warc ReadRecord: %w", err)
 	}
 	defer rec.Content.Close()
+
+	// A capture the crawler cut short (time/size budget, dropped connection)
+	// carries a WARC-Truncated header. Its stored body is shorter than the
+	// declared HTTP Content-Length, so reading it below would fail with an
+	// opaque "unexpected EOF". Detect it here, from the record header we
+	// already have, and signal it distinctly so the caller can skip cleanly.
+	if t := rec.Header.Get("WARC-Truncated"); t != "" {
+		return nil, fmt.Errorf("%w (%s)", ErrTruncatedCapture, t)
+	}
 
 	httpResp, err := http.ReadResponse(bufio.NewReader(rec.Content), nil)
 	if err != nil {

@@ -131,7 +131,7 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 			if len(rid) > 8 {
 				rid = rid[:8]
 			}
-			source = fmt.Sprintf("daily-%s-%s-%s", in.Upstream, day, rid)
+			source = fmt.Sprintf("daily-%s-%s-%s", day, rid, in.Upstream)
 		}
 		in.Source = source
 

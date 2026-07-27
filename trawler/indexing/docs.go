@@ -24,14 +24,16 @@ type Sourced interface {
 func (d *SourcedDoc) SetSourceFields(s Sourced) {
 	raw := s.GetSource()
 	d.IngestSource = raw
-	split := strings.Split(raw, "-")
-	if len(split) > 1 {
-		if slices.Contains([]string{"daily", "periodic"}, split[0]) {
-			d.IngestSourceKind = split[0]
-		}
+	split := strings.SplitN(raw, "-", 4)
+	if len(split) != 4 {
+		return
+	}
+	if slices.Contains([]string{"daily", "periodic"}, split[0]) {
+		d.IngestSourceKind = split[0]
 	}
 
-	if len(split) > 2 {
-		d.IngestSourceProvider = split[1]
-	}
+	// the other stuff in the raw source (date of run, run id) are mostly just
+	// for debugging
+
+	d.IngestSourceProvider = split[3]
 }

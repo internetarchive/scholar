@@ -92,7 +92,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 		if len(runid) > 8 {
 			runid = runid[:8]
 		}
-		source = fmt.Sprintf("periodic-%s-%s-%s", in.CollectionName, now, runid)
+		source = fmt.Sprintf("periodic-%s-%s-%s", now, runid, in.CollectionName)
 	}
 
 	ao := workflow.ActivityOptions{

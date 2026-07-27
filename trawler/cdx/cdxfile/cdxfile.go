@@ -29,6 +29,11 @@ type Row struct {
 	WarcSize   int64
 }
 
+func (r Row) String() string {
+	return fmt.Sprintf("%s %s %s %s %s %s %s %d %d",
+		r.SURT, r.Timestamp, r.URL, r.Mimetype, r.StatusCode, r.Sha1Base32, r.WarcPath, r.WarcOffset, r.WarcSize)
+}
+
 // WARCItemAndFile splits Row.WarcPath into (item identifier, filename within
 // item). For rollup CDX rows the path is "<itemID>/<filename>". An empty
 // item is returned if no slash is present.

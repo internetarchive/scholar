@@ -39,6 +39,7 @@ a complicating factor is not having qa versions of these indices, so:
 Doc ID is ident
 */
 type FatcatReleaseDocV1 struct {
+	SourcedDoc
 	LegacyIdent     string    `json:"ident,omitempty"`
 	IndexTime       time.Time `json:"doc_index_ts"`
 	State           string    `json:"state,omitempty"`
@@ -123,6 +124,7 @@ type FatcatReleaseDocV1 struct {
 }
 
 type FatcatContainerDocV1 struct {
+	SourcedDoc
 	LegacyIdent     string    `json:"ident"`
 	IndexTime       time.Time `json:"doc_index_ts"`
 	State           string    `json:"state"`
@@ -163,6 +165,7 @@ type FatcatContainerDocV1 struct {
 }
 
 type FatcatFileDocV1 struct {
+	SourcedDoc
 	LegacyIdent         string    `json:"ident"`
 	IndexTime           time.Time `json:"doc_index_ts"`
 	State               string    `json:"state"`

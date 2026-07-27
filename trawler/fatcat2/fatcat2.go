@@ -43,6 +43,10 @@ type Container struct {
 	Extra       map[string]any `json:"extra"`
 }
 
+func (c Container) GetSource() string {
+	return c.Source
+}
+
 type Abstract struct {
 	ReleaseID *uuid.UUID `json:"release_id"`
 	Content   string     `json:"content"`
@@ -129,6 +133,10 @@ type Release struct {
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
 
 	// TODO understand when the structured ReleaseRefs are added in the old system
+}
+
+func (r Release) GetSource() string {
+	return r.Source
 }
 
 func (r Release) DOI() string {
@@ -272,7 +280,6 @@ type FileURL struct {
 	FileID uuid.UUID `json:"file_id,omitzero"`
 	Rel    string    `json:"rel"`
 	URL    string    `json:"url"`
-	Source string    `json:"source"`
 }
 
 type File struct {
@@ -286,6 +293,10 @@ type File struct {
 	Md5         string     `json:"md5"`
 	Mimetype    string     `json:"mimetype"`
 	LegacyRevID *uuid.UUID `json:"legacy_rev_id"`
+}
+
+func (f File) GetSource() string {
+	return f.Source
 }
 
 // SetMetadata takes a byte array and sets the various checksum fields and the
@@ -322,6 +333,10 @@ type Creator struct {
 	Orcid       string     `json:"orcid,omitempty"`
 	LegacyRevID *uuid.UUID `json:"legacy_rev_id"`
 	Source      string     `json:"source,omitempty"`
+}
+
+func (c Creator) GetSource() string {
+	return c.Source
 }
 
 func CreateCreator(client *http.Client, c *Creator) (*uuid.UUID, error) {

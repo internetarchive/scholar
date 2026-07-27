@@ -6,6 +6,7 @@ import (
 
 // ScholarDocV1 is what we store in elasticsearch for a fulltext PDF searchable via scholar.archive.org
 type ScholarDocV1 struct {
+	SourcedDoc
 	Type            string              `json:"doc_type"`
 	Key             string              `json:"key"`
 	LegacyWorkIdent string              `json:"work_ident"`

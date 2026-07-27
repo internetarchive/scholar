@@ -51,6 +51,8 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 		return out, err
 	}
 
+	out.SetSourceFields(release)
+
 	// TODO conceivable we want to continue using this to mark deletion but hardcoding for now
 	out.State = "active"
 	out.IndexTime = time.Now()
@@ -223,6 +225,9 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 
 func PrepareFatcatContainerDoc(container fc2.Container) FatcatContainerDocV1 {
 	out := FatcatContainerDocV1{}
+
+	out.SetSourceFields(container)
+
 	// TODO post-xref-poc handle other states
 	out.State = "active"
 
@@ -262,6 +267,8 @@ func PrepareFatcatFileDoc(file fc2.File) FatcatFileDocV1 {
 	out.LegacyIdent = fc2.UuidToLegacy(file.ID)
 	// TODO post-xref-poc
 	out.State = "active"
+
+	out.SetSourceFields(file)
 
 	out.IndexTime = time.Now()
 	for _, r := range file.Releases {
@@ -321,6 +328,8 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 	release := ictx.Release
 	container := ictx.Container
 	client := ictx.HttpClient
+
+	out.SetSourceFields(release)
 
 	out.Type = "work"
 	out.LegacyWorkIdent = fc2.UuidToLegacy(*release.WorkID)

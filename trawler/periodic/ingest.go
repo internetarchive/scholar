@@ -244,6 +244,8 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			continue
 		}
 
+		l.Debug("decoded sha1", "orig_sha1", pdfLine.Sha1Base32, "decoded_sha1", sha1)
+
 		//
 		// the conditions that mean we can avoid petabox read:
 		// 1. sha1 is in fatcat file index
@@ -372,6 +374,11 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			return out, fmt.Errorf("could not get release '%s': %w", rid, err)
 		}
 
+		// The fatcat file URL must point at the archived copy, not the live-web
+		// URL from the CDX row (pdfLine.URL). Build the wayback replay URL from
+		// the capture timestamp + original URL.
+		wbURL := toWaybackURL(pdfLine.Timestamp, pdfLine.URL)
+
 		var fid uuid.UUID
 		var file *fatcat2.File
 		if extantFid != nil {
@@ -383,17 +390,18 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			file = &f
 			var foundUrl bool
 			for _, u := range file.URLs {
-				if u.URL == pdfLine.URL {
+				if u.URL == wbURL {
 					foundUrl = true
 				}
 			}
 			if !foundUrl {
 				_, err = fatcat2.AddFileURL(client, fid, fatcat2.FileURL{
-					URL: pdfLine.URL,
-					Rel: "wayback",
+					URL:    wbURL,
+					Rel:    "webarchive",
+					FileID: fid,
 				})
 				if err != nil {
-					return out, fmt.Errorf("could not update fid '%s' with url '%s': %w", fid, pdfLine.URL, err)
+					return out, fmt.Errorf("could not update fid '%s' with url '%s': %w", fid, wbURL, err)
 				}
 				out.FilesUpdated++
 			}
@@ -425,8 +433,8 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 				Source:   in.SourceLabel,
 				URLs: []fatcat2.FileURL{
 					{
-						Rel:    "wayback",
-						URL:    pdfLine.URL,
+						Rel:    "webarchive",
+						URL:    wbURL,
 						FileID: fid,
 					},
 				},
@@ -438,6 +446,7 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 			if err != nil {
 				return out, fmt.Errorf("failed to create file '%s': %w", file.Sha1, err)
 			}
+			l.Info("created file", "fid", file.ID, "rid", release.ID)
 			out.PdfsAddedToDB++
 		}
 
@@ -743,6 +752,21 @@ func extractWARCPayload(raw []byte) ([]byte, error) {
 		return nil, fmt.Errorf("read HTTP body: %w", err)
 	}
 	return body, nil
+}
+
+// toWaybackURL builds the raw ("id_") Wayback replay URL for a captured
+// resource, e.g.
+//
+//	https://web.archive.org/web/20250825174138id_/http://host/paper.pdf
+//
+// cdxTimestamp is the 14-digit CDX capture time (YYYYMMDDhhmmss); originalURL
+// is the captured URL from the CDX row. The original URL is appended verbatim
+// so its scheme "://" and any query string survive (url.JoinPath would
+// path-clean "://" down to ":/"). Same shape the daily crawl stores via
+// crawling.PDFCrawler.toWaybackURL.
+func toWaybackURL(cdxTimestamp, originalURL string) string {
+	endpoint := strings.TrimRight(viper.GetString("wayback.replay_endpoint"), "/")
+	return fmt.Sprintf("%s/%sid_/%s", endpoint, cdxTimestamp, originalURL)
 }
 
 // decodeSha1Base32 converts the CDX-formatted 32-char base32 sha1 digest to

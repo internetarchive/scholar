@@ -21,7 +21,7 @@ type Sourced interface {
 	GetSource() string
 }
 
-func (d SourcedDoc) SetSourceFields(s Sourced) {
+func (d *SourcedDoc) SetSourceFields(s Sourced) {
 	raw := s.GetSource()
 	d.IngestSource = raw
 	split := strings.Split(raw, "-")

@@ -125,7 +125,7 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		if source == "" {
 			day := in.Day
 			if day == "" {
-				day = workflow.Now(ctx).AddDate(0, 0, -1).Format("2006-01-02")
+				day = workflow.Now(ctx).AddDate(0, 0, -1).Format("20060102")
 			}
 			rid := workflow.GetInfo(ctx).WorkflowExecution.RunID
 			if len(rid) > 8 {

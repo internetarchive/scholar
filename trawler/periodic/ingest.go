@@ -87,7 +87,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	taskQueue := in.TaskQueue
 	source := in.SourceOverride
 	if source == "" {
-		now := workflow.Now(ctx).Format("2006-01-02")
+		now := workflow.Now(ctx).Format("20060102")
 		runid := workflow.GetInfo(ctx).WorkflowExecution.RunID
 		if len(runid) > 8 {
 			runid = runid[:8]

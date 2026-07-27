@@ -43,7 +43,7 @@ func StartCollectionIngest(in PeriodicIngestInput) error {
 		return fmt.Errorf("could not start workflow %s: %w", workflowID, err)
 	}
 
-	log.Printf("dispatched %s (collection=%s, limit=%d)", workflowID, in.CollectionName, in.Limit)
+	log.Printf("dispatched %s (collection=%s, line_limit=%d)", workflowID, in.CollectionName, in.LineLimit)
 	return nil
 }
 

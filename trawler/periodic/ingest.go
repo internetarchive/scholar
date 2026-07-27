@@ -64,16 +64,14 @@ func (c PeriodicCounts) Add(oc PeriodicCounts) PeriodicCounts {
 }
 
 type PeriodicIngestInput struct {
-	// petabox collection of warcs/cdx
+	// CollectionName is which petabox collection of warcs/cdx to ingest
 	CollectionName string
-	// limit how many items are looked at; for debugging
-	Limit int
-	// Override default source label generation
+	// LineLimit caps how many PDF CDX rows the whole run handles across all
+	// items; for debugging
+	LineLimit int
+	// SourceOverride overrides the default source name generation
 	SourceOverride string
-	// TaskQueue is the Temporal task queue the workflow's activities are
-	// scheduled on. It's resolved from config by the caller (see
-	// StartCollectionIngest) rather than read inside the workflow, so workflow
-	// replays stay deterministic even if process config changes.
+	// TaskQueue is which temporal task queue to use
 	TaskQueue string
 }
 
@@ -105,9 +103,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	err := workflow.ExecuteActivity(
 		workflow.WithActivityOptions(ctx, ao),
 		ListCollectionActivity,
-		ListCollectionInput{
-			CollectionName: in.CollectionName,
-			Limit:          in.Limit}).Get(ctx, &listOut)
+		ListCollectionInput{CollectionName: in.CollectionName}).Get(ctx, &listOut)
 	if err != nil {
 		return out, err
 	}
@@ -117,15 +113,34 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 		TaskQueue:           taskQueue,
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	var processOut PeriodicCounts
 	for _, itemId := range listOut.ItemIds {
+		// With a LineLimit set, hand each item only the rows still left in the
+		// global budget and stop scheduling items once it's spent. remaining
+		// == 0 means "no per-item cap" (the unlimited case).
+		remaining := 0
+		if in.LineLimit > 0 {
+			remaining = in.LineLimit - out.Lines
+			if remaining <= 0 {
+				break
+			}
+		}
+
+		var processOut PeriodicCounts
 		err := workflow.ExecuteActivity(
 			ctx, ProcessCrawlItemActivity,
-			ProcessCrawlItemInput{ItemId: itemId, SourceLabel: source}).Get(ctx, &processOut)
+			ProcessCrawlItemInput{
+				ItemId:      itemId,
+				SourceLabel: source,
+				LineLimit:   remaining,
+			}).Get(ctx, &processOut)
 		if err != nil {
 			return out, err
 		}
 		out = out.Add(processOut)
+
+		if in.LineLimit > 0 && out.Lines >= in.LineLimit {
+			break
+		}
 	}
 
 	return out, nil
@@ -133,7 +148,6 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 
 type ListCollectionInput struct {
 	CollectionName string
-	Limit          int
 }
 
 type ListCollectionOutput struct {
@@ -147,7 +161,7 @@ func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCo
 	client := &http.Client{Timeout: 120 * time.Second}
 	page := 1
 
-	for true {
+	for {
 		ids, hasMore, err := ia.SearchCollection(
 			ctx, client, in.CollectionName, page, itemsPerPage)
 		if err != nil {
@@ -158,10 +172,6 @@ func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCo
 			if !strings.HasSuffix(id, "-CRL") {
 				out.ItemIds = append(out.ItemIds, id)
 			}
-		}
-
-		if len(ids) >= in.Limit {
-			break
 		}
 
 		if !hasMore {
@@ -177,6 +187,7 @@ func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCo
 type ProcessCrawlItemInput struct {
 	ItemId      string
 	SourceLabel string
+	LineLimit   int
 }
 
 func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (PeriodicCounts, error) {
@@ -210,12 +221,16 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 		return out, fmt.Errorf("parse rollup CDX %s/%s: %w", in.ItemId, rollup, err)
 	}
 
-	out.Lines = len(pdfLines)
-
 	//
 	// loop over each pdf cdx line and check to see if we want to read it from petabox and process.
 	//
 	for _, pdfLine := range pdfLines {
+		if in.LineLimit > 0 && out.Lines >= in.LineLimit {
+			break
+		}
+		l.Debug("handling pdf line", "line", pdfLine)
+		out.Lines++
+
 		sha1, err := decodeSha1Base32(pdfLine.Sha1Base32)
 		if err != nil {
 			l.Warn("skipping row with bad sha1", "sha1_b32", pdfLine.Sha1Base32, "err", err.Error())

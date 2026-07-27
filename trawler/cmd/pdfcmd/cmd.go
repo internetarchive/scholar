@@ -37,7 +37,7 @@ var dumpCmd = &cobra.Command{
 	},
 }
 
-var ingestLimit int
+var ingestLineLimit int
 
 var ingestCmd = &cobra.Command{
 	Use:   "ingest COLLECTION_URL_OR_ID",
@@ -50,7 +50,7 @@ var ingestCmd = &cobra.Command{
 		}
 		return periodic.StartCollectionIngest(periodic.PeriodicIngestInput{
 			CollectionName: id,
-			Limit:          ingestLimit,
+			LineLimit:      ingestLineLimit,
 		})
 	},
 }
@@ -76,8 +76,8 @@ func parseCollectionArg(s string) string {
 }
 
 func init() {
-	ingestCmd.Flags().IntVar(&ingestLimit, "limit", 0,
-		"max number of items to select from the collection (0 = no limit). Useful for smoke tests.")
+	ingestCmd.Flags().IntVar(&ingestLineLimit, "limit", 0,
+		"max number of PDF CDX rows to process across the whole run (0 = no limit). Useful for smoke tests.")
 
 	Cmd.AddCommand(dumpCmd)
 	Cmd.AddCommand(ingestCmd)

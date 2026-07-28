@@ -423,7 +423,8 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 	out.Biblio.Publisher = release.Publisher
 
 	for _, eid := range release.ExternalIDs {
-		if eid.Type == "doi" {
+		switch eid.Type {
+		case "doi":
 			out.Biblio.DOI = eid.Value
 			out.Biblio.DOIPrefix = doiPrefix(eid.Value)
 			if release.Extra != nil {
@@ -433,9 +434,17 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 					out.Biblio.DOIRegistrar = "crossref"
 				}
 			}
+		case "pmid":
+			out.Biblio.PMID = eid.Value
+		case "pmcid":
+			out.Biblio.PMCID = eid.Value
+		case "arxiv":
+			out.Biblio.ArxivID = eid.Value
+		case "doaj":
+			out.Biblio.DOAJID = eid.Value
 		}
 	}
-	// TODO post-xref-poc non-DOI ext ids
+	// TODO post-xref-poc remaining ext ids (isbn13, jstor, dblp, oai, wikidata)
 
 	out.Biblio.ContribNames = []string{}
 	for _, contrib := range release.Contribs {
@@ -477,7 +486,16 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 		}
 	}
 
-	// TODO post-xref-poc arxiv_id hack
+	// NB ported directly from "biblio_metadata_hacks" function, unsure if really needed
+	// arxiv
+	if out.Biblio.ArxivID != "" && out.Biblio.DOI == "" && out.Biblio.PMID == "" {
+		if out.Biblio.ContainerName == "" {
+			out.Biblio.ContainerName = "arXiv"
+		}
+		if slices.Contains([]string{"", "report", "post"}, out.Biblio.ReleaseType) {
+			out.Biblio.ReleaseType = "article"
+		}
+	}
 
 	// NB ported directly from "biblio_metadata_hacks" function, unsure if really needed
 	// IEEE

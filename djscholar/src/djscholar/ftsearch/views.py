@@ -204,6 +204,53 @@ def _es_file_count(since_iso=None, until_iso=None, filters=None):
     )
 
 
+def _es_file_breakdown(since_iso=None, until_iso=None):
+    """Count fatcat_file docs by ingest_source_kind within a time window.
+
+    Returns a dict like {"daily": 100, "periodic": 50, "unknown": 20} and the
+    total, or (None, None) on failure. Docs whose ingest_source_kind is blank
+    or missing are folded into "unknown".
+    """
+    filters = []
+    if since_iso or until_iso:
+        ts_range = {}
+        if since_iso:
+            ts_range["gte"] = since_iso
+        if until_iso:
+            ts_range["lt"] = until_iso
+        filters.append({"range": {"doc_index_ts": ts_range}})
+    try:
+        resp = es.client().search(
+            index=settings.ES_FATCAT_FILE_INDEX,
+            body={
+                "size": 0,
+                "query": {"bool": {"filter": filters}} if filters else {"match_all": {}},
+                "aggs": {
+                    "by_source_kind": {
+                        "terms": {
+                            "field": "ingest_source_kind",
+                            "missing": "unknown",
+                        }
+                    }
+                },
+            },
+            track_total_hits=True,
+        )
+        total = resp["hits"]["total"]
+        total = total["value"] if isinstance(total, dict) else total
+        # Fixed order so the display is stable even when a bucket is empty.
+        breakdown = {"daily": 0, "periodic": 0, "unknown": 0}
+        for bucket in resp["aggregations"]["by_source_kind"]["buckets"]:
+            key = bucket["key"]
+            if key in ("", "unknown"):
+                breakdown["unknown"] += bucket["doc_count"]
+            else:
+                breakdown[key] = breakdown.get(key, 0) + bucket["doc_count"]
+        return breakdown, total
+    except Exception:
+        return None, None
+
+
 def _es_release_count(filters=None):
     """Count release records in the fatcat_release ES index."""
     return _es_count(settings.ES_FATCAT_RELEASE_INDEX, filters=filters)
@@ -242,7 +289,7 @@ def stats(request: HttpRequest) -> HttpResponse:
         prev_access_qs = DailyAccessStat.objects.none()
 
     # -- PDFs In --
-    files_ingested = _es_file_count(since_iso=since_iso)
+    ingested_breakdown, files_ingested = _es_file_breakdown(since_iso=since_iso)
     indexed_breakdown, files_indexed = _es_fulltext_breakdown(since_iso=since_iso)
     files_total = _es_file_count(filters=[{"term": {"in_ia": True}}])
     searchable_breakdown, files_searchable = _es_fulltext_breakdown()
@@ -280,6 +327,7 @@ def stats(request: HttpRequest) -> HttpResponse:
         "period_label": period_label,
         "period_labels": STATS_PERIOD_LABELS,
         "files_ingested": files_ingested,
+        "ingested_breakdown": ingested_breakdown,
         "files_indexed": files_indexed,
         "indexed_breakdown": indexed_breakdown,
         "files_total": files_total,

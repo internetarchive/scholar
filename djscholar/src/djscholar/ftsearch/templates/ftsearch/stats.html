@@ -171,6 +171,13 @@
               {% if pct_ingested > 0 %}+{% endif %}{{ pct_ingested }}% vs prior period
             </div>
           {% endif %}
+          {% if ingested_breakdown %}
+            <div class="stat-breakdown">
+              {% for kind, count in ingested_breakdown.items %}
+                <span>{{ kind }}: {{ count|intcomma }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
         {% else %}
           <div class="stat-unavailable">unavailable</div>
         {% endif %}

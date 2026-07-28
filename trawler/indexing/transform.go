@@ -82,7 +82,8 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 
 	// NB copypasta
 	for _, eid := range release.ExternalIDs {
-		if eid.Type == "doi" {
+		switch eid.Type {
+		case "doi":
 			out.DOI = eid.Value
 			out.DOIPrefix = doiPrefix(eid.Value)
 			if release.Extra != nil {
@@ -92,14 +93,18 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 					out.DOIRegistrar = "crossref"
 				}
 			}
+		case "pmid":
+			out.PMID = eid.Value
+		case "pmcid":
+			out.PMCID = eid.Value
+		case "arxiv":
+			out.ArxivID = eid.Value
+		case "doaj":
+			out.DoajID = eid.Value
 		}
-		// TODO post-xref-poc
-		//PMID    string `json:"pmid,omitempty"`
-		//PMCID   string `json:"pmcid,omitempty"`
+		// TODO post-xref-poc remaining ext ids
 		//ISBN13  string `json:"isbn13,omitempty"`
-		//ArxivID string `json:"arxiv_id,omitempty"`
 		//JstorID string `json:"jstor_id,omitempty"`
-		//DoajID  string `json:"doaj_id,omitempty"`
 		//DblpID  string `json:"dblp_id,omitempty"`
 		//OAIID   string `json:"oai_id,omitempty"`
 	}

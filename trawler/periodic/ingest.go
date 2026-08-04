@@ -332,8 +332,13 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 		}
 
 		activity.RecordHeartbeat(ctx, "pdf-process")
+		// "Client.Timeout exceeded while waiting for headers"
 		pdfContent, err := processor.Process(ctx, pdfBs, sha1)
 		if err != nil {
+			if strings.Contains(err.Error(), "Client.Timeout exceeded while awaiting headers") {
+				l.Warn("grobid hit timeout trying to process pdf", "sha1", sha1, "err", err.Error())
+				continue
+			}
 			return out, fmt.Errorf("pdf processing failed: %w", err)
 		}
 

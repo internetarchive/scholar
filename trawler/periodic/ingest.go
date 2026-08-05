@@ -116,6 +116,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 
 	ao = workflow.ActivityOptions{
 		StartToCloseTimeout: 4 * time.Hour, // TODO may want to tweak later
+		HeartbeatTimeout:    10 * time.Minute,
 		TaskQueue:           taskQueue,
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)

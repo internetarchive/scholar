@@ -13,7 +13,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/miku/grobidclient v0.2.7
 	github.com/minio/minio-go/v7 v7.0.97
-	github.com/pdfcpu/pdfcpu v0.12.1
+	github.com/pdfcpu/pdfcpu v0.14.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0

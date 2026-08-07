@@ -47,14 +47,23 @@
       color: #333;
       text-decoration: underline;
     }
+    .exp {
+      font-size: 70%;
+      margin-bottom: 1.0em;
+
+    }
 {% endblock %}
 
 {% block top_bar %}{% endblock %}
 
 {% block content %}
   <main>
-    <img class="logo" src="{% static 'ftsearch/images/ia.svg' %}" alt="Internet Archive">
+    <img src="{% static 'ftsearch/images/scholar-vaporwave-logo.png' %}" alt="Internet Archive Scholar">
+    <em class="exp">full text search of 85,899,891 academic papers preserved by Internet Archive</em>
+    <!--
+    <img class="logo" src="{% static 'ftsearch/images/ia.svg' %}" alt="Internet Archive Scholar">
     <h1>Internet Archive Scholar</h1>
+    -->
     <form class="search-form" action="{% url 'ftsearch:search' %}" method="get">
       <input type="text" name="q" placeholder="Search open access papers..." aria-label="Search">
       <button type="submit">Search</button>

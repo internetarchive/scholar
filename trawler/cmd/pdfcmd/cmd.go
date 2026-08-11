@@ -53,9 +53,9 @@ var dumpCmd = &cobra.Command{
 
 var ingestLineLimit int
 
-var ingestCmd = &cobra.Command{
-	Use:   "ingest COLLECTION_URL_OR_ID",
-	Short: "Kick off a periodic-ingest workflow over an IA collection",
+var ingestWarcsCmd = &cobra.Command{
+	Use:   "ingest-warcs COLLECTION_URL_OR_ID",
+	Short: "Kick off a periodic-ingest workflow over an IA collection, ingesting pdfs from warcs",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := parseCollectionArg(args[0])
@@ -219,11 +219,11 @@ func parseCollectionArg(s string) string {
 }
 
 func init() {
-	ingestCmd.Flags().IntVar(&ingestLineLimit, "limit", 0,
+	ingestWarcsCmd.Flags().IntVar(&ingestLineLimit, "limit", 0,
 		"max number of PDF CDX rows to process across the whole run (0 = no limit). Useful for smoke tests.")
 
 	Cmd.AddCommand(dumpCmd)
 	Cmd.AddCommand(cdxCmd)
-	Cmd.AddCommand(ingestCmd)
+	Cmd.AddCommand(ingestWarcsCmd)
 	Cmd.AddCommand(startPeriodicIngestWorkerCmd)
 }

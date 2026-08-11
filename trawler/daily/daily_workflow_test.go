@@ -2,7 +2,10 @@ package daily
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/harvesting"
@@ -23,16 +26,16 @@ func ignored(n int) counts.Counts {
 // configureViper sets the queue names and CAN cadence the workflow reads. Tests
 // set lines_per_can explicitly so they don't depend on the shared default or on
 // each other's ordering (viper state is global).
-func configureViper(linesPerCAN int) {
-	viper.Set("crossref.external_task_queue", "ext")
-	viper.Set("crossref.internal_task_queue", "int")
+func configureViper(upstream string, linesPerCAN int) {
+	viper.Set(fmt.Sprintf("%s.external_task_queue", upstream), "ext")
+	viper.Set(fmt.Sprintf("%s.internal_task_queue", upstream), "int")
 	viper.Set("daily.lines_per_can", linesPerCAN)
 }
 
 // On the first run (S3Key empty) the workflow scrapes once, processes every line
 // in the file, and returns the summed counts when FindLineBatch reports EOF.
 func TestDailyCrawlWorkflow_HappyPathEOF(t *testing.T) {
-	configureViper(1_000_000) // high enough that CAN never triggers
+	configureViper("crossref", 1_000_000) // high enough that CAN never triggers
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
@@ -72,7 +75,7 @@ func TestDailyCrawlWorkflow_HappyPathEOF(t *testing.T) {
 // skip the scrape, resume FindLineBatch at the carried byte offset, reuse the
 // pinned source, and fold new results into the carried Counts.
 func TestDailyCrawlWorkflow_ResumeSkipsScrapeAndCarriesState(t *testing.T) {
-	configureViper(1_000_000)
+	configureViper("crossref", 1_000_000)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
@@ -116,7 +119,7 @@ func TestDailyCrawlWorkflow_ResumeSkipsScrapeAndCarriesState(t *testing.T) {
 // draining the whole batch first: with five offsets and a threshold of three,
 // only three lines are processed before CAN.
 func TestDailyCrawlWorkflow_ContinuesAsNewAtThreshold(t *testing.T) {
-	configureViper(3) // CAN after 3 lines
+	configureViper("crossref", 3) // CAN after 3 lines
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
@@ -154,7 +157,7 @@ func TestDailyCrawlWorkflow_ContinuesAsNewAtThreshold(t *testing.T) {
 // viper inline on every run. This is what keeps the values fixed and
 // replay-deterministic for the whole ContinueAsNew chain.
 func TestDailyCrawlWorkflow_CapturesConfigFromViper(t *testing.T) {
-	configureViper(1_000_000)
+	configureViper("crossref", 1_000_000)
 	viper.Set("harvesting.batch_size", 250)
 	viper.Set("harvesting.chunk_size", 4096)
 
@@ -191,7 +194,7 @@ func TestDailyCrawlWorkflow_CapturesConfigFromViper(t *testing.T) {
 // processing. The error is returned as non-retryable so the test env doesn't
 // loop on the default activity retry policy.
 func TestDailyCrawlWorkflow_ScrapeErrorAborts(t *testing.T) {
-	configureViper(1_000_000)
+	configureViper("crossref", 1_000_000)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
@@ -208,5 +211,138 @@ func TestDailyCrawlWorkflow_ScrapeErrorAborts(t *testing.T) {
 	require.Error(t, env.GetWorkflowError())
 	// FindLineBatch / ProcessLine were never mocked; reaching them would fail
 	// the run differently, so this also confirms processing never started.
+	env.AssertExpectations(t)
+}
+
+// An empty Day is resolved from the workflow clock, and the resolved day has to
+// reach both the scrape activity and the source label: deriving one without the
+// other yields records labelled for a day whose data was never fetched.
+//
+// DOAJ is where that divergence bites. Their API serves non-paying callers only
+// records older than a month, so "no day given" means a month and a day back,
+// not yesterday -- and a label-only offset would leave us scraping a window
+// DOAJ won't answer.
+func TestDailyCrawlWorkflow_ResolvesDOAJDayBackAMonth(t *testing.T) {
+	configureViper("doaj", 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+	env.SetStartTime(time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC))
+
+	// 32 days before the start time, not 1.
+	env.OnActivity(ScholkitScrapeActivity, mock.Anything, mock.MatchedBy(func(in scholkitScrapeInput) bool {
+		return in.Day == "2026-04-18" && in.Upstream == "doaj"
+	})).Return(scholkitScrapeOutput{S3Key: "meta.ndjson"}, nil).Once()
+
+	env.OnActivity(harvesting.FindLineBatch, mock.Anything, mock.Anything).
+		Return(harvesting.FindLineBatchOutput{
+			Offsets:   [][]int64{{0, 10}},
+			BytesRead: 10,
+			EOF:       true,
+		}, nil).Once()
+
+	// The generated label names the same day that was scraped. Its RunID segment
+	// is dynamic, so match around it.
+	env.OnActivity(ProcessLine, mock.Anything, mock.MatchedBy(func(in harvesting.ProcessLineInput) bool {
+		return strings.HasPrefix(in.Source, "daily-20260418-") && strings.HasSuffix(in.Source, "-doaj")
+	})).Return(ignored(1), nil).Once()
+
+	env.ExecuteWorkflow(DailyCrawlWorkflow, DailyCrawlWorkflowInput{
+		Upstream: "doaj",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// Every other upstream takes the ordinary path: an empty Day is yesterday
+// relative to the workflow clock. This is the counterpart to the DOAJ case --
+// together they pin the offset as upstream-dependent rather than global.
+func TestDailyCrawlWorkflow_ResolvesDayToYesterday(t *testing.T) {
+	configureViper("crossref", 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+	env.SetStartTime(time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC))
+
+	env.OnActivity(ScholkitScrapeActivity, mock.Anything, mock.MatchedBy(func(in scholkitScrapeInput) bool {
+		return in.Day == "2026-05-19" && in.Upstream == "crossref"
+	})).Return(scholkitScrapeOutput{S3Key: "meta.ndjson"}, nil).Once()
+
+	env.OnActivity(harvesting.FindLineBatch, mock.Anything, mock.Anything).
+		Return(harvesting.FindLineBatchOutput{
+			Offsets:   [][]int64{{0, 10}},
+			BytesRead: 10,
+			EOF:       true,
+		}, nil).Once()
+
+	env.OnActivity(ProcessLine, mock.Anything, mock.MatchedBy(func(in harvesting.ProcessLineInput) bool {
+		return strings.HasPrefix(in.Source, "daily-20260519-") && strings.HasSuffix(in.Source, "-crossref")
+	})).Return(ignored(1), nil).Once()
+
+	env.ExecuteWorkflow(DailyCrawlWorkflow, DailyCrawlWorkflowInput{
+		Upstream: "crossref",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// An explicit Day is used verbatim and the clock is never consulted -- the
+// start time here is months away from the requested day, so any fallback to
+// "yesterday" would show up in both the scrape input and the label. This is
+// also the branch that parses Day back out of the input, which is only exercised
+// when a caller supplies one (as `daily one-off --day` now always does).
+func TestDailyCrawlWorkflow_ExplicitDayOverridesClock(t *testing.T) {
+	configureViper("crossref", 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+	env.SetStartTime(time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC))
+
+	env.OnActivity(ScholkitScrapeActivity, mock.Anything, mock.MatchedBy(func(in scholkitScrapeInput) bool {
+		return in.Day == "2026-03-05"
+	})).Return(scholkitScrapeOutput{S3Key: "meta.ndjson"}, nil).Once()
+
+	env.OnActivity(harvesting.FindLineBatch, mock.Anything, mock.Anything).
+		Return(harvesting.FindLineBatchOutput{
+			Offsets:   [][]int64{{0, 10}},
+			BytesRead: 10,
+			EOF:       true,
+		}, nil).Once()
+
+	env.OnActivity(ProcessLine, mock.Anything, mock.MatchedBy(func(in harvesting.ProcessLineInput) bool {
+		return strings.HasPrefix(in.Source, "daily-20260305-")
+	})).Return(ignored(1), nil).Once()
+
+	env.ExecuteWorkflow(DailyCrawlWorkflow, DailyCrawlWorkflowInput{
+		Day:      "2026-03-05",
+		Upstream: "crossref",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// A Day that isn't in the documented 2006-01-02 format fails the run outright
+// rather than being silently coerced or reaching the scrape activity, which
+// parses it again with the same layout.
+func TestDailyCrawlWorkflow_MalformedDayFails(t *testing.T) {
+	configureViper("crossref", 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.ExecuteWorkflow(DailyCrawlWorkflow, DailyCrawlWorkflowInput{
+		Day:      "20260305",
+		Upstream: "crossref",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
+	// Nothing was mocked, so reaching any activity would fail differently.
 	env.AssertExpectations(t)
 }

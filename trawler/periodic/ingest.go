@@ -409,6 +409,8 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 				if err != nil {
 					return out, fmt.Errorf("could not update fid '%s' with url '%s': %w", fid, wbURL, err)
 				}
+				// we want to trigger a re-ingest if we added a url for this file
+				fileInES = false
 				out.FilesUpdated++
 			}
 			// `extantFileReleases` contains any releases we found connected to a file

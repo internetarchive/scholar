@@ -31,7 +31,14 @@ func StartOneOff(in DailyCrawlWorkflowInput) error {
 	// boundary); pin it into the input so the workflow doesn't later compute a
 	// different "yesterday" across a midnight boundary.
 	if in.Day == "" {
-		in.Day = time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+		if in.Upstream != "doaj" {
+			in.Day = time.Now().AddDate(0, 0, -1).Format("20060102")
+		} else {
+			// DOAJ limits non-paying consumers of their API to only records
+			// updated over a month prior; if we'd otherwise crawl "yesterday" we
+			// go back a month + one day.
+			in.Day = time.Now().AddDate(0, 0, -32).Format("20060102")
+		}
 	}
 	day, err := time.Parse("2006-01-02", in.Day)
 	if err != nil {
@@ -75,25 +82,22 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 	}
 	defer c.Close()
 
-	every := viper.GetDuration(fmt.Sprintf("%s.every", in.Upstream))
-
 	scheduleID := fmt.Sprintf("%s_daily_schedule", in.Upstream)
-
-	// Base workflow ID for scheduled runs. Temporal appends the nominal scheduled
-	// time on each fire (e.g. crossref_daily-2026-06-16T08:00:00Z), which keeps
-	// every fire's ID unique and makes the day legible at a glance -- so no UUID
-	// is needed. Each fire leaves Day empty, so the workflow crawls its own
-	// "yesterday" relative to fire time.
 	workflowID := fmt.Sprintf("%s_daily", in.Upstream)
-
 	workflowArgs := []any{in}
 
 	scheduleHandle, err := c.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID: scheduleID,
 		Spec: client.ScheduleSpec{
-			Intervals: []client.ScheduleIntervalSpec{
-				{Every: every},
-			},
+			Calendars: []client.ScheduleCalendarSpec{{
+				DayOfMonth: []client.ScheduleRange{{
+					Start: 1,
+					End:   31,
+				}},
+				Hour: []client.ScheduleRange{{
+					Start: 12,
+				}},
+			}},
 		},
 		Action: &client.ScheduleWorkflowAction{
 			ID:        workflowID,
@@ -108,14 +112,8 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 
 	log.Printf("triggering schedule %s", scheduleID)
 	err = scheduleHandle.Trigger(ctx, client.ScheduleTriggerOptions{
-		// TODO just guessing on this; I want re-running this to cancel the previous
-		// schedule but I'm worried this means that if one invocation of the
-		// scheduled activity is going that it will get cancelled when the next one
-		// starts. though, maybe we want that? We could record whatever state we
-		// left off in for a catch-up crawl. That way we avoid snowballing.
-		Overlap: enums.SCHEDULE_OVERLAP_POLICY_CANCEL_OTHER,
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not trigger schedule:%w", err)
 	}

@@ -125,7 +125,14 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		if source == "" {
 			day := in.Day
 			if day == "" {
-				day = workflow.Now(ctx).AddDate(0, 0, -1).Format("20060102")
+				if in.Upstream != "doaj" {
+					day = workflow.Now(ctx).AddDate(0, 0, -1).Format("20060102")
+				} else {
+					// DOAJ limits non-paying consumers of their API to only records
+					// updated over a month prior; if we'd otherwise crawl "yesterday" we
+					// go back a month + one day.
+					day = workflow.Now(ctx).AddDate(0, 0, -32).Format("20060102")
+				}
 			}
 			rid := workflow.GetInfo(ctx).WorkflowExecution.RunID
 			if len(rid) > 8 {

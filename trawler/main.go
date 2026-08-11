@@ -49,6 +49,11 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	// Without this, cobra runs only the innermost PersistentPreRunE it finds
+	// walking up from the executed command -- so a subcommand that defines one
+	// (dailycmd) would silently skip the config read and sentry init below.
+	cobra.EnableTraverseRunHooks = true
+
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file override")

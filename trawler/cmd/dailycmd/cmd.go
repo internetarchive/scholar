@@ -74,7 +74,7 @@ var StartInternalWorkerCmd = &cobra.Command{
 	Use:   "start-internal-worker",
 	Short: "Start a Temporal worker that is intended to run in-cluster only",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		log.Printf("starting %s internal worker")
+		log.Printf("starting %s internal worker", upstream)
 		return daily.StartWorker(daily.WorkerDetails{
 			Access:   "internal",
 			Upstream: upstream,

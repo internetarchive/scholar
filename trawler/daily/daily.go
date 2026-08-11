@@ -89,6 +89,24 @@ type dailyConfig struct {
 func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (counts.Counts, error) {
 	l := workflow.GetLogger(ctx)
 
+	var err error
+
+	var day time.Time
+	if in.Day == "" {
+		back := -1
+		if in.Upstream == "doaj" {
+			// DOAJ limits reads for non-paying API callers to only month old data
+			back = -32
+		}
+		day = workflow.Now(ctx).AddDate(0, 0, back)
+		in.Day = day.Format("2006-01-02")
+	} else {
+		day, err = time.Parse("2006-01-02", in.Day)
+		if err != nil {
+			return counts.Counts{}, err
+		}
+	}
+
 	// Snapshot config once, on the first run, and thread it across
 	// ContinueAsNew so it's fixed for the whole chain. SideEffect records the
 	// read in history, so replays return the recorded values instead of
@@ -123,22 +141,11 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 	if in.S3Key == "" {
 		source := in.SourceOverride
 		if source == "" {
-			day := in.Day
-			if day == "" {
-				if in.Upstream != "doaj" {
-					day = workflow.Now(ctx).AddDate(0, 0, -1).Format("20060102")
-				} else {
-					// DOAJ limits non-paying consumers of their API to only records
-					// updated over a month prior; if we'd otherwise crawl "yesterday" we
-					// go back a month + one day.
-					day = workflow.Now(ctx).AddDate(0, 0, -32).Format("20060102")
-				}
-			}
 			rid := workflow.GetInfo(ctx).WorkflowExecution.RunID
 			if len(rid) > 8 {
 				rid = rid[:8]
 			}
-			source = fmt.Sprintf("daily-%s-%s-%s", day, rid, in.Upstream)
+			source = fmt.Sprintf("daily-%s-%s-%s", day.Format("20060102"), rid, in.Upstream)
 		}
 		in.Source = source
 

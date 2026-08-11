@@ -26,20 +26,6 @@ func StartOneOff(in DailyCrawlWorkflowInput) error {
 	}
 	defer c.Close()
 
-	// Resolve the day client-side so the workflow ID names the day actually
-	// crawled. Empty means "yesterday" in UTC (matching the scrape activity's day
-	// boundary); pin it into the input so the workflow doesn't later compute a
-	// different "yesterday" across a midnight boundary.
-	if in.Day == "" {
-		if in.Upstream != "doaj" {
-			in.Day = time.Now().AddDate(0, 0, -1).Format("20060102")
-		} else {
-			// DOAJ limits non-paying consumers of their API to only records
-			// updated over a month prior; if we'd otherwise crawl "yesterday" we
-			// go back a month + one day.
-			in.Day = time.Now().AddDate(0, 0, -32).Format("20060102")
-		}
-	}
 	day, err := time.Parse("2006-01-02", in.Day)
 	if err != nil {
 		return fmt.Errorf("invalid day %q (want format 2006-01-02): %w", in.Day, err)
@@ -90,10 +76,6 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 		ID: scheduleID,
 		Spec: client.ScheduleSpec{
 			Calendars: []client.ScheduleCalendarSpec{{
-				DayOfMonth: []client.ScheduleRange{{
-					Start: 1,
-					End:   31,
-				}},
 				Hour: []client.ScheduleRange{{
 					Start: 12,
 				}},
@@ -105,15 +87,14 @@ func StartSchedule(in DailyCrawlWorkflowInput) error {
 			Args:      workflowArgs,
 			TaskQueue: viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
 		},
+		Overlap: enums.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create workflow: %w", err)
 	}
 
 	log.Printf("triggering schedule %s", scheduleID)
-	err = scheduleHandle.Trigger(ctx, client.ScheduleTriggerOptions{
-		Overlap: enums.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
-	})
+	err = scheduleHandle.Trigger(ctx, client.ScheduleTriggerOptions{})
 	if err != nil {
 		return fmt.Errorf("could not trigger schedule:%w", err)
 	}

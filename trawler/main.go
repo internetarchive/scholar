@@ -5,14 +5,10 @@ import (
 	"log"
 	"os"
 
-	"git.archive.org/webgroup/scholar/trawler/cmd/arxivcmd"
-	"git.archive.org/webgroup/scholar/trawler/cmd/crossrefcmd"
-	"git.archive.org/webgroup/scholar/trawler/cmd/datacitecmd"
-	"git.archive.org/webgroup/scholar/trawler/cmd/doajcmd"
+	"git.archive.org/webgroup/scholar/trawler/cmd/dailycmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/fccmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/pdfcmd"
-	"git.archive.org/webgroup/scholar/trawler/cmd/pubmedcmd"
 	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -57,14 +53,10 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file override")
 
-	rootCmd.AddCommand(arxivcmd.Cmd)
-	rootCmd.AddCommand(crossrefcmd.Cmd)
-	rootCmd.AddCommand(datacitecmd.Cmd)
-	rootCmd.AddCommand(doajcmd.Cmd)
 	rootCmd.AddCommand(fccmd.Cmd)
 	rootCmd.AddCommand(indexcmd.IndexCmd)
 	rootCmd.AddCommand(pdfcmd.Cmd)
-	rootCmd.AddCommand(pubmedcmd.Cmd)
+	rootCmd.AddCommand(dailycmd.Cmd)
 }
 
 func initConfig() {

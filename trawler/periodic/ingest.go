@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -114,39 +115,77 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 		return out, err
 	}
 
+	itemIds := listOut.ItemIds
+	slices.Sort(itemIds)
+
 	ao = workflow.ActivityOptions{
 		StartToCloseTimeout: 4 * time.Hour, // TODO may want to tweak later
 		HeartbeatTimeout:    10 * time.Minute,
 		TaskQueue:           taskQueue,
 	}
-	ctx = workflow.WithActivityOptions(ctx, ao)
-	for _, itemId := range listOut.ItemIds {
-		// With a LineLimit set, hand each item only the rows still left in the
-		// global budget and stop scheduling items once it's spent. remaining
-		// == 0 means "no per-item cap" (the unlimited case).
-		remaining := 0
-		if in.LineLimit > 0 {
-			remaining = in.LineLimit - out.Lines
-			if remaining <= 0 {
+	actx := workflow.WithActivityOptions(ctx, ao)
+
+	if in.LineLimit > 0 {
+		// sync approach
+		for _, itemId := range itemIds {
+			// With a LineLimit set, hand each item only the rows still left in the
+			// global budget and stop scheduling items once it's spent. remaining
+			// == 0 means "no per-item cap" (the unlimited case).
+			remaining := 0
+			if in.LineLimit > 0 {
+				remaining = in.LineLimit - out.Lines
+				if remaining <= 0 {
+					break
+				}
+			}
+
+			var processOut PeriodicCounts
+			err := workflow.ExecuteActivity(
+				actx, ProcessCrawlItemActivity,
+				ProcessCrawlItemInput{
+					ItemId:      itemId,
+					SourceLabel: source,
+					LineLimit:   remaining,
+				}).Get(ctx, &processOut)
+			if err != nil {
+				return out, err
+			}
+			out = out.Add(processOut)
+
+			if in.LineLimit > 0 && out.Lines >= in.LineLimit {
 				break
 			}
 		}
 
-		var processOut PeriodicCounts
-		err := workflow.ExecuteActivity(
-			ctx, ProcessCrawlItemActivity,
+		return out, nil
+	}
+
+	// parallel approach
+	sel := workflow.NewSelector(ctx)
+	actCounts := 0
+	err = nil
+	for _, itemId := range itemIds {
+		fut := workflow.ExecuteActivity(
+			actx, ProcessCrawlItemActivity,
 			ProcessCrawlItemInput{
 				ItemId:      itemId,
 				SourceLabel: source,
-				LineLimit:   remaining,
-			}).Get(ctx, &processOut)
+			})
+		sel.AddFuture(fut, func(f workflow.Future) {
+			var processOut PeriodicCounts
+			err = f.Get(ctx, &processOut)
+			if err != nil {
+				return
+			}
+			out.Add(processOut)
+		})
+		actCounts++
+	}
+
+	for x := 0; x < actCounts; x++ {
+		sel.Select(ctx)
 		if err != nil {
 			return out, err
-		}
-		out = out.Add(processOut)
-
-		if in.LineLimit > 0 && out.Lines >= in.LineLimit {
-			break
 		}
 	}
 

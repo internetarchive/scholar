@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 
@@ -152,6 +153,13 @@ ES_FATCAT_RELEASE_INDEX = "fatcat_release"
 ES_FATCAT_CONTAINER_INDEX = "fatcat_container"
 ES_FATCAT_REF_INDEX = "fatcat_ref"
 ES_FATCAT_FILE_INDEX = "fatcat_file"
+
+# SavePageNow. The /stats page reads capture-slot usage from the SPN status
+# API using the same credentials the trawler crawls with. These are optional:
+# without them the SPN stats just render as unavailable.
+SPN_ENDPOINT = os.environ.get("SPN_ENDPOINT", "https://web.archive.org/save")
+SPN_ACCESS_KEY = os.environ.get("SPN_ACCESS_KEY", "")
+SPN_SECRET_KEY = os.environ.get("SPN_SECRET_KEY", "")
 
 # Maximum request body size (bytes). The trawler's fatcat2.CreateRelease
 # enforces a matching limit so oversized payloads are caught before they

@@ -153,6 +153,23 @@
       </div>
     </div>
 
+    <h2>SPN Stats</h2>
+    <div class="stat-cards">
+      <div class="stat-card">
+        {% if spn_status %}
+          <div class="stat-value">{{ spn_status.in_use }} / {{ spn_status.max_slots }}</div>
+          {% if spn_status.saturation_pct is not None %}
+            <div class="stat-breakdown">
+              <span>{{ spn_status.saturation_pct }}% saturated</span>
+            </div>
+          {% endif %}
+        {% else %}
+          <div class="stat-unavailable">unavailable</div>
+        {% endif %}
+        <div class="stat-label">Snapshot of SPN capture slots in use.</div>
+      </div>
+    </div>
+
     <h2>PDFs In/Out</h2>
 
     <div class="period-selector">

@@ -15,6 +15,7 @@ from django.utils.safestring import mark_safe
 from elasticsearch.exceptions import RequestError, TransportError
 
 import djscholar.es as es
+import djscholar.spn as spn
 from djscholar.fcapi.fcid import fcid2uuid, is_legacy_fcid, uuid2fcid
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import files as file_svc
@@ -302,6 +303,11 @@ def stats(request: HttpRequest) -> HttpResponse:
         }]
     )
 
+    # -- SPN --
+    # Deliberately not windowed: this is a right-now reading of how much of our
+    # SPN capture capacity is busy.
+    spn_status = spn.get_user_status()
+
     # Previous period for comparison
     prev_ingested = _es_file_count(
         since_iso=prev_since_iso, until_iso=prev_until_iso,
@@ -335,6 +341,7 @@ def stats(request: HttpRequest) -> HttpResponse:
         "searchable_breakdown": searchable_breakdown,
         "non_dataset_releases": non_dataset_releases,
         "dataset_releases": dataset_releases,
+        "spn_status": spn_status,
         "pct_ingested": _pct_change(files_ingested, prev_ingested),
         "pct_indexed": _pct_change(files_indexed, prev_indexed),
         "access_by_type": access_by_type,

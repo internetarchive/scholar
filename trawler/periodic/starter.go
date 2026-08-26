@@ -61,7 +61,6 @@ func StartWorker() error {
 			Interceptors: []interceptor.WorkerInterceptor{
 				temporalsentry.New(),
 			},
-			MaxConcurrentActivityExecutionSize: 4,
 		})
 
 	w.RegisterWorkflow(PeriodicIngestWorkflow)

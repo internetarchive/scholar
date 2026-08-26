@@ -161,34 +161,43 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	}
 
 	// parallel approach
+	const maxInFlight = 4
+
 	sel := workflow.NewSelector(ctx)
-	actCounts := 0
-	err = nil
-	for _, itemId := range itemIds {
-		fut := workflow.ExecuteActivity(
-			actx, ProcessCrawlItemActivity,
-			ProcessCrawlItemInput{
-				ItemId:      itemId,
-				SourceLabel: source,
-			})
+	var firstErr error
+	inFlight, started := 0, 0
+
+	schedule := func() {
+		itemId := itemIds[started]
+		started++
+		inFlight++
+		fut := workflow.ExecuteActivity(actx, ProcessCrawlItemActivity,
+			ProcessCrawlItemInput{ItemId: itemId, SourceLabel: source})
 		sel.AddFuture(fut, func(f workflow.Future) {
+			inFlight--
 			var processOut PeriodicCounts
-			err = f.Get(ctx, &processOut)
-			if err != nil {
+			if err := f.Get(ctx, &processOut); err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("item %s: %w", itemId, err)
+				}
 				return
 			}
-			out.Add(processOut)
+			out = out.Add(processOut)
 		})
-		actCounts++
 	}
 
-	for x := 0; x < actCounts; x++ {
+	for started < len(itemIds) && inFlight < maxInFlight {
+		schedule()
+	}
+	for inFlight > 0 {
 		sel.Select(ctx)
-		if err != nil {
-			return out, err
+		if firstErr != nil {
+			return out, firstErr
+		}
+		if started < len(itemIds) {
+			schedule()
 		}
 	}
-
 	return out, nil
 }
 

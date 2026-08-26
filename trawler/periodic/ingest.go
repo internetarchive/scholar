@@ -125,8 +125,10 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	}
 	actx := workflow.WithActivityOptions(ctx, ao)
 
+	// annoying to force line limit when processing in parallel and line limit is
+	// just for debugging a small number of lines, anyway, so run synchronously
+	// until we see enough lines
 	if in.LineLimit > 0 {
-		// sync approach
 		for _, itemId := range itemIds {
 			// With a LineLimit set, hand each item only the rows still left in the
 			// global budget and stop scheduling items once it's spent. remaining
@@ -160,7 +162,13 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 		return out, nil
 	}
 
-	// parallel approach
+	// if no limit we want to go faster; parallelize the activities.
+
+	// TODO i think i was too defensive about temporal history; the individual
+	// files are too big to use as a single activity's batch. I think the proper
+	// solution is to look more like daily crawl; turn an item into a list of cdx
+	// lines then do an activity per batch.
+
 	const maxInFlight = 4
 
 	sel := workflow.NewSelector(ctx)
@@ -381,11 +389,14 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 		}
 
 		activity.RecordHeartbeat(ctx, "pdf-process")
-		// "Client.Timeout exceeded while waiting for headers"
 		pdfContent, err := processor.Process(ctx, pdfBs, sha1)
 		if err != nil {
 			if strings.Contains(err.Error(), "Client.Timeout exceeded while awaiting headers") {
 				l.Warn("grobid hit timeout trying to process pdf", "sha1", sha1, "err", err.Error())
+				continue
+			}
+			if strings.Contains(string(pdfContent.GrobidXML), "[BAD_INPUT_DATA]") {
+				l.Warn("grobid does not like pdf", "sha1", sha1, "output", pdfContent.GrobidXML)
 				continue
 			}
 			return out, fmt.Errorf("pdf processing failed: %w", err)
@@ -393,7 +404,7 @@ func ProcessCrawlItemActivity(ctx context.Context, in ProcessCrawlItemInput) (Pe
 
 		gdoc, err := tei.ParseDocument(bytes.NewReader(pdfContent.GrobidXML))
 		if err != nil {
-			l.Warn("failed to parse grobid xml", "sha1", sha1, "error", err.Error())
+			l.Warn("failed to parse grobid xml", "sha1", sha1, "error", err.Error(), "tei", pdfContent.GrobidXML)
 			continue
 		}
 

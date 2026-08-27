@@ -38,9 +38,6 @@ func GetObject(ctx context.Context, s3key string) (*minio.Object, error) {
 	return f, nil
 }
 
-// PutObject is reserved for future one-off PDF ingestion tooling. The
-// periodic-ingest workflow reads PDF bytes directly from petabox; nothing
-// in the periodic pipeline calls PutObject today. See periodic/upload.go.
 func PutObject(ctx context.Context, s3key string, body []byte, contentType string) error {
 	endpoint := viper.GetString("s3.endpoint")
 	accessKeyID := viper.GetString("s3.access_id")

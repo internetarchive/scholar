@@ -58,13 +58,12 @@ var ingestWarcsCmd = &cobra.Command{
 	Short: "Kick off a periodic-ingest workflow over an IA collection, ingesting pdfs from warcs",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id := parseCollectionArg(args[0])
-		if id == "" {
-			return fmt.Errorf("could not extract collection id from %q", args[0])
+		collName := parseCollectionArg(args[0])
+		if collName == "" {
+			return fmt.Errorf("could not extract collection name from %q", args[0])
 		}
 		return periodic.StartCollectionIngest(periodic.PeriodicIngestInput{
-			CollectionName: id,
-			LineLimit:      ingestLineLimit,
+			CollectionName: collName,
 		})
 	},
 }

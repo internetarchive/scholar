@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/temporal"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -43,7 +44,7 @@ func StartCollectionIngest(in PeriodicIngestInput) error {
 		return fmt.Errorf("could not start workflow %s: %w", workflowID, err)
 	}
 
-	log.Printf("dispatched %s (collection=%s, line_limit=%d)", workflowID, in.CollectionName, in.LineLimit)
+	log.Printf("dispatched %s (collection=%s)", workflowID, in.CollectionName)
 	return nil
 }
 
@@ -65,7 +66,9 @@ func StartWorker() error {
 
 	w.RegisterWorkflow(PeriodicIngestWorkflow)
 	w.RegisterActivity(ListCollectionActivity)
-	w.RegisterActivity(ProcessCrawlItemActivity)
+	w.RegisterActivity(CacheItemPdfActivity)
+	w.RegisterActivity(harvesting.FindLineBatch)
+	w.RegisterActivity(ProcessPdfLineActivity)
 
 	err = w.Run(worker.InterruptCh())
 	if err != nil {

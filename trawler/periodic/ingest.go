@@ -115,6 +115,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	itemIds := []string{}
 
 	if len(in.ItemIdMap) == 0 {
+		in.ItemIdMap = map[string]string{}
 		ao := workflow.ActivityOptions{
 			StartToCloseTimeout: 2 * time.Hour,
 			TaskQueue:           taskQueue,
@@ -319,7 +320,7 @@ func CacheItemPdfActivity(ctx context.Context, in CacheItemPdfActivityInput) (st
 		if err != nil {
 			return "", fmt.Errorf("failed to encode cdx row '%#v': %w", line, err)
 		}
-		jsonl = slices.Concat(slices.Concat(jl, []byte("\n")))
+		jsonl = slices.Concat(jsonl, slices.Concat(jl, []byte("\n")))
 	}
 	s3key := fmt.Sprintf("sandcrawler/pdfcdx/%s/%s", in.CollectionName, in.ItemId)
 	err = s3.PutObject(ctx, s3key, jsonl, "application/x-ndjson")
@@ -450,8 +451,8 @@ func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (Period
 		return out, fmt.Errorf("could not create pdf processor: %w", err)
 	}
 
-	// TODO pick up from here
-
+	// TODO this is all fucked up; Process is *not* reporting err for anything grobid related.
+	// TODO see what it feels like to just hit grobid directly instead of trying to use blobproc
 	activity.RecordHeartbeat(ctx, "pdf-process")
 	pdfContent, err := processor.Process(ctx, pdfBs, sha1)
 	if err != nil {

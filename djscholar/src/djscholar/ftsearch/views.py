@@ -102,6 +102,10 @@ def help(request: HttpRequest) -> HttpResponse:
     return render(request, "ftsearch/help.html")
 
 
+def robots_txt(request: HttpRequest) -> HttpResponse:
+    return render(request, "ftsearch/robots.txt", content_type="text/plain")
+
+
 STATS_PERIODS = {
     "last_1d": ("Last 1 day", datetime.timedelta(days=1)),
     "last_7d": ("Last 7 days", datetime.timedelta(days=7)),

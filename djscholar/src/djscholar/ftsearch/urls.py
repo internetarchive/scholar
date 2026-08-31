@@ -27,6 +27,7 @@ urlpatterns = [
     path("about", views.about, name="about"),
     path("help", views.help, name="help"),
     path("stats", views.stats, name="stats"),
+    path("robots.txt", views.robots_txt, name="robots_txt"),
 
     # Search
     path("random", views.random_paper, name="random_paper"),
@@ -56,5 +57,4 @@ urlpatterns = [
     # views for them.
     # path("favicon.ico", views.favicon, name="favicon"),
     # path("sitemap.xml", views.sitemap, name="sitemap"),
-    # path("robots.txt", views.robots_txt, name="robots_txt"),
 ]

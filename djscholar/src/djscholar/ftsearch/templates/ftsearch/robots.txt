@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /search
+
+Sitemap: https://scholar.archive.org/sitemap.xml
+Sitemap: https://scholar.archive.org/sitemap-index-works.xml

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/internetarchive/scholar/blobproc"
@@ -88,6 +89,11 @@ func (p *Processor) beatHeart(msg string) {
 	}
 }
 
+var knownGrobidErrors = []string{
+	"[BAD_INPUT_DATA]",
+	"[NO_BLOCKS]",
+}
+
 // Process runs the full per-PDF pipeline (pdfextract for text + thumbnail, then
 // GROBID for TEI) on pdfBs. Derivatives are written through to S3 and the
 // GROBID XML + extracted text are returned in memory. sha1 is used only for
@@ -97,17 +103,18 @@ func (p *Processor) beatHeart(msg string) {
 // text and thumbnail, which blobproc writes before GROBID, are persisted to S3
 // regardless.
 func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Content, error) {
+	out := Content{}
 	f, err := os.CreateTemp("", "trawler-pdf-*.pdf")
 	if err != nil {
-		return Content{}, fmt.Errorf("could not create temp file: %w", err)
+		return out, fmt.Errorf("could not create temp file: %w", err)
 	}
 	defer os.Remove(f.Name())
 	if _, err := f.Write(pdfBs); err != nil {
 		f.Close()
-		return Content{}, fmt.Errorf("could not write temp pdf: %w", err)
+		return out, fmt.Errorf("could not write temp pdf: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return Content{}, fmt.Errorf("could not close temp pdf: %w", err)
+		return out, fmt.Errorf("could not close temp pdf: %w", err)
 	}
 
 	// Keep the activity alive across the synchronous GROBID call.
@@ -124,11 +131,36 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 	})
 	for _, e := range errs {
 		slog.Warn("pdf processing error", "sha1", sha1, "err", e.Error())
+
+		if strings.Contains(e.Error(), "non-200 from grobid") {
+			var knownErrCode bool
+			for _, errcode := range knownGrobidErrors {
+				if strings.HasPrefix(string(result.TEI), errcode) {
+					knownErrCode = true
+					break
+				}
+			}
+			if !knownErrCode {
+				// We do this dance because it's cause for stopping everything if
+				// Grobid is having an outage. It will return 500 for a bad pdf and
+				// also for general errors; relying only on status code can't
+				// differentiate between grobid outage vs. bad pdf.
+				//
+				// there are almost certainly error codes that should be in
+				// knownGrobidErrors but we haven't seen them yet; it will be annoying
+				// to whack a mole them but that's better then treating PDFs as bad
+				// when grobid is just quietly having an outage.
+				return out, fmt.Errorf("unknown grobid error: %q", result.TEI)
+			}
+		}
 	}
-	if len(result.TEI) == 0 {
-		return Content{}, fmt.Errorf("no GROBID output for %s (%d processing errors)", sha1, len(errs))
+
+	out = Content{
+		GrobidXML: result.TEI,
+		PdfText:   []byte(result.Text),
 	}
-	return Content{GrobidXML: result.TEI, PdfText: []byte(result.Text)}, nil
+
+	return out, nil
 }
 
 // heartbeatLoop fires Heartbeater every 30s until the returned stop func is

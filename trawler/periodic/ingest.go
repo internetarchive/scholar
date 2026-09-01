@@ -451,22 +451,16 @@ func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (Period
 		return out, fmt.Errorf("could not create pdf processor: %w", err)
 	}
 
-	// TODO this is all fucked up; Process is *not* reporting err for anything grobid related.
-	// TODO see what it feels like to just hit grobid directly instead of trying to use blobproc
 	activity.RecordHeartbeat(ctx, "pdf-process")
 	pdfContent, err := processor.Process(ctx, pdfBs, sha1)
 	if err != nil {
-		if strings.Contains(err.Error(), "Client.Timeout exceeded while awaiting headers") {
-			l.Warn("grobid hit timeout trying to process pdf", "sha1", sha1, "err", err.Error())
-			out.PdfsFailed++
-			return out, nil
-		}
-		if strings.Contains(string(pdfContent.GrobidXML), "[BAD_INPUT_DATA]") {
-			l.Warn("grobid does not like pdf", "sha1", sha1, "output", pdfContent.GrobidXML)
-			out.PdfsFailed++
-			return out, nil
-		}
 		return out, fmt.Errorf("pdf processing failed: %w", err)
+	}
+
+	if len(pdfContent.GrobidXML) == 0 {
+		l.Warn("empty grobid XML indicates bad pdf", "sha1", sha1)
+		out.PdfsFailed++
+		return out, nil
 	}
 
 	gdoc, err := tei.ParseDocument(bytes.NewReader(pdfContent.GrobidXML))

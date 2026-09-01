@@ -502,6 +502,9 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	if err != nil {
 		return out, fmt.Errorf("pdf processing failed: %w", err)
 	}
+	if len(pdfContent.GrobidXML) == 0 {
+		return out, fmt.Errorf("got empty grobid xml")
+	}
 	activity.RecordHeartbeat(ctx, "post-pdf-process")
 
 	var container *fatcat2.Container

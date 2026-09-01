@@ -9,7 +9,7 @@ require (
 	github.com/getsentry/sentry-go v0.44.1
 	github.com/google/uuid v1.6.0
 	github.com/internetarchive/gowarc v0.8.98
-	github.com/internetarchive/scholar/blobproc v1.0.3
+	github.com/internetarchive/scholar/blobproc v1.0.4
 	github.com/internetarchive/scholar/pubmed2json v1.0.0
 	github.com/miku/grobidclient v0.2.7
 	github.com/minio/minio-go/v7 v7.0.97

@@ -129,10 +129,14 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 		GrobidMaxFileSize: p.grobidMaxFileSize,
 		Logger:            slog.Default(),
 	})
+
+	out.GrobidXML = result.TEI
+	out.PdfText = []byte(result.Text)
+
 	for _, e := range errs {
 		slog.Warn("pdf processing error", "sha1", sha1, "err", e.Error())
 
-		if strings.Contains(e.Error(), "non-200 from grobid") {
+		if strings.Contains(e.Error(), "non-200 response from grobid") {
 			var knownErrCode bool
 			for _, errcode := range knownGrobidErrors {
 				if strings.HasPrefix(string(result.TEI), errcode) {
@@ -151,13 +155,10 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 				// to whack a mole them but that's better then treating PDFs as bad
 				// when grobid is just quietly having an outage.
 				return out, fmt.Errorf("unknown grobid error: %q", result.TEI)
+			} else {
+				out.GrobidXML = []byte{}
 			}
 		}
-	}
-
-	out = Content{
-		GrobidXML: result.TEI,
-		PdfText:   []byte(result.Text),
 	}
 
 	return out, nil

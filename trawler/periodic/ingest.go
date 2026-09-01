@@ -320,7 +320,10 @@ func CacheItemPdfActivity(ctx context.Context, in CacheItemPdfActivityInput) (st
 		if err != nil {
 			return "", fmt.Errorf("failed to encode cdx row '%#v': %w", line, err)
 		}
-		jsonl = slices.Concat(jsonl, slices.Concat(jl, []byte("\n")))
+		for _, c := range jl {
+			jsonl = append(jsonl, c)
+		}
+		jsonl = append(jsonl, '\n')
 	}
 	s3key := fmt.Sprintf("sandcrawler/pdfcdx/%s/%s", in.CollectionName, in.ItemId)
 	err = s3.PutObject(ctx, s3key, jsonl, "application/x-ndjson")

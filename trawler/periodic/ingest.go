@@ -154,6 +154,11 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 	}
 	slices.Sort(itemIds)
 
+	if len(itemIds) == 0 {
+		l.Warn("found no items in collection, exiting")
+		return in.Counts, nil
+	}
+
 	linesPerCAN := 1000
 	linesThisRun := 0
 	findCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
@@ -165,12 +170,17 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 		in.ItemId = itemIds[0]
 	}
 
-	left := itemIds[slices.Index(itemIds, in.ItemId):]
+	currentItemIx := slices.Index(itemIds, in.ItemId)
+	if currentItemIx == -1 {
+		l.Warn("item id not found in list", "itemId", in.ItemId)
+		return in.Counts, nil
+	}
+	left := itemIds[currentItemIx:]
 
 	lCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout:    4 * time.Hour,
 		ScheduleToCloseTimeout: 8 * time.Hour,
-		HeartbeatTimeout:       2 * time.Minute,
+		HeartbeatTimeout:       20 * time.Minute,
 		TaskQueue:              taskQueue,
 		RetryPolicy: &temporal.RetryPolicy{
 			BackoffCoefficient: 1.5,
@@ -192,6 +202,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 			if err := workflow.ExecuteActivity(findCtx, harvesting.FindLineBatch, findInput).Get(findCtx, &findOutput); err != nil {
 				return in.Counts, err
 			}
+			in.Counts.Lines += len(findOutput.Offsets)
 			for _, offset := range findOutput.Offsets {
 				lin := ProcessPdfLineInput{
 					S3Key:          in.ItemIdMap[itemId],

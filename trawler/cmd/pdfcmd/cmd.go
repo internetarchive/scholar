@@ -51,8 +51,6 @@ var dumpCmd = &cobra.Command{
 	},
 }
 
-var ingestLineLimit int
-
 var ingestWarcsCmd = &cobra.Command{
 	Use:   "ingest-warcs COLLECTION_URL_OR_ID",
 	Short: "Kick off a periodic-ingest workflow over an IA collection, ingesting pdfs from warcs",
@@ -218,9 +216,6 @@ func parseCollectionArg(s string) string {
 }
 
 func init() {
-	ingestWarcsCmd.Flags().IntVar(&ingestLineLimit, "limit", 0,
-		"max number of PDF CDX rows to process across the whole run (0 = no limit). Useful for smoke tests.")
-
 	Cmd.AddCommand(dumpCmd)
 	Cmd.AddCommand(cdxCmd)
 	Cmd.AddCommand(ingestWarcsCmd)

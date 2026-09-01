@@ -99,9 +99,9 @@ var knownGrobidErrors = []string{
 // GROBID XML + extracted text are returned in memory. sha1 is used only for
 // logging; blobproc derives the canonical sha1 from the bytes for S3 keys.
 //
-// An error is returned when GROBID produced no TEI (the indexer needs it);
-// text and thumbnail, which blobproc writes before GROBID, are persisted to S3
-// regardless.
+// An error is returned when we failed in calling out to grobid or if grobid
+// returned a surprising error. Always check to see if the XML is sane; a bad,
+// unparseable PDF will result in no XML.
 func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Content, error) {
 	out := Content{}
 	f, err := os.CreateTemp("", "trawler-pdf-*.pdf")
@@ -135,6 +135,10 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 
 	for _, e := range errs {
 		slog.Warn("pdf processing error", "sha1", sha1, "err", e.Error())
+
+		if strings.Contains(e.Error(), "grobid client failure") {
+			return out, e
+		}
 
 		if strings.Contains(e.Error(), "non-200 response from grobid") {
 			var knownErrCode bool

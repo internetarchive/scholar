@@ -130,12 +130,13 @@ func ProcessPDF(ctx context.Context, p ProcessPDFParams) (*ProcessPDFResult, []e
 	switch {
 	case err != nil:
 		logger.Warn("grobid failed", "err", err)
-		errs = append(errs, err)
+		errs = append(errs, fmt.Errorf("grobid client failure: %w", err))
 	case gres.StatusCode != 200:
 		logger.Warn("grobid non-200", "body", string(gres.Body))
 		out.TEI = gres.Body
 		errs = append(errs, fmt.Errorf("got non-200 response from grobid: %d", gres.StatusCode))
 	case gres.Err != nil:
+		// TODO this is never set as far as I can tell
 		logger.Warn("grobid failed", "err", gres.Err)
 		errs = append(errs, gres.Err)
 	default:

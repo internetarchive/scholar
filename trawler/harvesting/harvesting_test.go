@@ -94,3 +94,99 @@ func Test_chunk(t *testing.T) {
 		})
 	}
 }
+
+// Test_chunk_batchFullAtEOF is a regression test. A read that reaches the end
+// of the object while the batch fills part-way through the buffer must not
+// report EOF: callers treat EOF as "this object is done", advance to the next
+// one, and would abandon the lines still sitting unscanned in that buffer.
+func Test_chunk_batchFullAtEOF(t *testing.T) {
+	// ChunkSize is larger than the sample, so every ReadAt here comes back with
+	// io.EOF alongside its bytes.
+	r := bytes.NewReader([]byte("aa\nbb\ncc\ndd\n"))
+
+	sequence := []struct {
+		offset            int64
+		expectedOffsets   [][]int64
+		expectedBytesRead int64
+		expectedEOF       bool
+	}{
+		// The batch fills at byte 6 of 12, so there is more to read even though
+		// the read itself hit the end of the object.
+		{
+			offset:            0,
+			expectedOffsets:   [][]int64{{0, 3}, {3, 3}},
+			expectedBytesRead: 6,
+		},
+		// Here the batch fills on the object's final byte, which does exhaust it.
+		{
+			offset:            6,
+			expectedOffsets:   [][]int64{{6, 3}, {9, 3}},
+			expectedBytesRead: 12,
+			expectedEOF:       true,
+		},
+	}
+
+	var seen [][]int64
+	for ix, step := range sequence {
+		t.Run(fmt.Sprintf("step %d", ix), func(t *testing.T) {
+			cfg := chunkCfg{
+				Offset:    step.offset,
+				BatchSize: 2,
+				ChunkSize: 64,
+			}
+			out, err := chunk(cfg, r)
+			if err != nil {
+				t.Fatalf("error: %s", err.Error())
+			}
+
+			if !reflect.DeepEqual(step.expectedOffsets, out.Offsets) {
+				t.Errorf("expected offsets %v, got offsets %v", step.expectedOffsets, out.Offsets)
+			}
+
+			if step.expectedBytesRead != out.BytesRead {
+				t.Errorf("expected %d bytes read, saw %d", step.expectedBytesRead, out.BytesRead)
+			}
+
+			if step.expectedEOF != out.EOF {
+				t.Errorf("expected EOF %v, got %v", step.expectedEOF, out.EOF)
+			}
+
+			seen = append(seen, out.Offsets...)
+		})
+	}
+
+	// The point of the fix: walking to EOF yields every line, not just the
+	// first batch.
+	if len(seen) != 4 {
+		t.Errorf("expected 4 lines across the walk, got %d: %v", len(seen), seen)
+	}
+}
+
+// Test_chunk_eofUnderBatchSize covers the ordinary end-of-object case, where
+// the object runs out before the batch fills.
+func Test_chunk_eofUnderBatchSize(t *testing.T) {
+	r := bytes.NewReader([]byte("aa\nbb\n"))
+
+	cfg := chunkCfg{
+		Offset:    0,
+		BatchSize: 10,
+		ChunkSize: 4,
+	}
+	out, err := chunk(cfg, r)
+	if err != nil {
+		t.Fatalf("error: %s", err.Error())
+	}
+
+	expectedOffsets := [][]int64{{0, 3}, {3, 3}}
+	if !reflect.DeepEqual(expectedOffsets, out.Offsets) {
+		t.Errorf("expected offsets %v, got offsets %v", expectedOffsets, out.Offsets)
+	}
+
+	if out.BytesRead != 6 {
+		t.Errorf("expected 6 bytes read, saw %d", out.BytesRead)
+	}
+
+	if !out.EOF {
+		t.Error("expected EOF")
+	}
+}

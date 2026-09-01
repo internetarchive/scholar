@@ -69,35 +69,44 @@ type chunkCfg struct {
 // remember that its BytesRead value is cumulative -- ie, it's bytes read
 // *including* the initial offset value. This is quite confusing and I may
 // change it...
+//
+// EOF means "the scan reached the end of the file", not merely "the last read
+// touched the end of the file". Filling BatchSize part-way through a buffer
+// leaves bytes unscanned, and callers treat EOF as "this object is done" and
+// move on -- so reporting EOF there would silently abandon the rest of the
+// object. In that case EOF stays false and the caller resumes from BytesRead.
 func chunk(cc chunkCfg, r io.ReaderAt) (out FindLineBatchOutput, err error) {
 	out = FindLineBatchOutput{
 		BytesRead: cc.Offset,
 	}
 	curLineStart := cc.Offset
 
-	var done bool
 	var curLineLength int64
 
-	for !done {
+	for {
 		b := make([]byte, cc.ChunkSize)
-		n, err := r.ReadAt(b, out.BytesRead)
-		if errors.Is(err, io.EOF) {
-			out.EOF = true
+		bufStart := out.BytesRead
+		n, err := r.ReadAt(b, bufStart)
+		atEnd := errors.Is(err, io.EOF)
+		if atEnd {
 			err = nil
 		}
 		if err != nil {
 			return out, fmt.Errorf("range read failed: %w", err)
 		}
 		if n == 0 {
+			out.EOF = atEnd
 			return out, nil
 		}
+
+		var batchFull bool
 		for x := range n {
 			out.BytesRead++
 			curLineLength++
 			if b[x] == '\n' {
 				out.Offsets = append(out.Offsets, []int64{curLineStart, curLineLength})
 				if len(out.Offsets) == cc.BatchSize {
-					done = true
+					batchFull = true
 					break
 				}
 				curLineStart = out.BytesRead
@@ -105,12 +114,17 @@ func chunk(cc chunkCfg, r io.ReaderAt) (out FindLineBatchOutput, err error) {
 			}
 		}
 
-		if out.EOF {
-			done = true
+		// Consuming the whole buffer of a read that hit the end of the file is
+		// the only way to know the object is exhausted. A batch that filled
+		// mid-buffer has not proven that, even when atEnd is true.
+		if atEnd && out.BytesRead == bufStart+int64(n) {
+			out.EOF = true
+			return out, nil
+		}
+		if batchFull {
+			return out, nil
 		}
 	}
-
-	return
 }
 
 type ProcessLineInput struct {

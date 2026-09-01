@@ -137,10 +137,13 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 		slog.Warn("pdf processing error", "sha1", sha1, "err", e.Error())
 
 		if strings.Contains(e.Error(), "grobid client failure") {
-			return out, e
-		}
-
-		if strings.Contains(e.Error(), "non-200 response from grobid") {
+			if strings.Contains(e.Error(), "Client.Timeout exceeded while awaiting headers") {
+				// grobid timing out means just ignore this pdf
+				out.GrobidXML = []byte{}
+			} else {
+				return out, e
+			}
+		} else if strings.Contains(e.Error(), "non-200 response from grobid") {
 			var knownErrCode bool
 			for _, errcode := range knownGrobidErrors {
 				if strings.HasPrefix(string(result.TEI), errcode) {

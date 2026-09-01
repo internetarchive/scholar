@@ -52,7 +52,7 @@ func ProcessPDF(ctx context.Context, p ProcessPDFParams) (*ProcessPDFResult, []e
 	var errs []error
 
 	result := pdfextract.ProcessFile(ctx, p.Path, &pdfextract.Options{
-		Dim:       pdfextract.Dim{180, 300},
+		Dim:       pdfextract.Dim{W: 180, H: 300},
 		ThumbType: "JPEG",
 	})
 	switch {

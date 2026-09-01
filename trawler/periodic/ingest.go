@@ -189,21 +189,22 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 		},
 	})
 
+	findInput := harvesting.FindLineBatchInput{
+		Offset:    in.Offset,
+		BatchSize: 10000,
+		ChunkSize: 102400,
+	}
+
 	for _, itemId := range left {
 		in.ItemId = itemId
+		findInput.S3Key = in.ItemIdMap[itemId]
 		for {
-			findInput := harvesting.FindLineBatchInput{
-				S3Key:     in.ItemIdMap[itemId],
-				Offset:    in.Offset,
-				BatchSize: 10000,
-				ChunkSize: 102400,
-			}
 			var findOutput harvesting.FindLineBatchOutput
 			if err := workflow.ExecuteActivity(findCtx, harvesting.FindLineBatch, findInput).Get(findCtx, &findOutput); err != nil {
 				return in.Counts, err
 			}
-			in.Counts.Lines += len(findOutput.Offsets)
 			for _, offset := range findOutput.Offsets {
+				in.Counts.Lines += 1
 				lin := ProcessPdfLineInput{
 					S3Key:          in.ItemIdMap[itemId],
 					LineStart:      offset[0],
@@ -240,6 +241,7 @@ func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (Perio
 				l.Info(fmt.Sprintf("item %q complete for coll %q: %#v",
 					in.ItemId, in.CollectionName, in.Counts))
 				in.Offset = 0
+				findInput.Offset = 0
 				break
 			}
 		}
@@ -331,9 +333,7 @@ func CacheItemPdfActivity(ctx context.Context, in CacheItemPdfActivityInput) (st
 		if err != nil {
 			return "", fmt.Errorf("failed to encode cdx row '%#v': %w", line, err)
 		}
-		for _, c := range jl {
-			jsonl = append(jsonl, c)
-		}
+		jsonl = append(jsonl, jl...)
 		jsonl = append(jsonl, '\n')
 	}
 	s3key := fmt.Sprintf("sandcrawler/pdfcdx/%s/%s", in.CollectionName, in.ItemId)
@@ -539,17 +539,22 @@ func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (Period
 			}
 		}
 		if !foundUrl {
-			_, err = fatcat2.AddFileURL(client, fid, fatcat2.FileURL{
+			newUrl := fatcat2.FileURL{
 				URL:    wbURL,
 				Rel:    "webarchive",
 				FileID: fid,
-			})
+			}
+			added, err := fatcat2.AddFileURL(client, fid, newUrl)
 			if err != nil {
 				return out, fmt.Errorf("could not update fid '%s' with url '%s': %w", fid, wbURL, err)
 			}
-			// we want to trigger a re-ingest if we added a url for this file
-			fileInES = false
-			out.FilesUpdated++
+			if added {
+				// we want to trigger a re-ingest if we added a url for this file
+				file.URLs = append(file.URLs, newUrl)
+				fileInES = false
+				out.FilesUpdated++
+
+			}
 		}
 		// `extantFileReleases` contains any releases we found connected to a file
 		// record with the found sha1; `release` is a release record we found

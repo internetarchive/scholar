@@ -53,6 +53,10 @@ const (
 // the row rather than treating the short HTTP body as a hard error.
 var ErrTruncatedCapture = errors.New("warc capture truncated at crawl time")
 
+var cursedShas = []string{
+	"PVFEIY4KBAIHXQTJSSVM26K7U4HZOQFD",
+}
+
 type PeriodicCounts struct {
 	// Total is number of PDF CDX line in a collection
 	Lines int
@@ -379,6 +383,13 @@ func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (Period
 	}
 
 	l.Debug("decoded sha1", "orig_sha1", pdfLine.Sha1Base32, "decoded_sha1", sha1)
+
+	for _, curse := range cursedShas {
+		if pdfLine.Sha1Base32 == curse {
+			out.PdfsSkipped++
+			return out, nil
+		}
+	}
 
 	//
 	// the conditions that mean we can avoid petabox read:

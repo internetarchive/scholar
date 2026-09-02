@@ -92,6 +92,7 @@ func (p *Processor) beatHeart(msg string) {
 var knownGrobidErrors = []string{
 	"[BAD_INPUT_DATA]",
 	"[NO_BLOCKS]",
+	"[TOO_MANY_TOKENS]",
 }
 
 // Process runs the full per-PDF pipeline (pdfextract for text + thumbnail, then

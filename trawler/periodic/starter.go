@@ -48,41 +48,6 @@ func StartCollectionIngest(in PeriodicIngestInput) error {
 	return nil
 }
 
-// StartDCNIngest kicks off the one-off Digital Commons Network sweep ingest
-// over an enriched sweep file already uploaded to S3.
-func StartDCNIngest(in DCNIngestInput) error {
-	ctx := context.Background()
-	c, err := temporal.SetupTemporal(ctx)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	uid, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
-
-	workflowID := fmt.Sprintf("dcn_ingest_%s", uid)
-
-	taskQueue := viper.GetString("periodic.task_queue")
-	in.TaskQueue = taskQueue
-
-	_, err = c.ExecuteWorkflow(ctx,
-		client.StartWorkflowOptions{
-			ID:        workflowID,
-			TaskQueue: taskQueue,
-		},
-		DCNIngestWorkflow,
-		in)
-	if err != nil {
-		return fmt.Errorf("could not start workflow %s: %w", workflowID, err)
-	}
-
-	log.Printf("dispatched %s (s3key=%s)", workflowID, in.S3Key)
-	return nil
-}
-
 func StartWorker() error {
 	ctx := context.Background()
 	c, err := temporal.SetupTemporal(ctx)
@@ -104,10 +69,6 @@ func StartWorker() error {
 	w.RegisterActivity(CacheItemPdfActivity)
 	w.RegisterActivity(harvesting.FindLineBatch)
 	w.RegisterActivity(ProcessPdfLineActivity)
-
-	// one-off DCN sweep ingest, sharing this queue and its workers
-	w.RegisterWorkflow(DCNIngestWorkflow)
-	w.RegisterActivity(ProcessDCNRecordActivity)
 
 	err = w.Run(worker.InterruptCh())
 	if err != nil {

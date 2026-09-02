@@ -57,6 +57,13 @@ var cursedShas = []string{
 	"PVFEIY4KBAIHXQTJSSVM26K7U4HZOQFD",
 }
 
+var urlIgnorePatterns = []string{
+	// these are pdfs associated with a DOI'ed pdf but are not themselves papers;
+	// we ended up with a lot of them in the catchup crawl because they are
+	// linked from landing pages but for now do not want them.
+	"wiley.com/action/downloadSupplement",
+}
+
 type PeriodicCounts struct {
 	// Total is number of PDF CDX line in a collection
 	Lines int
@@ -386,6 +393,15 @@ func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (Period
 
 	for _, curse := range cursedShas {
 		if pdfLine.Sha1Base32 == curse {
+			l.Warn("skipping a cursed sha", "sha1", pdfLine.Sha1Base32)
+			out.PdfsSkipped++
+			return out, nil
+		}
+	}
+
+	for _, substr := range urlIgnorePatterns {
+		if strings.Contains(pdfLine.URL, substr) {
+			l.Warn("skipping a wiley online supplement", "sha1", pdfLine.Sha1Base32)
 			out.PdfsSkipped++
 			return out, nil
 		}

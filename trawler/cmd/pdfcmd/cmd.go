@@ -66,6 +66,32 @@ var ingestWarcsCmd = &cobra.Command{
 	},
 }
 
+var dcnSourceOverride string
+
+var ingestDCNCmd = &cobra.Command{
+	Use:   "ingest-dcn S3KEY",
+	Short: "One-off: ingest the Digital Commons Network sweep from an enriched JSONL file",
+	Long: `Kick off the one-off DCN sweep ingest over an enriched sweep file already
+uploaded to S3, one JSON record per line (see periodic.DCNRecord).
+
+Unlike ingest-warcs, which only attaches files to releases fatcat already has,
+this creates releases and containers too: most of the 1.16M institutional-
+repository PDFs in the sweep are works fatcat has never seen, and they arrive
+with real OAI metadata plus an offline-matched container for ~29% of records.
+
+For each record it resolves or creates the release (deduping on DOI), resolves
+or creates the container (only when both a name and an ISSN are available),
+finds the PDF in Wayback, and creates the file and its indexes. Runs on the
+periodic-ingest task queue, so start-periodic-ingest-worker serves it.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return periodic.StartDCNIngest(periodic.DCNIngestInput{
+			S3Key:          args[0],
+			SourceOverride: dcnSourceOverride,
+		})
+	},
+}
+
 var startPeriodicIngestWorkerCmd = &cobra.Command{
 	Use:   "start-periodic-ingest-worker",
 	Short: "Start the Temporal worker for periodic-ingest workflows",
@@ -216,8 +242,12 @@ func parseCollectionArg(s string) string {
 }
 
 func init() {
+	ingestDCNCmd.Flags().StringVar(&dcnSourceOverride, "source", "",
+		"override the generated source label recorded on created entities")
+
 	Cmd.AddCommand(dumpCmd)
 	Cmd.AddCommand(cdxCmd)
 	Cmd.AddCommand(ingestWarcsCmd)
+	Cmd.AddCommand(ingestDCNCmd)
 	Cmd.AddCommand(startPeriodicIngestWorkerCmd)
 }

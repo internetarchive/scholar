@@ -53,8 +53,10 @@ const (
 // the row rather than treating the short HTTP body as a hard error.
 var ErrTruncatedCapture = errors.New("warc capture truncated at crawl time")
 
+// TODO read these two vars via viper so we can pick them up on a rerun of an activity
 var cursedShas = []string{
 	"PVFEIY4KBAIHXQTJSSVM26K7U4HZOQFD",
+	"ECWFM252PTSZ37JAZJPNFQBXUFUKYXFK",
 }
 
 var urlIgnorePatterns = []string{

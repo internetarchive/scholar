@@ -21,6 +21,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -52,19 +53,6 @@ const (
 // (WARC-Truncated header): the stored payload is incomplete, so callers skip
 // the row rather than treating the short HTTP body as a hard error.
 var ErrTruncatedCapture = errors.New("warc capture truncated at crawl time")
-
-// TODO read these two vars via viper so we can pick them up on a rerun of an activity
-var cursedShas = []string{
-	"PVFEIY4KBAIHXQTJSSVM26K7U4HZOQFD",
-	"ECWFM252PTSZ37JAZJPNFQBXUFUKYXFK",
-}
-
-var urlIgnorePatterns = []string{
-	// these are pdfs associated with a DOI'ed pdf but are not themselves papers;
-	// we ended up with a lot of them in the catchup crawl because they are
-	// linked from landing pages but for now do not want them.
-	"wiley.com/action/downloadSupplement",
-}
 
 type PeriodicCounts struct {
 	// Total is number of PDF CDX line in a collection
@@ -358,6 +346,53 @@ func CacheItemPdfActivity(ctx context.Context, in CacheItemPdfActivityInput) (st
 	return s3key, nil
 }
 
+const (
+	cursedShasKey        = "periodic.cursed_shas"
+	urlIgnorePatternsKey = "periodic.url_ignore_patterns"
+)
+
+// pdfSkipRules are the denylists consulted before doing any expensive work on a
+// PDF line: sha1s (base32) of PDFs that wedge the pipeline, and URL substrings
+// for PDFs we do not want (eg publisher supplements linked from landing pages).
+type pdfSkipRules struct {
+	CursedShas        []string
+	URLIgnorePatterns []string
+}
+
+// loadPdfSkipRules reads the denylists fresh from the config file so they can be
+// edited on a running worker and picked up by the next activity execution. It
+// parses the file into a throwaway viper instead of re-reading the process
+// global, which only loads the file at startup and would race with the other
+// activities calling viper.Get. On a read error the values loaded at startup are
+// returned along with the error.
+func loadPdfSkipRules() (pdfSkipRules, error) {
+	fallback := pdfSkipRules{
+		CursedShas:        viper.GetStringSlice(cursedShasKey),
+		URLIgnorePatterns: viper.GetStringSlice(urlIgnorePatternsKey),
+	}
+
+	path := viper.ConfigFileUsed()
+	if path == "" {
+		return fallback, errors.New("no config file was loaded at startup")
+	}
+
+	v := viper.New()
+	v.SetConfigFile(path)
+	if filepath.Ext(path) == "" {
+		// the deployed config file is named "config" with no extension, so viper
+		// can't sniff a format from it; main.go tells the global the same thing.
+		v.SetConfigType("toml")
+	}
+	if err := v.ReadInConfig(); err != nil {
+		return fallback, fmt.Errorf("failed to re-read config %s: %w", path, err)
+	}
+
+	return pdfSkipRules{
+		CursedShas:        v.GetStringSlice(cursedShasKey),
+		URLIgnorePatterns: v.GetStringSlice(urlIgnorePatternsKey),
+	}, nil
+}
+
 type ProcessPdfLineInput struct {
 	S3Key          string
 	LineStart      int64
@@ -393,7 +428,12 @@ func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (Period
 
 	l.Debug("decoded sha1", "orig_sha1", pdfLine.Sha1Base32, "decoded_sha1", sha1)
 
-	for _, curse := range cursedShas {
+	skipRules, err := loadPdfSkipRules()
+	if err != nil {
+		l.Warn("falling back to skip rules loaded at startup", "err", err.Error())
+	}
+
+	for _, curse := range skipRules.CursedShas {
 		if pdfLine.Sha1Base32 == curse {
 			l.Warn("skipping a cursed sha", "sha1", pdfLine.Sha1Base32)
 			out.PdfsSkipped++
@@ -401,9 +441,10 @@ func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (Period
 		}
 	}
 
-	for _, substr := range urlIgnorePatterns {
+	for _, substr := range skipRules.URLIgnorePatterns {
 		if strings.Contains(pdfLine.URL, substr) {
-			l.Warn("skipping a wiley online supplement", "sha1", pdfLine.Sha1Base32)
+			l.Warn("skipping an ignored url", "sha1", pdfLine.Sha1Base32,
+				"url", pdfLine.URL, "pattern", substr)
 			out.PdfsSkipped++
 			return out, nil
 		}

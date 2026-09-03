@@ -21,6 +21,13 @@ lines_per_can = 2000
 
 [periodic]
 task_queue = "periodic_ingest"
+# cursed_shas and url_ignore_patterns are re-read from this file on every
+# ProcessPdfLine activity execution, so edits take effect on a running worker
+# (the next activity execution, including a retry, picks them up).
+# cursed_shas are base32 sha1s of PDFs that wedge the ingest pipeline.
+cursed_shas = [ ]
+# url_ignore_patterns are substrings of URLs we do not want to ingest.
+url_ignore_patterns = [ ]
 
 [s3]
 endpoint = "wbgrp-svc314.us.archive.org:8333"

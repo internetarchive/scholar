@@ -9,6 +9,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cmd/fccmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/pdfcmd"
+	"git.archive.org/webgroup/scholar/trawler/cmd/scrapecmd"
 	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -62,6 +63,7 @@ func init() {
 	rootCmd.AddCommand(indexcmd.IndexCmd)
 	rootCmd.AddCommand(pdfcmd.Cmd)
 	rootCmd.AddCommand(dailycmd.Cmd)
+	rootCmd.AddCommand(scrapecmd.Cmd)
 }
 
 func initConfig() {

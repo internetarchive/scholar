@@ -29,6 +29,36 @@ cursed_shas = [ ]
 # url_ignore_patterns are substrings of URLs we do not want to ingest.
 url_ignore_patterns = [ ]
 
+[scrape]
+# The "scrape to wayback" workflow: walk a flat list of URLs and push each one
+# through SPN. No fatcat records, no indexing -- just capture.
+task_queue = "scrape_to_wayback"
+# concurrency is how many crawls the workflow keeps in flight. It is the main
+# throttle and can be retuned on a running scrape with
+# `trawler scrape set-concurrency --list <key> --concurrency N`.
+concurrency = 4
+# max_concurrency clamps both the start flag and the retune signal, so a typo
+# cannot point a thousand parallel crawls at SPN.
+max_concurrency = 64
+# worker_activity_slots caps concurrent crawl activities on a single worker.
+# With several workers on the queue this is what actually bounds total load.
+worker_activity_slots = 8
+# urls_per_can bounds how many URLs one workflow run dispatches before handing
+# off via ContinueAsNew, keeping any single run's history well under Temporal's
+# limits.
+urls_per_can = 2000
+# batch_size is how many URLs one S3 range read returns; chunk_size is how many
+# bytes it reads at a time.
+batch_size = 1000
+chunk_size = 102400
+# max_consecutive_errors aborts the run when this many crawls in a row exhaust
+# their retries. Individual dead URLs are expected and never fail the run, but a
+# long unbroken streak means something systemic (bad SPN credentials, SPN down)
+# and is not worth burning millions of URLs against.
+max_consecutive_errors = 50
+# max_hops bounds how many redirects/link-follows a single crawl will chase.
+max_hops = 8
+
 [s3]
 endpoint = "wbgrp-svc314.us.archive.org:8333"
 access_id = ""

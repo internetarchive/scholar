@@ -627,6 +627,11 @@ func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholk
 		"-sync-end", syncEnd.Format("2006-01-02"),
 	}
 
+	if in.Upstream == "crossref" {
+		scholkitArgs = append(scholkitArgs, "-crossref-api-email", "scholar@archive.org")
+		scholkitArgs = append(scholkitArgs, "-crossref-user-agent", "ia-scholar-trawler")
+	}
+
 	l.Info(fmt.Sprintf("sk cmd: %s %s", skPath, scholkitArgs))
 	cmd := exec.Command(skPath, scholkitArgs...)
 	bs, err := cmd.Output()

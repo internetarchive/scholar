@@ -5,6 +5,9 @@ import (
 	"embed"
 	"testing"
 	"time"
+
+	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
+	"github.com/spf13/viper"
 )
 
 //go:embed htmlsamples/*.html
@@ -25,6 +28,63 @@ func Test_toWaybackURL(t *testing.T) {
 	want = "https://web.archive.org/web/20250825174138id_/https://ex.com/a?id=5&x=1"
 	if got != want {
 		t.Errorf("query not preserved:\n got %q\nwant %q", got, want)
+	}
+}
+
+func Test_cdxRowFresh(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	captured := cdx.CDXRow{Datetime: now.Add(-30 * 24 * time.Hour)}
+
+	cs := []struct {
+		name     string
+		field    time.Duration
+		config   string
+		expected bool
+	}{
+		{
+			name:     "within configured cutoff",
+			config:   "1440h", // 60 days
+			expected: true,
+		},
+		{
+			name:     "older than configured cutoff",
+			config:   "336h", // 14 days
+			expected: false,
+		},
+		{
+			name:     "field beats config",
+			field:    365 * 24 * time.Hour,
+			config:   "336h",
+			expected: true,
+		},
+		{
+			name:     "field can be stricter than config",
+			field:    24 * time.Hour,
+			config:   "8760h",
+			expected: false,
+		},
+		{
+			name:     "negative field accepts anything",
+			field:    -1,
+			config:   "336h",
+			expected: true,
+		},
+		{
+			name:     "nothing set anywhere",
+			expected: false,
+		},
+	}
+
+	for _, c := range cs {
+		t.Run(c.name, func(t *testing.T) {
+			viper.Set("crawling.cdx_freshness_cutoff", c.config)
+			t.Cleanup(func() { viper.Set("crawling.cdx_freshness_cutoff", "") })
+
+			crawler := PDFCrawler{FreshnessCutoff: c.field}
+			if got := crawler.cdxRowFresh(captured, now); got != c.expected {
+				t.Errorf("%s: expected %v, got %v", c.name, c.expected, got)
+			}
+		})
 	}
 }
 

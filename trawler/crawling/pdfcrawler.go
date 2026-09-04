@@ -64,6 +64,14 @@ type PDFCrawler struct {
 	Logger          *slog.Logger
 	crawlTrace      uuid.UUID
 	Heartbeater     func(string)
+	// FreshnessCutoff is how old an existing Wayback capture may be and still
+	// be used instead of spending SPN time on a new one. Left at zero it falls
+	// back to the crawling.cdx_freshness_cutoff config value; a negative value
+	// turns the check off entirely, accepting whatever CDX has however old it
+	// is. Callers that care more about coverage than about the capture being
+	// current -- a re-run over a list already crawled, say -- want a large
+	// value or a negative one here.
+	FreshnessCutoff time.Duration
 }
 
 type CrawlResult struct {
@@ -75,6 +83,28 @@ type CrawlResult struct {
 	SnapshotUrl string
 	Mimetype    string
 	// TODO
+}
+
+// freshnessCutoff resolves the cutoff for this crawler, preferring the field
+// over the config file so a caller can be more (or less) lenient than the
+// deployment-wide default without touching it.
+func (c PDFCrawler) freshnessCutoff() time.Duration {
+	if c.FreshnessCutoff != 0 {
+		return c.FreshnessCutoff
+	}
+	return viper.GetDuration("crawling.cdx_freshness_cutoff")
+}
+
+// cdxRowFresh reports whether an existing capture is recent enough to use as
+// is. A negative cutoff means every capture qualifies; a zero cutoff -- nothing
+// set on the crawler and nothing in the config -- means none do, which leaves
+// the historical behavior of always going to SPN.
+func (c PDFCrawler) cdxRowFresh(row cdx.CDXRow, now time.Time) bool {
+	cutoff := c.freshnessCutoff()
+	if cutoff < 0 {
+		return true
+	}
+	return now.Sub(row.Datetime) < cutoff
 }
 
 func (c PDFCrawler) beatHeart(message string) {
@@ -182,8 +212,6 @@ func (c PDFCrawler) slogInfo(msg string, args ...any) {
 func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 	out := &CrawlResult{}
 
-	freshnessCutoff := viper.GetDuration("crawling.cdx_freshness_cutoff")
-
 	trace, err := uuid.NewV7()
 	if err != nil {
 		return *out, fmt.Errorf("could not generate trace ID: %w", err)
@@ -251,9 +279,13 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			Limit: -1,
 		})
 
-		if len(rows) > 0 && time.Since(rows[0].Datetime) < freshnessCutoff {
+		if len(rows) > 0 && c.cdxRowFresh(rows[0], time.Now()) {
 			row = &rows[0]
 		} else {
+			if len(rows) > 0 {
+				c.slogInfo("ignoring stale CDX capture", "url", u,
+					"captured", rows[0].Datetime, "cutoff", c.freshnessCutoff())
+			}
 			if simpleGet {
 				row, err = c.spnGetToCdx(u)
 			} else {

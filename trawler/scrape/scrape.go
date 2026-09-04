@@ -591,6 +591,7 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 		Heartbeater: func(msg string) {
 			activity.RecordHeartbeat(ctx, msg)
 		},
+		FreshnessCutoff: 21915 * time.Hour,
 	}
 	if crawler.MaxHops <= 0 {
 		crawler.MaxHops = 8

@@ -524,6 +524,11 @@ func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (Period
 		out.PdfsSkipped++
 		return out, nil
 	}
+	if strings.Contains(err.Error(), "malformed MIME header line") {
+		l.Warn("corrupt warc", "url", pdfLine.URL, "sha1_b32", pdfLine.Sha1Base32, "error", err.Error())
+		out.PdfsSkipped++
+		return out, nil
+	}
 	if err != nil {
 		return out, fmt.Errorf("could not extract pdf bytes from warc: %w", err)
 	}

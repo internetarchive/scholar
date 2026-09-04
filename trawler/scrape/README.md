@@ -50,6 +50,25 @@ polling for a slot, so over-large concurrency does not fail -- it just parks
 activities in a polling loop, competing with the daily crawl for slots. Prefer
 raising concurrency gradually.
 
+## Blocking a host mid-run
+
+The crawl activity re-reads `crawling.url_blocklist` from the config file on
+every execution, so adding a pattern -- in ansible, or straight into
+`/etc/trawler/config` on the host when something needs stopping now -- takes
+effect on the next crawl. No worker restart, no touching the running workflow.
+A URL that matches is never fetched and lands in the outcome log as
+`fail` / `blocklist`.
+
+Two things to know. A crawl already in flight does not notice; the list is read
+when the activity starts, so a retry picks it up but the current attempt runs to
+completion. And emptying the list entirely is treated as a bad edit and ignored
+(the previous list stays in force, with a warning) -- it holds hosts that asked
+us not to crawl them, so silently dropping all of them is not a mistake worth
+making cheap. Removing individual patterns works normally.
+
+Note the asymmetry: this re-read is the scrape workflow's. The daily crawl still
+reads the same list once at startup.
+
 ## The outcome log
 
 Every seed URL gets one row in a TSV on the worker that crawled it, under

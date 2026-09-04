@@ -571,6 +571,14 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 		Backoff:   viper.GetDuration("cdx.backoff"),
 	})
 
+	// Read fresh per execution rather than from the startup config, so a
+	// blocklist edit lands on the next crawl of a running scrape. A URL matching
+	// it is not crawled and shows up in the outcome log as fail/blocklist.
+	blocklist, err := loadBlocklist()
+	if err != nil {
+		l.Warn("using url blocklist as loaded at startup", "err", err.Error())
+	}
+
 	crawler := crawling.PDFCrawler{
 		SPNClient:       spnClient,
 		CDXClient:       cdxClient,
@@ -578,7 +586,7 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 		UserAgent:       viper.GetString("crawling.user_agent"),
 		WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
 		SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
-		Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
+		Blocklist:       blocklist,
 		Logger:          slog.Default(),
 		Heartbeater: func(msg string) {
 			activity.RecordHeartbeat(ctx, msg)

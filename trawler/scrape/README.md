@@ -50,6 +50,39 @@ polling for a slot, so over-large concurrency does not fail -- it just parks
 activities in a polling loop, competing with the daily crawl for slots. Prefer
 raising concurrency gradually.
 
+## The outcome log
+
+Every seed URL gets one row in a TSV on the worker that crawled it, under
+`scrape.log_dir`, in a file named for the workflow id:
+
+    seed_url	status	wayback_url	reason	crawled_at
+    https://repo.example/thesis/1	ok	https://web.archive.org/web/20260904…id_/https://repo.example/1.pdf
+    https://repo.example/thesis/2	fail		dead-end	2026-09-04T17:31:02Z
+    https://repo.example/thesis/3	error		spn api failure: …	2026-09-04T17:33:20Z
+
+- `ok` -- we got a PDF into Wayback; `wayback_url` is its replay URL.
+- `fail` -- the crawl finished without reaching a PDF. `reason` is the crawler's
+  fail reason. In most of these SPN still captured a page, so the URL is in
+  Wayback even though no PDF came of it.
+- `error` -- the crawl never reached a verdict; it errored and we gave up.
+
+`wayback_url` is only ever populated on `ok`, so the PDFs we captured are
+`awk -F'\t' '$2=="ok" {print $1, $3}'` and everything else is
+`grep -v -P '\tok\t'`.
+
+Rows are written at the moment a crawl reaches its verdict, from inside the
+crawl activity -- so a retried attempt does not leave a row behind for each try.
+The one outcome the activity cannot record is a URL whose retries ran out, since
+it never returned; the workflow logs those itself.
+
+With several workers on the queue each host holds the rows for the URLs it
+happened to take, so `cat` them together for the whole run. Rows append across
+ContinueAsNew, so one file covers a scrape however many runs it took.
+
+A failure to write a row fails the run rather than being swallowed: the log is a
+deliverable here, so an unwritable `log_dir` should surface immediately instead
+of quietly losing the record of what happened.
+
 ## What counts as success
 
 `PDFFound` means the crawl ended on a PDF. `NoPDF` means it did not -- but in

@@ -133,6 +133,7 @@ func StartWorker() error {
 	w.RegisterWorkflow(ScrapeToWaybackWorkflow)
 	w.RegisterActivity(ReadURLBatch)
 	w.RegisterActivity(CrawlToWaybackActivity)
+	w.RegisterActivity(RecordOutcomeActivity)
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		return fmt.Errorf("unable to start worker: %w", err)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -231,6 +232,8 @@ func Test_Workflow_AbandonsFailingURLAndContinues(t *testing.T) {
 	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.MatchedBy(func(in CrawlToWaybackInput) bool {
 		return in.URL == "http://example.com/1"
 	})).Return(CrawlToWaybackOutput{Success: true}, nil).Once()
+	// The abandoned URL still gets a row (see Test_Workflow_LogsAbandonedURLs).
+	env.OnActivity(RecordOutcomeActivity, mock.Anything, mock.Anything).Return(nil).Once()
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
 
@@ -258,6 +261,7 @@ func Test_Workflow_AbortsOnConsecutiveErrors(t *testing.T) {
 		Return(ReadURLBatchOutput{URLs: refs(10, 0), NextOffset: 100, EOF: true}, nil).Once()
 	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
 		Return(CrawlToWaybackOutput{}, errors.New("bad credentials"))
+	env.OnActivity(RecordOutcomeActivity, mock.Anything, mock.Anything).Return(nil)
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
 
@@ -479,4 +483,80 @@ func Test_Workflow_RetuneSignal(t *testing.T) {
 			require.Equal(t, 4, got.URLs, "every url is crawled regardless of the signal")
 		})
 	}
+}
+
+// A URL whose crawl retries run out is the one outcome CrawlToWaybackActivity
+// never gets to record, so the workflow must log it or the URL would be missing
+// from the log entirely.
+func Test_Workflow_LogsAbandonedURLs(t *testing.T) {
+	configureViper(1, 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
+		Return(ReadURLBatchOutput{URLs: refs(2, 0), NextOffset: 20, EOF: true}, nil).Once()
+
+	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.MatchedBy(func(in CrawlToWaybackInput) bool {
+		return in.URL == "http://example.com/0"
+	})).Return(CrawlToWaybackOutput{}, errors.New("spn is sad"))
+	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.MatchedBy(func(in CrawlToWaybackInput) bool {
+		return in.URL == "http://example.com/1"
+	})).Return(CrawlToWaybackOutput{Success: true}, nil).Once()
+
+	// Only the abandoned URL is logged by the workflow; the one that crawled
+	// cleanly logged itself inside the activity.
+	env.OnActivity(RecordOutcomeActivity, mock.Anything, mock.MatchedBy(func(o Outcome) bool {
+		return o.SeedURL == "http://example.com/0" &&
+			o.Status == StatusError &&
+			o.WaybackURL == "" &&
+			strings.Contains(o.Reason, "spn is sad")
+	})).Return(nil).Once()
+
+	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// Nothing is abandoned on a clean run, so the workflow must not call the log
+// activity at all -- rows for successful crawls come from the crawl activity.
+func Test_Workflow_NoLogActivityWhenNothingAbandoned(t *testing.T) {
+	configureViper(2, 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
+		Return(ReadURLBatchOutput{URLs: refs(3, 0), NextOffset: 30, EOF: true}, nil).Once()
+	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
+		Return(CrawlToWaybackOutput{Success: true}, nil).Times(3)
+
+	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	// RecordOutcomeActivity is unmocked, so any call to it would fail the run.
+	require.NoError(t, env.GetWorkflowError())
+}
+
+// An unwritable log is a broken deployment, not a per-URL hiccup: it stops the
+// run rather than quietly dropping the record of what happened.
+func Test_Workflow_LogWriteFailureStopsRun(t *testing.T) {
+	configureViper(1, 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
+		Return(ReadURLBatchOutput{URLs: refs(1, 0), NextOffset: 10, EOF: true}, nil).Once()
+	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
+		Return(CrawlToWaybackOutput{}, errors.New("crawl blew up"))
+	env.OnActivity(RecordOutcomeActivity, mock.Anything, mock.Anything).
+		Return(errors.New("read-only file system"))
+
+	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.ErrorContains(t, env.GetWorkflowError(), "read-only file system")
 }

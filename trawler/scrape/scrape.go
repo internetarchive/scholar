@@ -218,11 +218,46 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 		},
 	})
 
+	logCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 2 * time.Minute,
+		TaskQueue:           in.TaskQueue,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    5 * time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    1 * time.Minute,
+			MaximumAttempts:    4,
+		},
+	})
+
 	sigCh := workflow.GetSignalChannel(ctx, SetConcurrencySignal)
 
 	sel := workflow.NewSelector(ctx)
 	inFlight := 0
 	consecutiveErrors := 0
+
+	// Rows for URLs we gave up on. CrawlToWaybackActivity logs its own verdict,
+	// but an abandoned URL never reached one, and it would be missing from the
+	// log entirely if we did not record it here. Collected rather than written
+	// from the selector callback, because blocking on an activity inside a
+	// callback would stall the Select that is draining the window.
+	var abandoned []Outcome
+
+	flushAbandoned := func() error {
+		for _, o := range abandoned {
+			if err := workflow.ExecuteActivity(logCtx, RecordOutcomeActivity, o).
+				Get(logCtx, nil); err != nil {
+				return err
+			}
+		}
+		abandoned = nil
+		return nil
+	}
+
+	drain := func() {
+		for inFlight > 0 {
+			sel.Select(ctx)
+		}
+	}
 
 	// dispatch starts a crawl and registers its completion handler. Results are
 	// folded in as they land, in whatever order they land; the selector callback
@@ -238,6 +273,12 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 				in.Counts.URLs++
 				in.Counts.Errored++
 				consecutiveErrors++
+				abandoned = append(abandoned, Outcome{
+					SeedURL: u,
+					Status:  StatusError,
+					Reason:  err.Error(),
+					At:      workflow.Now(ctx),
+				})
 				l.Warn("giving up on url", "url", u, "err", err)
 				return
 			}
@@ -295,6 +336,12 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 			}
 		}
 
+		// Flush once per batch so abandonment rows land promptly and the pending
+		// slice stays bounded by the batch size.
+		if err := flushAbandoned(); err != nil {
+			return in.Counts, err
+		}
+
 		if stop {
 			break
 		}
@@ -303,8 +350,9 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 		// That should be impossible, but this loop is the one place a bad read
 		// could hang a run indefinitely rather than fail it.
 		if len(batch.URLs) == 0 && !batch.EOF && batch.NextOffset == in.Offset {
-			for inFlight > 0 {
-				sel.Select(ctx)
+			drain()
+			if err := flushAbandoned(); err != nil {
+				return in.Counts, err
 			}
 			return in.Counts, fmt.Errorf(
 				"scrape: read of %s made no progress at offset %d", in.S3Key, in.Offset)
@@ -313,17 +361,20 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 		in.Offset = batch.NextOffset
 		if batch.EOF {
 			// Drain before reporting the final total.
-			for inFlight > 0 {
-				sel.Select(ctx)
+			drain()
+			if err := flushAbandoned(); err != nil {
+				return in.Counts, err
 			}
 			l.Info("scrape complete", "s3key", in.S3Key, "counts", in.Counts)
 			return in.Counts, nil
 		}
 	}
 
-	// Quiesce the window so the offset we carry forward is fully accounted for.
-	for inFlight > 0 {
-		sel.Select(ctx)
+	// Quiesce the window so the offset we carry forward is fully accounted for,
+	// and get every row on disk before this run hands over.
+	drain()
+	if err := flushAbandoned(); err != nil {
+		return in.Counts, err
 	}
 
 	if consecutiveErrors >= in.MaxConsecutiveErrors {
@@ -566,6 +617,30 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 		l.Info("no pdf", "url", in.URL, "reason", res.FailReason, "hops", len(res.Chain))
 	}
 
+	// Written here, at the one point we know this URL's verdict, and only for a
+	// crawl that reached a verdict -- an attempt that errors returns above and
+	// gets retried, so retries do not each leave a row. URLs whose retries run
+	// out are logged by the workflow via RecordOutcomeActivity instead.
+	//
+	// A failure to write is returned rather than swallowed: the log is a
+	// deliverable of this workflow, so an unwritable log dir is a broken
+	// deployment we want to hear about immediately, not silently lose rows to.
+	// The retry re-crawls, but a re-crawl inside the CDX freshness window is a
+	// CDX lookup rather than another SPN capture.
+	if err := appendOutcome(viper.GetString("scrape.log_dir"),
+		activity.GetInfo(ctx).WorkflowExecution.ID,
+		outcomeFor(in.URL, res, time.Now())); err != nil {
+		return out, err
+	}
+
 	activity.RecordHeartbeat(ctx, "done")
 	return out, nil
+}
+
+// RecordOutcomeActivity appends a single row to the outcome log. The workflow
+// uses it for URLs it abandons after their crawl retries are exhausted, which
+// are the only outcomes CrawlToWaybackActivity never gets to record itself.
+func RecordOutcomeActivity(ctx context.Context, o Outcome) error {
+	return appendOutcome(viper.GetString("scrape.log_dir"),
+		activity.GetInfo(ctx).WorkflowExecution.ID, o)
 }

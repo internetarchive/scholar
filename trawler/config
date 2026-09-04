@@ -58,6 +58,10 @@ chunk_size = 102400
 max_consecutive_errors = 50
 # max_hops bounds how many redirects/link-follows a single crawl will chase.
 max_hops = 8
+# log_dir is where the per-URL outcome TSV is written, on whichever worker host
+# ran the crawl. One file per scrape, named for the workflow id. Leave empty to
+# disable the log.
+log_dir = "./data/scrape-logs"
 
 [s3]
 endpoint = "wbgrp-svc314.us.archive.org:8333"

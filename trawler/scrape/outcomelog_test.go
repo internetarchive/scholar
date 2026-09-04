@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -94,14 +95,41 @@ func Test_appendOutcome_createsDir(t *testing.T) {
 	require.Len(t, readLog(t, dir, "wf"), 2)
 }
 
+// A log we cannot write must surface as an error rather than be swallowed --
+// losing the record of what happened is the thing this log exists to prevent.
+//
+// Both cases below are wedged structurally (a non-directory in the path,
+// ENOTDIR; the log path already being a directory, EISDIR) rather than by
+// permission bits. Mode 0500 would prove nothing in CI, which runs the suite as
+// root in the golang image: uid 0 bypasses the permission check and the write
+// simply succeeds.
 func Test_appendOutcome_reportsUnwritableDir(t *testing.T) {
-	base := t.TempDir()
-	blocked := filepath.Join(base, "ro")
-	require.NoError(t, os.Mkdir(blocked, 0o500))
-	t.Cleanup(func() { os.Chmod(blocked, 0o700) })
+	t.Run("dir cannot be created", func(t *testing.T) {
+		base := t.TempDir()
+		notADir := filepath.Join(base, "in-the-way")
+		require.NoError(t, os.WriteFile(notADir, []byte("i am a file"), 0o644))
 
-	err := appendOutcome(filepath.Join(blocked, "sub"), "wf", Outcome{SeedURL: "u"})
-	require.Error(t, err, "an unwritable log dir must surface, not be swallowed")
+		err := appendOutcome(filepath.Join(notADir, "sub"), "wf", Outcome{SeedURL: "u"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "outcome log dir")
+		// Assert the *kind* of failure, not just that one happened: ENOTDIR is
+		// structural, so this stays true as root. An EACCES-based setup would
+		// pass locally and vanish in CI.
+		require.ErrorIs(t, err, syscall.ENOTDIR)
+		require.NotErrorIs(t, err, syscall.EACCES)
+	})
+
+	t.Run("file cannot be opened", func(t *testing.T) {
+		dir := t.TempDir()
+		// Occupy the exact path the log wants with a directory.
+		require.NoError(t, os.Mkdir(filepath.Join(dir, logFileName("wf")), 0o755))
+
+		err := appendOutcome(dir, "wf", Outcome{SeedURL: "u"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "outcome log")
+		require.ErrorIs(t, err, syscall.EISDIR)
+		require.NotErrorIs(t, err, syscall.EACCES)
+	})
 }
 
 func Test_appendOutcome_defaultsTimestamp(t *testing.T) {

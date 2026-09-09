@@ -1,6 +1,15 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
+
+[[package]]
+name = "altcha"
+version = "1.0.0"
+source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
+sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/altcha/1.0.0/altcha-1.0.0.tar.gz", hash = "sha256:33056826a60efdc3d9651d5a13d72d7c8ee1c7f4456b9c9db65838f47fac9082" }
+wheels = [
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/altcha/1.0.0/altcha-1.0.0-py3-none-any.whl", hash = "sha256:78cc0fd3ba907d069252e4ea47e0dd981d4d9bd41f360333cc76ca2ce2d2a46c" },
+]
 
 [[package]]
 name = "annotated-types"
@@ -113,6 +122,19 @@ wheels = [
 ]
 
 [[package]]
+name = "django-altcha"
+version = "1.0.0"
+source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
+dependencies = [
+    { name = "altcha" },
+    { name = "django" },
+]
+sdist = { url = "https://nexus.us.archive.org/repository/pypi-group/packages/django-altcha/1.0.0/django_altcha-1.0.0.tar.gz", hash = "sha256:06a4f437b086a0c296b53e02dbd7f783ce07972150b8238dbae6da8cfb284efa" }
+wheels = [
+    { url = "https://nexus.us.archive.org/repository/pypi-group/packages/django-altcha/1.0.0/django_altcha-1.0.0-py3-none-any.whl", hash = "sha256:023a90675df2a5fab8203a79edc322207dd0b7a9e6edac731b9063bd8bad4b83" },
+]
+
+[[package]]
 name = "django-ninja"
 version = "1.4.0"
 source = { registry = "https://nexus.us.archive.org/repository/pypi-group/simple" }
@@ -167,6 +189,7 @@ dependencies = [
     { name = "citeproc-py" },
     { name = "citeproc-py-styles" },
     { name = "django" },
+    { name = "django-altcha" },
     { name = "django-ninja" },
     { name = "elasticsearch" },
     { name = "gevent" },
@@ -195,6 +218,7 @@ requires-dist = [
     { name = "citeproc-py", specifier = "==0.9.0" },
     { name = "citeproc-py-styles", specifier = "==0.1.5" },
     { name = "django", specifier = "==5.1.5" },
+    { name = "django-altcha", specifier = "==1.0.0" },
     { name = "django-ninja", specifier = "==1.4.0" },
     { name = "elasticsearch", specifier = "==7.13.4" },
     { name = "gevent", specifier = "==25.5.1" },

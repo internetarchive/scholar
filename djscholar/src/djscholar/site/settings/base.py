@@ -10,12 +10,26 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import hashlib
 import os
 from pathlib import Path
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+
+
+def altcha_hmac_key(secret_key: str) -> str:
+    """
+    Derive Altcha's challenge-signing key from SECRET_KEY.
+
+    django-altcha wants a secret of its own, but the deploy already carries
+    exactly one Django secret, so we derive rather than make Ansible hand out
+    another.  Settings modules that override SECRET_KEY have to recompute this
+    afterwards (see prod.py and qa.py); ALTCHA_HMAC_KEY in the environment wins
+    over the derivation if the two ever need to rotate separately.
+    """
+    return hashlib.sha256(f"altcha:{secret_key}".encode()).hexdigest()
 
 
 # Quick-start development settings - unsuitable for production
@@ -44,6 +58,7 @@ INSTALLED_APPS = [
     'django.contrib.humanize',
     'django.contrib.staticfiles',
     'ninja_apikey',
+    'django_altcha',
 ]
 
 MIDDLEWARE = [
@@ -160,6 +175,32 @@ ES_FATCAT_FILE_INDEX = "fatcat_file"
 SPN_ENDPOINT = os.environ.get("SPN_ENDPOINT", "https://web.archive.org/save")
 SPN_ACCESS_KEY = os.environ.get("SPN_ACCESS_KEY", "")
 SPN_SECRET_KEY = os.environ.get("SPN_SECRET_KEY", "")
+
+# Altcha, the proof-of-work captcha standing in front of fulltext search.
+ALTCHA_HMAC_KEY = os.environ.get("ALTCHA_HMAC_KEY") or altcha_hmac_key(SECRET_KEY)
+
+# Replay protection (a solved challenge is single-use) keeps spent challenges
+# in a Django cache.  We have no shared cache, so this is the per-process
+# LocMemCache: a solution stays replayable once per gunicorn worker until
+# ALTCHA_CACHE_ALIAS points somewhere shared.  That is a weak guarantee, but
+# the work factor, not single-use, is what makes crawling search expensive.
+ALTCHA_CACHE_ALIAS = "default"
+
+# How long a solved challenge is honored, in seconds.  The gate is meant to be
+# a once-a-session speed bump rather than a per-query one: see ftsearch.views
+# .verify for why search itself stays a plain GET.
+SEARCH_VERIFY_MAX_AGE = 12 * 60 * 60
+
+# Kill switch.  Turn off to serve search without the gate (also what the tests
+# that don't care about it flip).
+SEARCH_VERIFY_REQUIRED = True
+
+# Mark the verification cookie Secure, as SESSION_COOKIE_SECURE would.  Off
+# here so the gate works over plain http in development; prod and qa turn it
+# on.  Deliberately not derived from request.is_secure(): behind the load
+# balancer that terminates TLS, and with no SECURE_PROXY_SSL_HEADER set,
+# Django believes every request arrived over http.
+SEARCH_VERIFY_COOKIE_SECURE = False
 
 # Maximum request body size (bytes). The trawler's fatcat2.CreateRelease
 # enforces a matching limit so oversized payloads are caught before they

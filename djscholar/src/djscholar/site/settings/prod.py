@@ -5,12 +5,21 @@ import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 
 from .base import *
+# Named explicitly as well as by the star above: it's a function, not a
+# setting, and ruff can't see it through the wildcard.
+from .base import altcha_hmac_key
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 DEBUG = False
 ALLOWED_HOSTS = ["localhost", ".scholar.archive.org"]
 
+# base.py derived this from its placeholder SECRET_KEY; redo it now that the
+# real one is in hand.
+ALTCHA_HMAC_KEY = os.environ.get("ALTCHA_HMAC_KEY") or altcha_hmac_key(SECRET_KEY)
+
 CSRF_TRUSTED_ORIGINS = ['https://scholar.archive.org']
+
+SEARCH_VERIFY_COOKIE_SECURE = True
 
 DATABASES = {
     # NB at this time we have no plans for scholar's web frontend to need

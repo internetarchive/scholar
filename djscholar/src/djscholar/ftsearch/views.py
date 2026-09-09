@@ -9,9 +9,12 @@ from django.db import IntegrityError
 from django.db.models import F, Sum
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render, resolve_url
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.safestring import mark_safe
+from django.views.decorators.cache import never_cache
 from elasticsearch.exceptions import RequestError, TransportError
 
 import djscholar.es as es
@@ -20,6 +23,7 @@ from djscholar.fcapi.fcid import fcid2uuid, is_legacy_fcid, uuid2fcid
 from djscholar.fcapi.services import EntityNotFound
 from djscholar.fcapi.services import files as file_svc
 from djscholar.fcapi.services import works as work_svc
+from djscholar.ftsearch.forms import SearchVerificationForm
 from djscholar.ftsearch.models import DailyAccessStat
 
 logger = logging.getLogger(__name__)
@@ -706,10 +710,98 @@ def _build_result(hit):
     }
 
 
+# Signed cookie recording that this browser has solved an Altcha challenge,
+# and the salt it is signed with. Changing the salt invalidates every
+# outstanding verification at once.
+VERIFY_COOKIE_NAME = "ftsearch_verified"
+VERIFY_COOKIE_SALT = "ftsearch.search-verify"
+
+
+def _is_verified(request: HttpRequest) -> bool:
+    """Has this browser solved a challenge inside SEARCH_VERIFY_MAX_AGE?"""
+    # A tampered or expired cookie raises BadSignature, which get_signed_cookie
+    # swallows in favor of the default when one is given.
+    return request.get_signed_cookie(
+        VERIFY_COOKIE_NAME,
+        default=None,
+        salt=VERIFY_COOKIE_SALT,
+        max_age=settings.SEARCH_VERIFY_MAX_AGE,
+    ) is not None
+
+
+def _mark_verified(response: HttpResponse) -> HttpResponse:
+    response.set_signed_cookie(
+        VERIFY_COOKIE_NAME,
+        "1",
+        salt=VERIFY_COOKIE_SALT,
+        max_age=settings.SEARCH_VERIFY_MAX_AGE,
+        httponly=True,
+        samesite="Lax",
+        secure=settings.SEARCH_VERIFY_COOKIE_SECURE,
+    )
+    return response
+
+
+def _safe_next(request: HttpRequest, raw: str | None) -> str:
+    """Clamp a ?next= target to our own host so the gate isn't an open redirect."""
+    if raw and url_has_allowed_host_and_scheme(
+        raw,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return raw
+    return resolve_url("ftsearch:home")
+
+
+@never_cache
+def verify(request: HttpRequest) -> HttpResponse:
+    """
+    The Altcha proof-of-work check standing in front of fulltext search.
+
+    Search itself stays a plain GET form, so filter links, pagination, and
+    pasted or bookmarked result URLs keep working untouched.  The cost of a
+    solve is paid once per browsing session here rather than on every query:
+    an unverified request to /search is redirected to this page carrying its
+    own URL in ?next=, and comes back to it once the puzzle is solved.
+    """
+    next_url = _safe_next(request, request.POST.get("next") or request.GET.get("next"))
+
+    if not settings.SEARCH_VERIFY_REQUIRED or _is_verified(request):
+        return redirect(next_url)
+
+    status_code = 200
+    if request.method == "POST":
+        form = SearchVerificationForm(request.POST)
+        if form.is_valid():
+            return _mark_verified(redirect(next_url))
+        status_code = 400
+    else:
+        form = SearchVerificationForm()
+
+    return render(request, "ftsearch/verify.html", {
+        "form": form,
+        "next": next_url,
+    }, status=status_code)
+
+
 def search(request: HttpRequest) -> HttpResponse:
     q = request.POST.get("q", "").strip() or request.GET.get("q", "").strip()
     if not q:
         return render(request, "ftsearch/home.html")
+
+    if settings.SEARCH_VERIFY_REQUIRED and not _is_verified(request):
+        # Bail before touching Elasticsearch: keeping unsolved traffic off the
+        # cluster is the whole point of the gate.  The query rides along in
+        # ?next= so the return trip lands on the same results; a POSTed query
+        # (this view takes either) becomes a GET param, since coming back from
+        # verify is a redirect.
+        params = request.GET.copy()
+        params["q"] = q
+        next_url = f"{reverse('ftsearch:search')}?{params.urlencode()}"
+        return redirect(
+            f"{reverse('ftsearch:verify')}?next={urllib.parse.quote(next_url)}"
+        )
+
     q = _rewrite_id_query(q)
 
     page_size = DEFAULT_PAGE_SIZE

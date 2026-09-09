@@ -1,5 +1,7 @@
 User-agent: *
 Disallow: /search
+Disallow: /verify
+Disallow: /altcha/
 
 Sitemap: https://scholar.archive.org/sitemap.xml
 Sitemap: https://scholar.archive.org/sitemap-index-works.xml

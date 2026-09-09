@@ -11,6 +11,7 @@ Those will be handled separately.
 """
 
 from django.urls import path
+from django_altcha import AltchaChallengeView
 
 from djscholar.ftsearch import views
 
@@ -32,6 +33,11 @@ urlpatterns = [
     # Search
     path("random", views.random_paper, name="random_paper"),
     path("search", views.search, name="search"),
+
+    # Altcha human check in front of search. The challenge endpoint is what the
+    # widget on the verify page fetches its puzzle from.
+    path("verify", views.verify, name="verify"),
+    path("altcha/challenge", AltchaChallengeView.as_view(), name="altcha_challenge"),
 
     # Work detail and access redirects
     path("work/<uuid:work_uuid>", views.work, name="work"),

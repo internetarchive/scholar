@@ -4,10 +4,25 @@ import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 
 from .base import *
+# Named explicitly as well as by the star above: it's a function, not a
+# setting, and ruff can't see it through the wildcard.
+from .base import altcha_hmac_key
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 DEBUG = False
 ALLOWED_HOSTS = ["localhost", ".scholar-qa.archive.org"]
+
+# The verify page is the first browser POST form in the app. TLS terminates at
+# the load balancer and SECURE_PROXY_SSL_HEADER isn't set, so Django compares
+# the browser's https Origin against an http host and rejects the post unless
+# the origin is trusted outright. prod already does this.
+CSRF_TRUSTED_ORIGINS = ['https://scholar-qa.archive.org']
+
+SEARCH_VERIFY_COOKIE_SECURE = True
+
+# base.py derived this from its placeholder SECRET_KEY; redo it now that the
+# real one is in hand.
+ALTCHA_HMAC_KEY = os.environ.get("ALTCHA_HMAC_KEY") or altcha_hmac_key(SECRET_KEY)
 
 DATABASES = {
     # NB at this time we have no plans for scholar's web frontend to need

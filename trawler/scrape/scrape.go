@@ -603,10 +603,8 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 	// We do not want the bytes, but at this volume leaking a connection per URL
 	// would exhaust the worker, so drain and close it before doing anything else.
 	if res.Content != nil {
-		if c, ok := res.Content.(io.Closer); ok {
-			io.Copy(io.Discard, res.Content)
-			c.Close()
-		}
+		io.Copy(io.Discard, res.Content)
+		res.Content.Close()
 	}
 
 	if err != nil {

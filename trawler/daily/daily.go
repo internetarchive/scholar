@@ -427,6 +427,7 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 	}
 
 	pdfBs, err := io.ReadAll(res.Content)
+	res.Content.Close()
 	if err != nil {
 		return out, fmt.Errorf("could not read pdf bytes: %w", err)
 	}

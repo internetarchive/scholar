@@ -3,6 +3,7 @@ package crawling
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
+	"git.archive.org/webgroup/scholar/trawler/httpclient"
 	spn "git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/uuid"
@@ -75,14 +77,62 @@ type PDFCrawler struct {
 }
 
 type CrawlResult struct {
-	Chain       []string
-	Success     bool
-	FailReason  string
-	Techniques  []string
-	Content     io.Reader
+	Chain      []string
+	Success    bool
+	FailReason string
+	Techniques []string
+	// Content is the Wayback replay body of the PDF, set only when Success is
+	// true. Closing it is the caller's job; every other exit from Crawl closes
+	// the bodies it opened itself.
+	Content     io.ReadCloser
 	SnapshotUrl string
 	Mimetype    string
 	// TODO
+}
+
+// defaultCDXRowsPerLookup is used when crawling.cdx_rows_per_lookup is unset.
+const defaultCDXRowsPerLookup = 10
+
+// cdxRowsPerLookup is how many of a URL's most recent captures the pre-SPN
+// lookup asks CDX for. We filter them here rather than with a server-side
+// statuscode filter because the newest row being an error is itself a signal
+// worth acting on, and a filtered query would hide it.
+func (c PDFCrawler) cdxRowsPerLookup() int {
+	n := viper.GetInt("crawling.cdx_rows_per_lookup")
+	if n <= 0 {
+		return defaultCDXRowsPerLookup
+	}
+	return n
+}
+
+// usableCDXRow reports whether Crawl has anywhere to go with a row: a body to
+// fetch or a redirect to follow. Note the zero status code -- CDX reports no
+// status for revisit records and the client leaves those at zero, so they have
+// to be admitted explicitly rather than by a "< 400" test. A status-less
+// non-revisit is not something Crawl can replay, so it is not usable.
+func usableCDXRow(row cdx.CDXRow) bool {
+	if row.StatusCode >= 200 && row.StatusCode < 400 {
+		return true
+	}
+	return row.StatusCode == 0 && row.Mimetype == "warc/revisit"
+}
+
+// pickCDXRow chooses the capture to crawl instead of spending SPN time on a new
+// one, or nil if there isn't one. CDX hands rows back oldest-first, so the scan
+// runs backwards and the newest usable capture wins; a 404 or an unreplayable
+// record on top of a good older capture no longer hides it. The walk stops at
+// the first row outside the freshness window because everything past it is
+// older still.
+func (c PDFCrawler) pickCDXRow(rows []cdx.CDXRow, now time.Time) *cdx.CDXRow {
+	for i := len(rows) - 1; i >= 0; i-- {
+		if !c.cdxRowFresh(rows[i], now) {
+			break
+		}
+		if usableCDXRow(rows[i]) {
+			return &rows[i]
+		}
+	}
+	return nil
 }
 
 // freshnessCutoff resolves the cutoff for this crawler, preferring the field
@@ -114,17 +164,49 @@ func (c PDFCrawler) beatHeart(message string) {
 }
 
 func (c PDFCrawler) fetchWaybackRedirect(URL string, ts time.Time) (*http.Response, error) {
-	client := &http.Client{}
-	return c.fetchWayback(client, URL, ts)
+	return c.fetchWayback(httpclient.Shared(), URL, ts)
 }
 
 func (c PDFCrawler) fetchWaybackNoRedirect(URL string, ts time.Time) (*http.Response, error) {
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	return c.fetchWayback(httpclient.NoRedirect(), URL, ts)
+}
+
+// defaultBodyStallTimeout is used when crawling.body_stall_timeout is unset.
+const defaultBodyStallTimeout = 60 * time.Second
+
+// bodyStallTimeout is how long a replay body may make no progress at all before
+// the fetch is abandoned. It bounds a stall, not a slow download, so it can
+// afford to be short relative to how long a large PDF legitimately takes. A
+// configured zero disables the watchdog and restores the old behaviour of
+// blocking indefinitely.
+func (c PDFCrawler) bodyStallTimeout() time.Duration {
+	if viper.IsSet("crawling.body_stall_timeout") {
+		return viper.GetDuration("crawling.body_stall_timeout")
 	}
-	return c.fetchWayback(client, URL, ts)
+	return defaultBodyStallTimeout
+}
+
+// maxDrainBytes bounds how much of an unwanted body we read before closing.
+// Redirect and error bodies are small, so this is generous; the cap is what
+// keeps a surprise multi-megabyte body from being downloaded just to be
+// discarded.
+const maxDrainBytes = 64 << 10
+
+// drainAndClose finishes with a response whose body we are not going to use. It
+// reads a bounded amount so the transport can put the connection back in its
+// pool, then closes it.
+//
+// This is not housekeeping: an undrained, unclosed body keeps both its
+// connection and the transport's read goroutine alive until the far end gives
+// up on us. At one leak per redirect hop and crawls running in the hundreds,
+// that is a file descriptor exhaustion bug, and it shows up as unrelated crawl
+// failures long after the crawls that caused it.
+func drainAndClose(resp *http.Response) {
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainBytes))
+	resp.Body.Close()
 }
 
 func (c PDFCrawler) toWaybackURL(URL string, ts time.Time) string {
@@ -142,8 +224,14 @@ func (c PDFCrawler) toWaybackURL(URL string, ts time.Time) string {
 func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) (*http.Response, error) {
 	wbUrl := c.toWaybackURL(URL, ts)
 
-	req, err := http.NewRequest("GET", wbUrl, nil)
+	// The context is cancelled by the guard installed on the body below, not
+	// when this function returns: on the success path the body outlives the
+	// crawl, and cancelling early would break the caller's read of it.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	req, err := http.NewRequestWithContext(ctx, "GET", wbUrl, nil)
 	if err != nil {
+		cancel()
 		panic(err)
 	}
 	req.Header.Set("User-Agent", c.UserAgent)
@@ -165,8 +253,13 @@ func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) 
 		time.Sleep(backoff * time.Duration(attempts))
 	}
 	if wbErr != nil {
-		return nil, fmt.Errorf("wayback request failed after %d attempts: %w", attempts, err)
+		cancel()
+		return nil, fmt.Errorf("wayback request failed after %d attempts: %w", attempts, wbErr)
 	}
+
+	// Every exit from Crawl closes this body, which is what cancels the request
+	// context; see CrawlResult.Content for the one that closes it elsewhere.
+	resp.Body = httpclient.StallGuard(resp.Body, cancel, c.bodyStallTimeout())
 
 	// TODO old code had this X-Archive-Src thing:
 	/*
@@ -270,21 +363,36 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		}
 		u = ru
 
-		// TODO the old code fetched N rows then tried to find the most recent 200
-		// response. I'm choosing to only look at the single most recent row for now.
-		var row *cdx.CDXRow
 		c.beatHeart("cdx-check-before-spn")
+		// A negative limit asks CDX for the last N captures rather than the
+		// first N; they arrive oldest-first.
 		rows, err := c.CDXClient.Query(cdx.QueryParams{
 			URL:   u,
-			Limit: -1,
+			Limit: -c.cdxRowsPerLookup(),
 		})
+		if err != nil {
+			// Not fatal: an unavailable CDX means we don't know what's already
+			// archived, and SPN is how we find out.
+			c.slogInfo("cdx lookup failed, falling through to SPN", "url", u, "err", err.Error())
+		}
 
-		if len(rows) > 0 && c.cdxRowFresh(rows[0], time.Now()) {
-			row = &rows[0]
-		} else {
+		row := c.pickCDXRow(rows, time.Now())
+
+		if row == nil {
+			// Nothing we can use. A *recent* capture that errored is still
+			// information -- the URL was dead lately, and re-capturing it buys
+			// the same answer for an SPN slot the daily crawl is competing
+			// for -- so only go to SPN when the freshness window is empty.
 			if len(rows) > 0 {
-				c.slogInfo("ignoring stale CDX capture", "url", u,
-					"captured", rows[0].Datetime, "cutoff", c.freshnessCutoff())
+				newest := rows[len(rows)-1]
+				if c.cdxRowFresh(newest, time.Now()) {
+					c.slogInfo("recent capture is unusable", "url", u,
+						"status", newest.StatusCode, "captured", newest.Datetime)
+					out.FailReason = fmt.Sprintf("status-%d", newest.StatusCode)
+					return *out, nil
+				}
+				c.slogInfo("no usable capture within freshness window", "url", u,
+					"newest", newest.Datetime, "cutoff", c.freshnessCutoff())
 			}
 			if simpleGet {
 				row, err = c.spnGetToCdx(u)
@@ -344,6 +452,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				return *out, fmt.Errorf("could not get replay from wb: %w", err)
 			}
 			loc := resp.Header.Get("Location")
+			// Everything we need is in the header.
+			drainAndClose(resp)
 			if loc == "" {
 				c.slogInfo("empty redirect in wayback", "url", u)
 				out.FailReason = "empty-wayback-redirect"
@@ -380,6 +490,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			if resp.StatusCode == 301 || resp.StatusCode == 302 {
 				// TODO unfortunate copypasta
 				loc := resp.Header.Get("Location")
+				// Everything we need is in the header.
+				drainAndClose(resp)
 				if loc == "" {
 					c.slogInfo("empty redirect in wayback", "url", u)
 					out.FailReason = "empty-wayback-redirect"
@@ -404,6 +516,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 				continue
 			} else if resp.StatusCode > 302 {
 				c.slogInfo("sad replay code", "status", resp.StatusCode)
+				drainAndClose(resp)
 				out.FailReason = fmt.Sprintf("status-%d", resp.StatusCode)
 				return *out, nil
 			} // else handle resp below
@@ -417,6 +530,8 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		mimetype := resp.Header.Get("Content-Type")
 
 		if strings.Contains(mimetype, "application/pdf") {
+			// The one exit that does not close: the body is the point of the
+			// crawl, so it goes to the caller open, per CrawlResult.Content.
 			out.Success = true
 			out.Content = content
 			out.SnapshotUrl = c.toWaybackURL(row.URL, row.Datetime)
@@ -427,12 +542,16 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		// TODO i question the wisdom of proceeding from this point with XML; xhtml, sure.
 		if !c.isHTMLishMimetype(mimetype) {
 			// TODO set up result for un-proceedable mimetype
+			drainAndClose(resp)
 			out.FailReason = "unknown-mimetype"
 			c.slogInfo("un-processable mimetype", "mimetype", mimetype)
 			return *out, nil
 		}
 
 		nextLink, err := c.findNextLink(row.URL, content)
+		// findNextLink has taken what it needs from the page, whether it found a
+		// link, found nothing, or failed to parse it.
+		drainAndClose(resp)
 		if err != nil {
 			return *out, fmt.Errorf("pdf link heuristics failure: %w", err)
 		}

@@ -3,6 +3,9 @@ package crawling
 import (
 	"bytes"
 	"embed"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +32,49 @@ func Test_toWaybackURL(t *testing.T) {
 	if got != want {
 		t.Errorf("query not preserved:\n got %q\nwant %q", got, want)
 	}
+}
+
+// countingBody stands in for an http.Response body so a test can see whether
+// the crawler read it and whether it closed it.
+type countingBody struct {
+	r      io.Reader
+	closes int
+}
+
+func (b *countingBody) Read(p []byte) (int, error) { return b.r.Read(p) }
+
+func (b *countingBody) Close() error {
+	b.closes++
+	return nil
+}
+
+func Test_drainAndClose(t *testing.T) {
+	// A body we are done with gets closed exactly once.
+	body := &countingBody{r: strings.NewReader("a redirect page")}
+	drainAndClose(&http.Response{Body: body})
+	if body.closes != 1 {
+		t.Errorf("expected body closed once, got %d closes", body.closes)
+	}
+
+	// A body big enough to matter is closed without being read to the end:
+	// draining is for connection reuse, not for downloading what we discarded.
+	big := &countingBody{r: strings.NewReader(strings.Repeat("x", maxDrainBytes*4))}
+	drainAndClose(&http.Response{Body: big})
+	if big.closes != 1 {
+		t.Errorf("expected large body closed once, got %d closes", big.closes)
+	}
+	left, err := io.ReadAll(big.r)
+	if err != nil {
+		t.Fatalf("reading remainder: %s", err)
+	}
+	if len(left) == 0 {
+		t.Error("drained the whole of a large body; maxDrainBytes was not honoured")
+	}
+
+	// Nothing to close is not a crash: Crawl reaches this with a nil response
+	// on paths where the fetch itself failed.
+	drainAndClose(nil)
+	drainAndClose(&http.Response{})
 }
 
 func Test_cdxRowFresh(t *testing.T) {
@@ -85,6 +131,119 @@ func Test_cdxRowFresh(t *testing.T) {
 				t.Errorf("%s: expected %v, got %v", c.name, c.expected, got)
 			}
 		})
+	}
+}
+
+func Test_pickCDXRow(t *testing.T) {
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	// CDX hands rows back oldest-first, and these are built that way.
+	ago := func(d time.Duration) time.Time { return now.Add(-d) }
+	day := 24 * time.Hour
+
+	cs := []struct {
+		name string
+		rows []cdx.CDXRow
+		// want is the Datetime of the expected row; zero means "no row".
+		want time.Time
+	}{
+		{
+			name: "no rows",
+		},
+		{
+			name: "newest row wins",
+			rows: []cdx.CDXRow{
+				{Datetime: ago(20 * day), StatusCode: 200},
+				{Datetime: ago(2 * day), StatusCode: 200},
+			},
+			want: ago(2 * day),
+		},
+		{
+			name: "skips newer error for older capture",
+			rows: []cdx.CDXRow{
+				{Datetime: ago(20 * day), StatusCode: 200},
+				{Datetime: ago(2 * day), StatusCode: 404},
+				{Datetime: ago(1 * day), StatusCode: 503},
+			},
+			want: ago(20 * day),
+		},
+		{
+			name: "redirects are usable",
+			rows: []cdx.CDXRow{
+				{Datetime: ago(20 * day), StatusCode: 200},
+				{Datetime: ago(2 * day), StatusCode: 302},
+			},
+			want: ago(2 * day),
+		},
+		{
+			name: "status-less revisit is usable",
+			rows: []cdx.CDXRow{
+				{Datetime: ago(2 * day), StatusCode: 0, Mimetype: "warc/revisit"},
+			},
+			want: ago(2 * day),
+		},
+		{
+			name: "status-less non-revisit is not usable",
+			rows: []cdx.CDXRow{
+				{Datetime: ago(20 * day), StatusCode: 200},
+				{Datetime: ago(2 * day), StatusCode: 0, Mimetype: "text/html"},
+			},
+			want: ago(20 * day),
+		},
+		{
+			name: "usable row outside the window is ignored",
+			rows: []cdx.CDXRow{
+				{Datetime: ago(90 * day), StatusCode: 200},
+				{Datetime: ago(2 * day), StatusCode: 404},
+			},
+		},
+		{
+			name: "every row outside the window",
+			rows: []cdx.CDXRow{
+				{Datetime: ago(200 * day), StatusCode: 200},
+				{Datetime: ago(90 * day), StatusCode: 200},
+			},
+		},
+	}
+
+	for _, c := range cs {
+		t.Run(c.name, func(t *testing.T) {
+			// 30 days, so the "20 days ago" rows are in the window and the
+			// "90 days ago" ones are not.
+			crawler := PDFCrawler{FreshnessCutoff: 30 * day}
+			got := crawler.pickCDXRow(c.rows, now)
+
+			if c.want.IsZero() {
+				if got != nil {
+					t.Errorf("%s: expected no row, got one from %s", c.name, got.Datetime)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("%s: expected row from %s, got none", c.name, c.want)
+			}
+			if !got.Datetime.Equal(c.want) {
+				t.Errorf("%s: expected row from %s, got one from %s", c.name, c.want, got.Datetime)
+			}
+		})
+	}
+}
+
+func Test_cdxRowsPerLookup(t *testing.T) {
+	crawler := PDFCrawler{}
+	t.Cleanup(func() { viper.Set("crawling.cdx_rows_per_lookup", nil) })
+
+	viper.Set("crawling.cdx_rows_per_lookup", 25)
+	if got := crawler.cdxRowsPerLookup(); got != 25 {
+		t.Errorf("expected configured 25, got %d", got)
+	}
+
+	// A nonsense value would turn into a positive CDX limit, which asks for the
+	// *oldest* captures instead of the newest.
+	for _, v := range []int{0, -5} {
+		viper.Set("crawling.cdx_rows_per_lookup", v)
+		if got := crawler.cdxRowsPerLookup(); got != defaultCDXRowsPerLookup {
+			t.Errorf("%d: expected default %d, got %d", v, defaultCDXRowsPerLookup, got)
+		}
 	}
 }
 

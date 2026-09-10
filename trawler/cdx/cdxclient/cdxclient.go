@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"git.archive.org/webgroup/scholar/trawler/httpclient"
 )
 
 const (
@@ -39,6 +41,10 @@ type Config struct {
 	Retries   int
 	Backoff   time.Duration
 	Debug     bool
+	// HTTPClient overrides the shared pooled client, which is what a caller
+	// wants in a test. Left nil -- as every caller in trawler leaves it -- the
+	// client draws on the process-wide connection pool.
+	HTTPClient *http.Client
 }
 
 type QueryParams struct {
@@ -92,9 +98,13 @@ func NewClient(cfg Config) Client {
 		cfg.Backoff = time.Second * 10
 	}
 
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = httpclient.Shared()
+	}
+
 	return Client{
 		cfg:    cfg,
-		client: &http.Client{},
+		client: cfg.HTTPClient,
 	}
 }
 

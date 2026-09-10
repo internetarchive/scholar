@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"git.archive.org/webgroup/scholar/trawler/httpclient"
 )
 
 const timeFormat = "20060102150405"
@@ -74,6 +76,10 @@ type SPNConfig struct {
 	SecretKey string
 	Endpoint  string
 	Debug     bool
+	// HTTPClient overrides the shared pooled client, which is what a caller
+	// wants in a test. Left nil -- as every caller in trawler leaves it -- the
+	// client draws on the process-wide connection pool.
+	HTTPClient *http.Client
 }
 
 // type SaveRequest describes the arguments both required and optional for a
@@ -376,9 +382,12 @@ func NewDefaultClient(cfg SPNConfig) (Client, error) {
 	if cfg.SecretKey == "" {
 		return nil, errors.New("cannot create spn client without secret key")
 	}
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = httpclient.Shared()
+	}
 	return &DefaultClient{
 		Config: cfg,
-		client: &http.Client{},
+		client: cfg.HTTPClient,
 		Debug:  cfg.Debug,
 	}, nil
 }

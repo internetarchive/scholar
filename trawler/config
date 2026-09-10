@@ -94,9 +94,25 @@ scholkit_s3_bucket = "scholkit"
 endpoint = "https://scholar.archive.org/_fc/v0"
 
 [crawling]
+# cdx_freshness_cutoff is how old an already-archived capture may be and still
+# be used as-is. Anything older and the crawler spends SPN time on a fresh
+# capture instead.
 cdx_freshness_cutoff = "672h" # four weeks
+# cdx_rows_per_lookup is how many of a URL's most recent captures the crawler
+# asks CDX for before deciding whether to call SPN. It walks them newest-first
+# and takes the first it can act on -- a 2xx, a redirect, or a revisit --
+# within cdx_freshness_cutoff. Raising it gives more chances to reuse an
+# existing capture when the newest rows are 404s or unreplayable records.
+cdx_rows_per_lookup = 10
 spn_slot_poll_interval = "6s"
 spn_job_poll_interval = "30s"
+# body_stall_timeout is how long a Wayback replay body may make no progress at
+# all before the crawl gives up on it. The transport's timeouts all fire before
+# the first byte arrives; this covers the read that follows, which is otherwise
+# unbounded and is how a crawl wedges and keeps its activity slot for good.
+# It bounds a stall, not a slow download: a large PDF that keeps streaming is
+# never interrupted, however long it takes. Set to 0 to disable.
+body_stall_timeout = "60s"
 user_agent = "Mozilla/5.0 ias_trawler"
 doi_prefix_blocklist = [
   # gbif.org: many DOIs, not PDF fulltext
@@ -266,6 +282,30 @@ simple_get_list = [
 [fatcat2]
 endpoint = "https://scholar.archive.org/api/fatcat/v2"
 key = ""
+
+[http]
+# Connection pooling for every outbound HTTP call trawler makes. SPN, CDX and
+# the Wayback replay fetches all talk to web.archive.org, so they share one
+# pool and these numbers are about that host above all.
+#
+# max_idle_conns_per_host is the one worth tuning. Go's own default is 2, which
+# means that past two requests in flight to web.archive.org every further one
+# opens a fresh connection, pays a TLS handshake, and is thrown away instead of
+# pooled on the way out. Size it at or above the crawl requests a worker can
+# have in flight -- scrape.worker_activity_slots is the practical bound -- and
+# leave headroom. Too high costs idle sockets; too low costs a handshake per
+# request.
+max_idle_conns_per_host = 64
+# max_idle_conns is the process-wide ceiling across all hosts.
+max_idle_conns = 512
+# idle_conn_timeout is how long an unused pooled connection is kept.
+idle_conn_timeout = "90s"
+# response_header_timeout bounds a server that accepts a connection and then
+# says nothing, which is how a crawl wedges and holds its activity slot until
+# the heartbeat timeout. It does not limit reading the body, so a slow PDF
+# replay is unaffected. Generous on purpose -- CDX can be slow and we would
+# rather wait than re-crawl. Set it to 0 to disable.
+response_header_timeout = "120s"
 
 [spn]
 access_key = ""

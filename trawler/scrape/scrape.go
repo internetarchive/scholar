@@ -597,7 +597,7 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 		crawler.MaxHops = 8
 	}
 
-	res, err := crawler.Crawl(in.URL)
+	res, err := crawler.Crawl(ctx, in.URL)
 
 	// Crawl hands back the Wayback replay body on success and never closes it.
 	// We do not want the bytes, but at this volume leaking a connection per URL

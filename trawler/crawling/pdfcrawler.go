@@ -163,12 +163,27 @@ func (c PDFCrawler) beatHeart(message string) {
 	}
 }
 
-func (c PDFCrawler) fetchWaybackRedirect(URL string, ts time.Time) (*http.Response, error) {
-	return c.fetchWayback(httpclient.Shared(), URL, ts)
+func (c PDFCrawler) fetchWaybackRedirect(ctx context.Context, URL string, ts time.Time) (*http.Response, error) {
+	return c.fetchWayback(ctx, httpclient.Shared(), URL, ts)
 }
 
-func (c PDFCrawler) fetchWaybackNoRedirect(URL string, ts time.Time) (*http.Response, error) {
-	return c.fetchWayback(httpclient.NoRedirect(), URL, ts)
+func (c PDFCrawler) fetchWaybackNoRedirect(ctx context.Context, URL string, ts time.Time) (*http.Response, error) {
+	return c.fetchWayback(ctx, httpclient.NoRedirect(), URL, ts)
+}
+
+// sleepCtx waits for d unless ctx is done first, in which case it reports why.
+// Every wait in a crawl goes through it: the SPN poll loops in particular are
+// unbounded, so a nap that cannot be interrupted is the difference between an
+// activity that notices cancellation and one that holds its slot regardless.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 // defaultBodyStallTimeout is used when crawling.body_stall_timeout is unset.
@@ -221,15 +236,16 @@ func (c PDFCrawler) toWaybackURL(URL string, ts time.Time) string {
 	return fmt.Sprintf("%s/%sid_/%s", endpoint, timestamp, URL)
 }
 
-func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) (*http.Response, error) {
+func (c PDFCrawler) fetchWayback(ctx context.Context, client *http.Client, URL string, ts time.Time) (*http.Response, error) {
 	wbUrl := c.toWaybackURL(URL, ts)
 
-	// The context is cancelled by the guard installed on the body below, not
+	// Derived from the caller's context, so cancellation reaches an in-flight
+	// fetch, and cancelled by the guard installed on the body below rather than
 	// when this function returns: on the success path the body outlives the
 	// crawl, and cancelling early would break the caller's read of it.
-	ctx, cancel := context.WithCancel(context.Background())
+	reqCtx, cancel := context.WithCancel(ctx)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", wbUrl, nil)
+	req, err := http.NewRequestWithContext(reqCtx, "GET", wbUrl, nil)
 	if err != nil {
 		cancel()
 		panic(err)
@@ -250,7 +266,10 @@ func (c PDFCrawler) fetchWayback(client *http.Client, URL string, ts time.Time) 
 		if wbErr == nil || attempts == retries {
 			break
 		}
-		time.Sleep(backoff * time.Duration(attempts))
+		if err := sleepCtx(ctx, backoff*time.Duration(attempts)); err != nil {
+			cancel()
+			return nil, err
+		}
 	}
 	if wbErr != nil {
 		cancel()
@@ -302,7 +321,7 @@ func (c PDFCrawler) slogInfo(msg string, args ...any) {
 	c.Logger.Info(msg, args...)
 }
 
-func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
+func (c PDFCrawler) Crawl(ctx context.Context, startURL string) (CrawlResult, error) {
 	out := &CrawlResult{}
 
 	trace, err := uuid.NewV7()
@@ -320,6 +339,12 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 	defer c.slogInfo("ending crawl", "result", out)
 
 	for len(out.Chain) < c.MaxHops {
+		// Each hop can mean a fresh capture, so this is the cheapest place to
+		// notice that nobody is waiting for the answer any more.
+		if err := ctx.Err(); err != nil {
+			return *out, err
+		}
+
 		u := out.Chain[len(out.Chain)-1]
 		parsed, err := url.Parse(u)
 		if err != nil {
@@ -366,7 +391,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		c.beatHeart("cdx-check-before-spn")
 		// A negative limit asks CDX for the last N captures rather than the
 		// first N; they arrive oldest-first.
-		rows, err := c.CDXClient.Query(cdx.QueryParams{
+		rows, err := c.CDXClient.Query(ctx, cdx.QueryParams{
 			URL:   u,
 			Limit: -c.cdxRowsPerLookup(),
 		})
@@ -395,9 +420,9 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 					"newest", newest.Datetime, "cutoff", c.freshnessCutoff())
 			}
 			if simpleGet {
-				row, err = c.spnGetToCdx(u)
+				row, err = c.spnGetToCdx(ctx, u)
 			} else {
-				row, err = c.spnBrowserToCdx(u)
+				row, err = c.spnBrowserToCdx(ctx, u)
 			}
 			if err != nil {
 				var cdxNoRowsErr *CdxNoRowsError
@@ -447,7 +472,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 		var resp *http.Response
 
 		if row.StatusCode == 302 {
-			resp, err := c.fetchWaybackNoRedirect(row.URL, row.Datetime)
+			resp, err := c.fetchWaybackNoRedirect(ctx, row.URL, row.Datetime)
 			if err != nil {
 				return *out, fmt.Errorf("could not get replay from wb: %w", err)
 			}
@@ -477,13 +502,13 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 			out.Chain = append(out.Chain, loc)
 			continue
 		} else if row.StatusCode == 301 || (row.StatusCode >= 200 && row.StatusCode <= 299) {
-			resp, err = c.fetchWaybackRedirect(row.URL, row.Datetime)
+			resp, err = c.fetchWaybackRedirect(ctx, row.URL, row.Datetime)
 			if err != nil {
 				return *out, fmt.Errorf("could not get replay from wb: %w", err)
 			}
 		} else if row.Mimetype == "warc/revisit" {
 			// TODO i don't like this...
-			resp, err = c.fetchWaybackNoRedirect(row.URL, row.Datetime)
+			resp, err = c.fetchWaybackNoRedirect(ctx, row.URL, row.Datetime)
 			if err != nil {
 				return *out, fmt.Errorf("could not get replay from wb: %w", err)
 			}
@@ -569,7 +594,7 @@ func (c PDFCrawler) Crawl(startURL string) (CrawlResult, error) {
 	return *out, nil
 }
 
-func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
+func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cdx.CDXRow, error) {
 	var out *cdx.CDXRow
 
 	req := spn.SaveRequest{
@@ -593,14 +618,16 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 
 	for jobID == "" {
 		c.beatHeart("spn-pre-save")
-		resp, err := c.SPNClient.Save(req)
+		resp, err := c.SPNClient.Save(ctx, req)
 
 		var spne *spn.SPNError
 		if errors.As(err, &spne) {
 			if spne.StatusCode == 429 {
 				interval := 60 * time.Second
 				c.slogInfo("SPN 429 on /save, sleeping", "interval", interval)
-				time.Sleep(interval)
+				if err := sleepCtx(ctx, interval); err != nil {
+					return out, err
+				}
 				continue
 			}
 		}
@@ -615,8 +642,11 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 
 		if strings.Contains(resp.Message, "reached the limit of active sessions") {
 			c.slogInfo("SPN slots full, polling", "attempt", attempts, "poll", spnSlotPollInterval)
-			// TODO should we bail after N attempts?
-			time.Sleep(spnSlotPollInterval)
+			// TODO should we bail after N attempts? Until then this loop is
+			// unbounded, and cancellation is the only way out of it.
+			if err := sleepCtx(ctx, spnSlotPollInterval); err != nil {
+				return out, err
+			}
 			continue
 		}
 
@@ -653,7 +683,7 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 	var spnJobResult spn.JobStatus
 	for {
 		c.beatHeart("spn-pre-status")
-		spnJobResult, err = c.SPNClient.StatusJob(jobID)
+		spnJobResult, err = c.SPNClient.StatusJob(ctx, jobID)
 		if err != nil {
 			c.slogInfo("spn job status failure", "err", err.Error())
 			return out, fmt.Errorf("could not get spn job status: %w", err)
@@ -661,7 +691,11 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 
 		if spnJobResult.Status == "pending" {
 			c.slogInfo("sleeping while spn pending")
-			time.Sleep(viper.GetDuration("crawling.spn_job_poll_interval"))
+			// Also unbounded: a job that never leaves pending is waited on for
+			// as long as anyone is still waiting for us.
+			if err := sleepCtx(ctx, viper.GetDuration("crawling.spn_job_poll_interval")); err != nil {
+				return out, err
+			}
 			continue
 		}
 
@@ -689,7 +723,7 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 	// c.slogInfo("sleeping before CDX lookup")
 	//time.Sleep(5 * time.Second)
 	c.beatHeart("cdx-check-after-spn")
-	rows, err := c.CDXClient.Query(cdx.QueryParams{
+	rows, err := c.CDXClient.Query(ctx, cdx.QueryParams{
 		From:  spnJobResult.Time,
 		To:    spnJobResult.Time,
 		URL:   spnJobResult.OriginalURL,
@@ -722,12 +756,12 @@ func (c PDFCrawler) spnToCdx(u string, simpleGet bool) (*cdx.CDXRow, error) {
 
 }
 
-func (c PDFCrawler) spnGetToCdx(u string) (*cdx.CDXRow, error) {
-	return c.spnToCdx(u, true)
+func (c PDFCrawler) spnGetToCdx(ctx context.Context, u string) (*cdx.CDXRow, error) {
+	return c.spnToCdx(ctx, u, true)
 }
 
-func (c PDFCrawler) spnBrowserToCdx(u string) (*cdx.CDXRow, error) {
-	return c.spnToCdx(u, false)
+func (c PDFCrawler) spnBrowserToCdx(ctx context.Context, u string) (*cdx.CDXRow, error) {
+	return c.spnToCdx(ctx, u, false)
 }
 
 func decodeHTMLBody(body io.Reader, cset string) (io.Reader, error) {

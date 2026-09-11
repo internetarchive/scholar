@@ -12,6 +12,7 @@ package spnclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -159,10 +160,10 @@ type SaveRequest struct {
 
 // type Client describes an SPN client.
 type Client interface {
-	StatusSystem() (SystemStatus, error)
-	StatusUser() (UserStatus, error)
-	StatusJob(string) (JobStatus, error)
-	Save(SaveRequest) (SaveResult, error)
+	StatusSystem(context.Context) (SystemStatus, error)
+	StatusUser(context.Context) (UserStatus, error)
+	StatusJob(context.Context, string) (JobStatus, error)
+	Save(context.Context, SaveRequest) (SaveResult, error)
 }
 
 // type DefaultClient is the basic, concrete implementation for an SPN client.
@@ -172,13 +173,13 @@ type DefaultClient struct {
 	Debug  bool
 }
 
-func (c *DefaultClient) newRequest(method string, path string, body io.Reader) (*http.Request, error) {
+func (c *DefaultClient) newRequest(ctx context.Context, method string, path string, body io.Reader) (*http.Request, error) {
 	p, err := url.JoinPath("https://"+c.Config.Endpoint, path)
 	if err != nil {
 		return nil, fmt.Errorf("could not join: %w", err)
 	}
 
-	req, err := http.NewRequest(method, p, body)
+	req, err := http.NewRequestWithContext(ctx, method, p, body)
 	if err != nil {
 		return nil, fmt.Errorf("could not create req: %w", err)
 	}
@@ -203,8 +204,8 @@ func (e *SPNError) Error() string {
 	return fmt.Sprintf("SPN API returned %d: %s", e.StatusCode, e.Body)
 }
 
-func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) error {
-	req, err := c.newRequest(method, path, body)
+func (c *DefaultClient) do(ctx context.Context, method, path string, body io.Reader, parsed any) error {
+	req, err := c.newRequest(ctx, method, path, body)
 	if err != nil {
 		return err
 	}
@@ -254,10 +255,10 @@ func (c *DefaultClient) do(method, path string, body io.Reader, parsed any) erro
 	return nil
 }
 
-func (c *DefaultClient) StatusSystem() (SystemStatus, error) {
+func (c *DefaultClient) StatusSystem(ctx context.Context) (SystemStatus, error) {
 	out := SystemStatus{}
 
-	err := c.do("GET", "status/system", nil, &out)
+	err := c.do(ctx, "GET", "status/system", nil, &out)
 	if err != nil {
 		return out, fmt.Errorf("status/system failed: %w", err)
 	}
@@ -265,10 +266,10 @@ func (c *DefaultClient) StatusSystem() (SystemStatus, error) {
 	return out, nil
 }
 
-func (c *DefaultClient) StatusUser() (UserStatus, error) {
+func (c *DefaultClient) StatusUser(ctx context.Context) (UserStatus, error) {
 	out := UserStatus{}
 
-	err := c.do("GET", "status/user", nil, &out)
+	err := c.do(ctx, "GET", "status/user", nil, &out)
 	if err != nil {
 		return out, fmt.Errorf("status/user failed: %w", err)
 	}
@@ -276,12 +277,12 @@ func (c *DefaultClient) StatusUser() (UserStatus, error) {
 	return out, nil
 }
 
-func (c *DefaultClient) StatusJob(jobID string) (JobStatus, error) {
+func (c *DefaultClient) StatusJob(ctx context.Context, jobID string) (JobStatus, error) {
 	out := JobStatus{}
 
 	p := fmt.Sprintf("status/%s", jobID)
 
-	err := c.do("GET", p, nil, &out)
+	err := c.do(ctx, "GET", p, nil, &out)
 	if err != nil {
 		return out, fmt.Errorf("%s failed: %w", p, err)
 	}
@@ -306,7 +307,7 @@ func toIntBoolArg(v bool) string {
 
 // Save POSTSs a URL to the /save endpoint. See the documentation
 // for SaveRequest to see how to form the call's arguments.
-func (c *DefaultClient) Save(req SaveRequest) (SaveResult, error) {
+func (c *DefaultClient) Save(ctx context.Context, req SaveRequest) (SaveResult, error) {
 	out := SaveResult{}
 
 	if req.URL == "" {
@@ -358,7 +359,7 @@ func (c *DefaultClient) Save(req SaveRequest) (SaveResult, error) {
 		fmt.Printf("-> %s\n", params)
 	}
 
-	err := c.do("POST", "", bytes.NewBufferString(params), &out)
+	err := c.do(ctx, "POST", "", bytes.NewBufferString(params), &out)
 	if err != nil {
 		return out, fmt.Errorf("capture request failed: %w", err)
 	}

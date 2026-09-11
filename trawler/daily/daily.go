@@ -391,7 +391,7 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 			},
 		}
 
-		res, err = crawler.Crawl(u)
+		res, err = crawler.Crawl(ctx, u)
 		if err != nil {
 			l.Info(fmt.Sprintf("crawl failed for %q, %q: %s", release.ID, u, err))
 			continue

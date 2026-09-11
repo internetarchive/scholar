@@ -4,6 +4,7 @@
 package cdxclient
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -108,9 +109,9 @@ func NewClient(cfg Config) Client {
 	}
 }
 
-func (c Client) Query(params QueryParams) ([]CDXRow, error) {
+func (c Client) Query(ctx context.Context, params QueryParams) ([]CDXRow, error) {
 	out := []CDXRow{}
-	req, err := http.NewRequest("GET", c.cfg.Endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.cfg.Endpoint, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -185,7 +186,15 @@ func (c Client) Query(params QueryParams) ([]CDXRow, error) {
 			break
 		}
 
-		time.Sleep(backoff * time.Duration(attempts))
+		// Backing off for up to half a minute is worth interrupting: a crawl
+		// whose activity has been cancelled should not finish its nap first.
+		timer := time.NewTimer(backoff * time.Duration(attempts))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return out, ctx.Err()
+		case <-timer.C:
+		}
 	}
 
 	if err != nil {

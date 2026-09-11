@@ -63,7 +63,7 @@ var queryCmd = &cobra.Command{
 			queryP.To = &tt
 		}
 
-		rows, err := client.Query(queryP)
+		rows, err := client.Query(cmd.Context(), queryP)
 		if err != nil {
 			return err
 		}

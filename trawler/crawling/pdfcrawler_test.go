@@ -2,14 +2,19 @@ package crawling
 
 import (
 	"bytes"
+	"context"
 	"embed"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
+	spn "git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/spf13/viper"
 )
 
@@ -725,5 +730,79 @@ func Test_absolutize(t *testing.T) {
 				t.Errorf("%s: expected %s, got %s", c.name, c.expectedUrl, out)
 			}
 		})
+	}
+}
+
+// stuckSPN reports SPN as permanently full, which puts spnToCdx into the poll
+// loop that has no exit condition of its own.
+type stuckSPN struct{ saves atomic.Int32 }
+
+func (s *stuckSPN) Save(ctx context.Context, req spn.SaveRequest) (spn.SaveResult, error) {
+	s.saves.Add(1)
+	return spn.SaveResult{Message: "you have reached the limit of active sessions"}, nil
+}
+
+func (s *stuckSPN) StatusSystem(context.Context) (spn.SystemStatus, error) {
+	return spn.SystemStatus{}, nil
+}
+
+func (s *stuckSPN) StatusUser(context.Context) (spn.UserStatus, error) {
+	return spn.UserStatus{}, nil
+}
+
+func (s *stuckSPN) StatusJob(context.Context, string) (spn.JobStatus, error) {
+	return spn.JobStatus{}, nil
+}
+
+func quietCrawler() PDFCrawler {
+	return PDFCrawler{MaxHops: 8, Logger: slog.New(slog.DiscardHandler)}
+}
+
+func Test_spnToCdx_cancellationEndsTheSlotPoll(t *testing.T) {
+	viper.Set("crawling.spn_slot_poll_interval", "10ms")
+	t.Cleanup(func() { viper.Set("crawling.spn_slot_poll_interval", nil) })
+
+	spnClient := &stuckSPN{}
+	c := quietCrawler()
+	c.SPNClient = spnClient
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.spnToCdx(ctx, "https://example.com/paper.pdf", false)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected the crawl to report cancellation, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		// Before the context was threaded through, this loop was unbounded and
+		// only StartToClose an hour later could end it.
+		t.Fatal("spnToCdx ignored cancellation and kept polling")
+	}
+
+	// It has to have actually been looping, or the test proves nothing.
+	if got := spnClient.saves.Load(); got < 2 {
+		t.Errorf("expected repeated save attempts before cancelling, got %d", got)
+	}
+}
+
+func Test_Crawl_stopsOnCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// No SPN or CDX client set: reaching either would panic, which is the point
+	// -- a cancelled crawl must not start work.
+	res, err := quietCrawler().Crawl(ctx, "https://example.com/paper.pdf")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+	if res.Success {
+		t.Error("cancelled crawl reported success")
 	}
 }

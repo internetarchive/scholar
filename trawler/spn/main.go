@@ -42,7 +42,7 @@ var saveCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		saveReq.URL = args[0]
-		res, err := client.Save(saveReq)
+		res, err := client.Save(cmd.Context(), saveReq)
 		if err != nil {
 			return err
 		}
@@ -74,7 +74,7 @@ var statusCmd = &cobra.Command{
 		var out []byte
 
 		if statusType == "system" {
-			res, err := client.StatusSystem()
+			res, err := client.StatusSystem(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -84,7 +84,7 @@ var statusCmd = &cobra.Command{
 				return fmt.Errorf("could not marshal system status: %w", err)
 			}
 		} else if statusType == "user" {
-			res, err := client.StatusUser()
+			res, err := client.StatusUser(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -96,7 +96,7 @@ var statusCmd = &cobra.Command{
 			if jobID == "" {
 				return errors.New("--job required")
 			}
-			res, err := client.StatusJob(jobID)
+			res, err := client.StatusJob(cmd.Context(), jobID)
 			if err != nil {
 				return err
 			}

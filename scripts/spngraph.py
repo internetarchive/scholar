@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["plotext>=5.2.8"]
+# dependencies = ["plotext>=5.2.8,<6"]
 # ///
 """spngraph — live one-hour terminal graph of `./spn status user`.
 
@@ -16,7 +16,7 @@ bucket is at least 5 seconds wide, growing to fit when the terminal is narrow.
 
 Run it standalone (uv fetches plotext into an ephemeral env):
 
-    ./spngraph.py                 # live, polling `./spn status user` every 5s
+    ./spngraph.py                 # live, polling the built `spn` CLI every 5s
     ./spngraph.py --once          # render a single snapshot and exit
     ./spngraph.py --demo          # render a synthetic hour and exit
     uv run spngraph.py            # equivalent, if not marked executable
@@ -28,11 +28,14 @@ import argparse
 import json
 import math
 import random
+import shlex
+import shutil
 import subprocess
 import sys
 import time
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 
 import plotext as plt
 
@@ -51,33 +54,57 @@ class Sample:
     processing: float
 
 
-def poll(cmd: str) -> tuple[float, float] | None:
-    """Run the status command and return (available, processing), or None on error."""
+def default_cmd() -> str:
+    """Build the default status command.
+
+    The `spn` CLI is built manually on demand and is gitignored, so it lives at
+    <repo>/trawler/spn/spn rather than on PATH. Resolve it relative to this
+    script so the poll works from any working directory; fall back to PATH.
+    """
+    built = Path(__file__).resolve().parent.parent / "trawler" / "spn" / "spn"
+    exe = str(built) if built.is_file() else (shutil.which("spn") or str(built))
+    return f"{shlex.quote(exe)} status user"
+
+
+def poll(cmd: str) -> tuple[tuple[float, float] | None, str]:
+    """Run the status command.
+
+    Returns ((available, processing), "") on success, or (None, reason) so the
+    caller can show *why* a poll failed rather than a bare "poll failed".
+    """
     try:
         proc = subprocess.run(
             cmd, shell=True, capture_output=True, text=True, timeout=20
         )
     except subprocess.TimeoutExpired:
-        return None
+        return None, "timed out after 20s"
     if proc.returncode != 0:
-        return None
+        lines = (proc.stderr or proc.stdout).strip().splitlines()
+        return None, lines[-1].strip() if lines else f"exit {proc.returncode}"
     try:
         data = json.loads(proc.stdout)
     except json.JSONDecodeError:
-        return None
+        return None, f"bad JSON: {proc.stdout.strip()[:60] or '(no output)'}"
+    if not isinstance(data, dict):
+        return None, "unexpected JSON: not an object"
     try:
-        return float(data["available"]), float(data["processing"])
+        return (float(data["available"]), float(data["processing"])), ""
     except (KeyError, TypeError, ValueError):
-        return None
+        # SPN reports quota/auth trouble in `message`
+        msg = str(data.get("message", "")).strip()
+        return None, msg or f"missing available/processing in {sorted(data)}"
+
+
+def terminal_cols() -> int:
+    try:
+        return plt.terminal_width()
+    except Exception:
+        return 80
 
 
 def plot_width() -> int:
     """Estimate the drawable plot width in columns (terminal minus axis gutter)."""
-    try:
-        cols = plt.terminal_width()
-    except Exception:
-        cols = 80
-    return max(20, cols - 12)
+    return max(20, terminal_cols() - 12)
 
 
 def bucket_seconds(width: int) -> int:
@@ -155,7 +182,12 @@ def render(samples, last, bsec: int, status_msg: str) -> None:
     bucket_label = f"{bsec}s buckets" if bsec < 60 else f"{bsec // 60}m buckets"
     sub = f"last hour | {bucket_label}"
     if status_msg:
-        sub += f" | {status_msg}"
+        # a failure reason matters more than the window blurb; give it the room
+        sub = f"{bucket_label} | {status_msg}"
+    # plotext silently drops an xlabel wider than the terminal, so clamp it
+    cols = terminal_cols()
+    if len(sub) > cols:
+        sub = sub[: max(1, cols - 1)] + "\u2026"
     plt.xlabel(sub)
 
     plt.clear_terminal()
@@ -181,7 +213,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--cmd",
-        default="./spn status user",
+        default=default_cmd(),
         help="shell command that prints the user-status JSON (default: %(default)s)",
     )
     ap.add_argument(
@@ -213,10 +245,12 @@ def main() -> int:
 
     try:
         while True:
-            result = poll(args.cmd)
+            result, err = poll(args.cmd)
             now = time.time()
             if result is None:
                 status_msg = time.strftime("poll failed @ %H:%M:%S", time.localtime(now))
+                if err:
+                    status_msg += f": {err}"
             else:
                 last = result
                 status_msg = ""

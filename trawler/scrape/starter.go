@@ -7,6 +7,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/temporal"
 	"github.com/spf13/viper"
@@ -21,6 +22,21 @@ import (
 )
 
 var unsafeIDChars = regexp.MustCompile(`[^A-Za-z0-9_.-]+`)
+
+// scrapeWorkerStopTimeout is how long a worker being shut down waits for the
+// crawls it already has before cancelling them.
+//
+// The SDK's default is zero, which cancels every in-flight activity the moment
+// the worker is asked to stop. For this workflow that means each restart
+// throws away the captures in progress and reports them as "context
+// canceled" -- work that was minutes into an SPN session, abandoned to save
+// seconds. Waiting is worth it. Waiting for the full StartToCloseTimeout would
+// not be: that is an hour, and nobody restarts a worker on those terms.
+// Stragglers past this window are cancelled and retried on another worker.
+//
+// The systemd unit's TimeoutStopSec has to exceed this, or systemd sends
+// SIGKILL part way through the drain and the wait buys nothing.
+const scrapeWorkerStopTimeout = 3 * time.Minute
 
 // WorkflowID derives a stable ID from the list being scraped. Stability is what
 // lets the conflict policy below enforce "one run per list at a time" and what
@@ -131,6 +147,8 @@ func StartWorker() error {
 				})),
 		},
 	}
+
+	opts.WorkerStopTimeout = scrapeWorkerStopTimeout
 
 	// The second throttle, and the one that actually protects SPN when several
 	// workers are up: the workflow's concurrency bounds crawls in flight for the

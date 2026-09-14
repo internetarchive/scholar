@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 )
@@ -559,4 +560,66 @@ func Test_Workflow_LogWriteFailureStopsRun(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.ErrorContains(t, env.GetWorkflowError(), "read-only file system")
+}
+
+// --- deferring while SPN is busy ------------------------------------------
+
+// A deferral spends an attempt, so leaving too few behind it would mean a busy
+// SPN quietly halving what a URL gets to fail at before we abandon it.
+func Test_crawlAttemptBudget_leavesRoomToActuallyCrawl(t *testing.T) {
+	require.Greater(t, crawlMaxAttempts-spnDeferAttempts, spnDeferAttempts,
+		"deferrals may not be the majority of a crawl's attempts")
+	require.GreaterOrEqual(t, crawlMaxAttempts-spnDeferAttempts, 4,
+		"a URL should keep the retry budget it had before deferrals existed")
+}
+
+func Test_spnBusyRetryDelay(t *testing.T) {
+	viper.Set("crawling.spn_slot_poll_interval", "7s")
+	t.Cleanup(func() { viper.Set("crawling.spn_slot_poll_interval", nil) })
+	require.Equal(t, 7*time.Second, spnBusyRetryDelay())
+
+	// Unset, a deferred URL still has to come back on some cadence.
+	viper.Set("crawling.spn_slot_poll_interval", nil)
+	require.Equal(t, defaultSPNBusyRetryDelay, spnBusyRetryDelay())
+}
+
+// A deferral is not a verdict: SPN never looked at the URL, so the URL must
+// come back rather than be counted as a failure. This pins the error as
+// retryable -- marking it NonRetryable would silently drop every URL that
+// arrived while SPN was busy.
+func Test_Workflow_DeferredURLIsRetriedNotAbandoned(t *testing.T) {
+	configureViper(1, 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
+		Return(ReadURLBatchOutput{URLs: refs(1, 0), NextOffset: 10, EOF: true}, nil).Once()
+
+	deferral := temporal.NewApplicationErrorWithOptions(
+		"SPN busy (no-sessions), deferring capture", errTypeSPNBusy,
+		temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
+
+	// Busy for the first few attempts, then a session frees up.
+	var attempts atomic.Int32
+	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
+		Return(func(context.Context, CrawlToWaybackInput) (CrawlToWaybackOutput, error) {
+			if attempts.Add(1) <= spnDeferAttempts {
+				return CrawlToWaybackOutput{}, deferral
+			}
+			return CrawlToWaybackOutput{Success: true}, nil
+		})
+
+	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var got ScrapeCounts
+	require.NoError(t, env.GetWorkflowResult(&got))
+	require.Equal(t, 1, got.URLs)
+	require.Equal(t, 1, got.PDFFound)
+	require.Zero(t, got.Errored, "a deferral was counted as a failed URL")
+	require.Greater(t, int(attempts.Load()), spnDeferAttempts,
+		"the deferred URL was never retried")
 }

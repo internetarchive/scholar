@@ -53,6 +53,23 @@ func (e BlockedError) Error() string {
 	return fmt.Sprintf("blocked '%s' due to pattern '%s'", e.ParsedURL, e.Pattern)
 }
 
+// SPNBusyError reports that SPN had no capture session to give us, so the
+// crawl never started.
+//
+// It is deliberately not a verdict on the URL: nothing was learned about it,
+// nothing was archived, and it should be tried again rather than recorded as
+// a failure. Only a crawler with DeferWhenSPNBusy set ever returns it.
+type SPNBusyError struct {
+	URL string
+	// Reason is which way SPN said no: "no-sessions" when the account is at
+	// its concurrent capture limit, "rate-limited" on a 429.
+	Reason string
+}
+
+func (e *SPNBusyError) Error() string {
+	return fmt.Sprintf("SPN busy (%s), deferring capture of %q", e.Reason, e.URL)
+}
+
 // TODO create a newCrawler constructor...
 
 type PDFCrawler struct {
@@ -74,6 +91,20 @@ type PDFCrawler struct {
 	// current -- a re-run over a list already crawled, say -- want a large
 	// value or a negative one here.
 	FreshnessCutoff time.Duration
+	// DeferWhenSPNBusy changes what a crawl does when SPN has no capture
+	// session free for it.
+	//
+	// Left false, the crawl waits: it polls SPN until a slot opens. That suits
+	// a caller with nowhere else to be and no way to come back later -- the
+	// daily crawl walks a release's URLs in one pass and moving on would mean
+	// dropping the release.
+	//
+	// Set true, the crawl gives up at once with an SPNBusyError and expects
+	// its caller to retry the URL later. That is what the scrape workflow
+	// wants: waiting here holds a Temporal activity slot doing nothing, and
+	// that slot is what a URL already in CDX needs in order to finish in the
+	// second or two it actually takes.
+	DeferWhenSPNBusy bool
 }
 
 type CrawlResult struct {
@@ -199,6 +230,17 @@ func (c PDFCrawler) bodyStallTimeout() time.Duration {
 		return viper.GetDuration("crawling.body_stall_timeout")
 	}
 	return defaultBodyStallTimeout
+}
+
+// spnSlotStatusTTL is how long a reading of SPN's free-session count is reused
+// before a crawl re-queries it. Short on purpose: the count moves as fast as
+// captures start and finish, and the cache is here to collapse a burst of
+// concurrent crawls into one query rather than to remember anything for long.
+func (c PDFCrawler) spnSlotStatusTTL() time.Duration {
+	if viper.IsSet("crawling.spn_slot_status_ttl") {
+		return viper.GetDuration("crawling.spn_slot_status_ttl")
+	}
+	return defaultSPNSlotStatusTTL
 }
 
 // maxDrainBytes bounds how much of an unwanted body we read before closing.
@@ -616,13 +658,29 @@ func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cd
 	attempts := 0
 	spnSlotPollInterval := viper.GetDuration("crawling.spn_slot_poll_interval")
 
+	// Ask what the account has free before spending a POST to find out. The
+	// reading is shared with every other crawl in this worker, so this is one
+	// query between all of them rather than one each, and a worker that has
+	// already been told the pool is empty defers without asking again.
+	if c.DeferWhenSPNBusy &&
+		!spnSlotCache.Claim(ctx, c.SPNClient, c.spnSlotStatusTTL(), time.Now()) {
+		c.slogInfo("SPN has no free sessions, deferring", "url", u)
+		return out, &SPNBusyError{URL: u, Reason: "no-sessions"}
+	}
+
 	for jobID == "" {
+		attempts++
 		c.beatHeart("spn-pre-save")
 		resp, err := c.SPNClient.Save(ctx, req)
 
 		var spne *spn.SPNError
 		if errors.As(err, &spne) {
 			if spne.StatusCode == 429 {
+				spnSlotCache.MarkBusy(time.Now())
+				if c.DeferWhenSPNBusy {
+					c.slogInfo("SPN 429 on /save, deferring", "url", u)
+					return out, &SPNBusyError{URL: u, Reason: "rate-limited"}
+				}
 				interval := 60 * time.Second
 				c.slogInfo("SPN 429 on /save, sleeping", "interval", interval)
 				if err := sleepCtx(ctx, interval); err != nil {
@@ -641,9 +699,16 @@ func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cd
 		}
 
 		if strings.Contains(resp.Message, "reached the limit of active sessions") {
+			// Tell the rest of the worker what we just learned, so the crawls
+			// behind us defer instead of each spending a POST on the same
+			// answer. This happens whichever mode we are in: the observation
+			// is worth sharing even when this crawl is going to wait it out.
+			spnSlotCache.MarkBusy(time.Now())
+			if c.DeferWhenSPNBusy {
+				c.slogInfo("SPN slots full, deferring", "url", u, "attempt", attempts)
+				return out, &SPNBusyError{URL: u, Reason: "no-sessions"}
+			}
 			c.slogInfo("SPN slots full, polling", "attempt", attempts, "poll", spnSlotPollInterval)
-			// TODO should we bail after N attempts? Until then this loop is
-			// unbounded, and cancellation is the only way out of it.
 			if err := sleepCtx(ctx, spnSlotPollInterval); err != nil {
 				return out, err
 			}

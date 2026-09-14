@@ -13,8 +13,10 @@ import (
 	temporalsentry "github.com/uphold/temporal-sentry-interceptor"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
+	sdktemporal "go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -117,7 +119,16 @@ func StartWorker() error {
 
 	opts := worker.Options{
 		Interceptors: []interceptor.WorkerInterceptor{
-			temporalsentry.New(),
+			// A deferral is not an incident. It means SPN had no capture
+			// session free, so the URL was handed back untouched for Temporal
+			// to redeliver -- ordinary operation at crawl concurrency, and
+			// frequent enough that reporting each one would bury the failures
+			// that do want a human.
+			temporalsentry.New(temporalsentry.WithFilterActivityError(
+				func(err error, _ []any, _ *activity.Info) bool {
+					var appErr *sdktemporal.ApplicationError
+					return errors.As(err, &appErr) && appErr.Type() == errTypeSPNBusy
+				})),
 		},
 	}
 

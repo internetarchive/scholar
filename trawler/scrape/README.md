@@ -45,10 +45,38 @@ Three, in increasing order of bluntness:
 3. Stopping the workers.
 
 Worth knowing: SPN allows a limited number of concurrent sessions per account,
-and the daily crawl draws on the same pool. `PDFCrawler` handles exhaustion by
-polling for a slot, so over-large concurrency does not fail -- it just parks
-activities in a polling loop, competing with the daily crawl for slots. Prefer
-raising concurrency gradually.
+and the daily crawl draws on the same pool. Over-large concurrency does not
+fail, it just means more URLs waiting on SPN -- but see below for where that
+waiting happens. Prefer raising concurrency gradually.
+
+## When SPN has no session for us
+
+A crawl that needs a fresh capture cannot start until SPN has a session free.
+The scrape workflow does not wait for one in place: waiting would hold a worker
+activity slot while doing nothing, and that slot is what a URL already in the
+Wayback Machine needs in order to finish in the second or two it actually
+takes. Instead the crawl hands the URL straight back, and Temporal redelivers
+it after `crawling.spn_slot_poll_interval`. The waiting still happens, it just
+stops costing a slot.
+
+Two things keep that from turning into a stampede on SPN:
+
+- Before spending a POST to find out, a crawl checks `/status/user` for the
+  account's free-session count. The reading is cached for
+  `crawling.spn_slot_status_ttl` and shared by every crawl in the worker, and
+  it is spent down as crawls claim slots, so one query covers a burst. A crawl
+  that SPN does turn away records that, and the crawls behind it defer without
+  asking.
+- Only the first few attempts defer (`spnDeferAttempts` in `scrape.go`). The
+  last ones fall back to waiting in place, so an SPN outage that outlasts the
+  deferrals cannot abandon URLs wholesale and trip `max_consecutive_errors`.
+
+A deferred URL is not a failure and gets no outcome-log row: SPN never looked
+at it, so there is nothing to record. Deferrals are also filtered out of Sentry
+reporting, since at crawl concurrency they are routine.
+
+The daily crawl is unchanged -- it still waits in place, because it walks a
+release's URLs in one pass and has no way to come back to one later.
 
 ## Blocking a host mid-run
 

@@ -45,6 +45,48 @@ const (
 	defaultMaxConsecutiveErrors = 50
 )
 
+const (
+	// spnDeferAttempts is how many of a crawl's attempts hand the URL straight
+	// back when SPN has no capture session free, instead of waiting in place
+	// for one.
+	//
+	// Handing it back is the point: a crawl parked in SPN's slot-poll loop
+	// holds a worker activity slot while doing nothing, and that slot is what
+	// a URL already in CDX needs to finish in the second or two it takes. So
+	// the early attempts defer, and the wait happens in Temporal's retry
+	// backoff, where it costs no slot.
+	//
+	// The later attempts do not defer. A scrape running through an SPN outage
+	// longer than the deferrals cover would otherwise abandon URLs wholesale
+	// and trip max_consecutive_errors, so the tail falls back to waiting in
+	// place, which is what the crawler did before. Keep this below the crawl
+	// RetryPolicy's MaximumAttempts, or a busy SPN consumes the whole budget
+	// and no attempt is left to actually crawl with.
+	spnDeferAttempts = 3
+	// crawlMaxAttempts is the crawl activity's whole attempt budget. The first
+	// spnDeferAttempts of it may go on deferrals, so the URL's real retry
+	// budget is the difference -- keep that at or above what a crawl had
+	// before deferrals existed, which was 4.
+	crawlMaxAttempts = spnDeferAttempts + 4
+	// errTypeSPNBusy is what a deferral is called in workflow history, and
+	// what the worker's Sentry filter looks for.
+	errTypeSPNBusy = "spn-busy"
+	// defaultSPNBusyRetryDelay is used when crawling.spn_slot_poll_interval is
+	// unset.
+	defaultSPNBusyRetryDelay = 15 * time.Second
+)
+
+// spnBusyRetryDelay is how long Temporal holds a deferred URL before handing
+// it to a worker again. It tracks the slot poll interval because that is the
+// cadence the crawler used when it did this waiting itself; all that changed
+// is where the waiting happens.
+func spnBusyRetryDelay() time.Duration {
+	if d := viper.GetDuration("crawling.spn_slot_poll_interval"); d > 0 {
+		return d
+	}
+	return defaultSPNBusyRetryDelay
+}
+
 // ScrapeCounts is the running tally for a scrape. Crawl outcomes that are
 // simply "no PDF at the other end" are normal and expected, so they are counted
 // rather than treated as failures.
@@ -214,7 +256,10 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 			InitialInterval:    30 * time.Second,
 			BackoffCoefficient: 1.5,
 			MaximumInterval:    5 * time.Minute,
-			MaximumAttempts:    4,
+			// The first spnDeferAttempts of these can be spent handing the URL
+			// back while SPN has no session for it, which is not a failure of
+			// the URL and should not eat its retry budget.
+			MaximumAttempts: crawlMaxAttempts,
 		},
 	})
 
@@ -579,6 +624,11 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 		l.Warn("using url blocklist as loaded at startup", "err", err.Error())
 	}
 
+	// Early attempts hand a URL back rather than wait for an SPN session; the
+	// last ones wait, so an outage that outlasts the deferrals cannot abandon
+	// the URL. See spnDeferAttempts.
+	attempt := activity.GetInfo(ctx).Attempt
+
 	crawler := crawling.PDFCrawler{
 		SPNClient:       spnClient,
 		CDXClient:       cdxClient,
@@ -591,7 +641,8 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 		Heartbeater: func(msg string) {
 			activity.RecordHeartbeat(ctx, msg)
 		},
-		FreshnessCutoff: 21915 * time.Hour,
+		FreshnessCutoff:  21915 * time.Hour,
+		DeferWhenSPNBusy: attempt <= spnDeferAttempts,
 	}
 	if crawler.MaxHops <= 0 {
 		crawler.MaxHops = 8
@@ -605,6 +656,26 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 	if res.Content != nil {
 		io.Copy(io.Discard, res.Content)
 		res.Content.Close()
+	}
+
+	var busy *crawling.SPNBusyError
+	if errors.As(err, &busy) {
+		// Not a verdict on this URL -- SPN never looked at it -- so no outcome
+		// row is written and the counts are left alone. Returning lets
+		// Temporal do the waiting and gives this worker's activity slot to a
+		// URL that can make progress now.
+		l.Info("deferring url, spn is busy",
+			"url", in.URL, "reason", busy.Reason, "attempt", attempt)
+		return out, temporal.NewApplicationErrorWithOptions(
+			busy.Error(), errTypeSPNBusy,
+			temporal.ApplicationErrorOptions{
+				// Come back at roughly the cadence the in-crawl poll loop used.
+				// Servers older than 1.24.2 ignore this and fall back to the
+				// RetryPolicy's interval, which is slower but still correct.
+				NextRetryDelay: spnBusyRetryDelay(),
+				// SPN being busy is ordinary operation, not an incident.
+				Category: temporal.ApplicationErrorCategoryBenign,
+			})
 	}
 
 	if err != nil {

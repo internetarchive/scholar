@@ -104,8 +104,16 @@ cdx_freshness_cutoff = "672h" # four weeks
 # within cdx_freshness_cutoff. Raising it gives more chances to reuse an
 # existing capture when the newest rows are 404s or unreplayable records.
 cdx_rows_per_lookup = 10
+# spn_slot_poll_interval is how long to wait between attempts when SPN has no
+# capture session free. The scrape workflow also reuses it as the delay before
+# Temporal redelivers a URL it deferred for the same reason.
 spn_slot_poll_interval = "12s"
 spn_job_poll_interval = "20s"
+# spn_slot_status_ttl is how long a reading of SPN's free-session count
+# (/status/user) is reused before a crawl re-queries it. The reading is shared
+# by every crawl in a worker, so this collapses a burst of them into one query;
+# keep it short, since the count moves as fast as captures start and finish.
+spn_slot_status_ttl = "5s"
 # body_stall_timeout is how long a Wayback replay body may make no progress at
 # all before the crawl gives up on it. The transport's timeouts all fire before
 # the first byte arrives; this covers the read that follows, which is otherwise

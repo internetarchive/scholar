@@ -6,12 +6,11 @@
 """spngraph — live one-hour terminal graph of `./spn status user`.
 
 Polls the SPN user-status endpoint (via the `spn` CLI) on an interval and draws
-two colored lines over a rolling one-hour window:
+one line over a rolling one-hour window:
 
-  * available  — capture slots currently free
-  * processing — captures in flight
+  * processing — captures in flight, i.e. capture slots in use
 
-The y-axis is fixed to 0..60. The x-axis covers the last 60 minutes; each
+The y-axis is fixed to 0..100. The x-axis covers the last 60 minutes; each
 bucket is at least 5 seconds wide, growing to fit when the terminal is narrow.
 
 Run it standalone (uv fetches plotext into an ephemeral env):
@@ -41,16 +40,15 @@ import plotext as plt
 
 WINDOW_SECONDS = 60 * 60  # one hour
 MIN_BUCKET_SECONDS = 5  # finest x resolution
-Y_MAX = 60
+Y_MAX = 100  # total SPN capture slots
+Y_TICK_STEP = 20
 
-COLOR_AVAILABLE = 46  # 256-color bright green
 COLOR_PROCESSING = 208  # 256-color orange
 
 
 @dataclass
 class Sample:
     ts: float
-    available: float
     processing: float
 
 
@@ -122,13 +120,12 @@ def bucket_seconds(width: int) -> int:
 def bucketize(samples, now: float, bsec: int):
     """Aggregate samples into fixed time buckets ending at `now`.
 
-    Returns (xs, avail, proc, window_start, n_buckets) where xs are the bucket
-    indices that actually contain data and the y-lists are per-bucket means.
+    Returns (xs, proc, window_start, n_buckets) where xs are the bucket indices
+    that actually contain data and proc holds per-bucket means.
     """
     n_buckets = math.ceil(WINDOW_SECONDS / bsec)
     window_start = now - n_buckets * bsec
 
-    sums_a = [0.0] * n_buckets
     sums_p = [0.0] * n_buckets
     counts = [0] * n_buckets
 
@@ -137,29 +134,27 @@ def bucketize(samples, now: float, bsec: int):
             continue
         idx = int((s.ts - window_start) // bsec)
         if 0 <= idx < n_buckets:
-            sums_a[idx] += s.available
             sums_p[idx] += s.processing
             counts[idx] += 1
 
-    xs, avail, proc = [], [], []
+    xs, proc = [], []
     for i in range(n_buckets):
         if counts[i] == 0:
             continue
         xs.append(i)
-        avail.append(sums_a[i] / counts[i])
         proc.append(sums_p[i] / counts[i])
 
-    return xs, avail, proc, window_start, n_buckets
+    return xs, proc, window_start, n_buckets
 
 
 def render(samples, last, bsec: int, status_msg: str) -> None:
     now = time.time()
-    xs, avail, proc, window_start, n_buckets = bucketize(samples, now, bsec)
+    xs, proc, window_start, n_buckets = bucketize(samples, now, bsec)
 
     plt.clear_figure()
     plt.theme("dark")
     plt.ylim(0, Y_MAX)
-    plt.yticks(list(range(0, Y_MAX + 1, 10)))
+    plt.yticks(list(range(0, Y_MAX + 1, Y_TICK_STEP)))
     plt.xlim(0, max(1, n_buckets - 1))
 
     # x ticks: evenly spaced clock-time labels across the hour
@@ -173,7 +168,6 @@ def render(samples, last, bsec: int, status_msg: str) -> None:
     plt.xticks(tick_pos, tick_lab)
 
     if xs:
-        plt.plot(xs, avail, color=COLOR_AVAILABLE, marker="braille", label="available")
         plt.plot(xs, proc, color=COLOR_PROCESSING, marker="braille", label="processing")
 
     a = f"{last[0]:.0f}" if last else "--"
@@ -200,10 +194,9 @@ def synthetic_window(now: float) -> "deque[Sample]":
     n = WINDOW_SECONDS // MIN_BUCKET_SECONDS
     for i in range(n):
         ts = now - WINDOW_SECONDS + i * MIN_BUCKET_SECONDS
-        proc = 30 + 25 * math.sin(i / 40) + random.uniform(-4, 4)
-        proc = max(0, min(Y_MAX, proc))
-        avail = max(0, min(Y_MAX, Y_MAX - proc + random.uniform(-3, 3)))
-        s.append(Sample(ts, avail, proc))
+        # swing across most of the slot range so --demo exercises the axis
+        proc = Y_MAX * (0.5 + 0.42 * math.sin(i / 40)) + random.uniform(-4, 4)
+        s.append(Sample(ts, max(0, min(Y_MAX, proc))))
     return s
 
 
@@ -235,7 +228,8 @@ def main() -> int:
     if args.demo:
         now = time.time()
         samples = synthetic_window(now)
-        last = (samples[-1].available, samples[-1].processing)
+        proc = samples[-1].processing
+        last = (Y_MAX - proc, proc)
         render(samples, last, bucket_seconds(plot_width()), "demo")
         return 0
 
@@ -254,7 +248,7 @@ def main() -> int:
             else:
                 last = result
                 status_msg = ""
-                samples.append(Sample(now, result[0], result[1]))
+                samples.append(Sample(now, result[1]))
 
             cutoff = now - WINDOW_SECONDS
             while samples and samples[0].ts < cutoff:

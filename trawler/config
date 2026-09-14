@@ -104,8 +104,8 @@ cdx_freshness_cutoff = "672h" # four weeks
 # within cdx_freshness_cutoff. Raising it gives more chances to reuse an
 # existing capture when the newest rows are 404s or unreplayable records.
 cdx_rows_per_lookup = 10
-spn_slot_poll_interval = "6s"
-spn_job_poll_interval = "30s"
+spn_slot_poll_interval = "12s"
+spn_job_poll_interval = "20s"
 # body_stall_timeout is how long a Wayback replay body may make no progress at
 # all before the crawl gives up on it. The transport's timeouts all fire before
 # the first byte arrives; this covers the read that follows, which is otherwise

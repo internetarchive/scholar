@@ -46,6 +46,15 @@ type Config struct {
 	// wants in a test. Left nil -- as every caller in trawler leaves it -- the
 	// client draws on the process-wide connection pool.
 	HTTPClient *http.Client
+	// OnRetry, when set, is called before each backoff between attempts.
+	//
+	// It exists for callers that run under a liveness deadline. A query that
+	// retries can take minutes -- Retries attempts, each bounded only by the
+	// transport's response header timeout, plus the backoffs -- and says
+	// nothing the whole time. Inside a Temporal activity that is long enough
+	// to blow the heartbeat timeout, after which the activity's context is
+	// cancelled and the crawl carries on doing work nobody is waiting for.
+	OnRetry func(attempt int)
 }
 
 type QueryParams struct {
@@ -170,25 +179,43 @@ func (c Client) Query(ctx context.Context, params QueryParams) ([]CDXRow, error)
 	}
 	var resp *http.Response
 
-	backoff := c.cfg.Backoff
-
 	attempts := 0
 	for {
-		if attempts == c.cfg.Retries {
-			break
-		}
-
 		attempts++
 
 		resp, err = c.client.Do(req)
 
-		if err == nil || (resp != nil && resp.StatusCode != 504) {
+		// An answer that is not the gateway timeout CDX hands out under load
+		// is the answer, good or bad. A transport error or a 504 is worth
+		// another go.
+		//
+		// The condition used to be `err == nil || ...`, which broke out of the
+		// loop on any response at all -- so the 504 retry this backoff exists
+		// for never actually ran, and a 504 went straight back to the caller
+		// on the first try.
+		if err == nil && resp.StatusCode != 504 {
 			break
+		}
+		// Out of attempts. Leave via the checks below rather than napping
+		// first: the old loop tested the budget at the top, so an exhausted
+		// query slept one last backoff -- up to Retries*Backoff -- purely to
+		// come back round and give up.
+		if attempts >= c.cfg.Retries {
+			break
+		}
+
+		// The 504 we are discarding still has a body, and dropping it on the
+		// floor keeps its connection and read goroutine alive.
+		httpclient.DrainAndClose(resp)
+		resp = nil
+
+		if c.cfg.OnRetry != nil {
+			c.cfg.OnRetry(attempts)
 		}
 
 		// Backing off for up to half a minute is worth interrupting: a crawl
 		// whose activity has been cancelled should not finish its nap first.
-		timer := time.NewTimer(backoff * time.Duration(attempts))
+		timer := time.NewTimer(c.cfg.Backoff * time.Duration(attempts))
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -200,6 +227,7 @@ func (c Client) Query(ctx context.Context, params QueryParams) ([]CDXRow, error)
 	if err != nil {
 		return out, fmt.Errorf("cdx api call failed after %d attempts: %w", attempts, err)
 	}
+	defer resp.Body.Close()
 
 	bs, err := io.ReadAll(resp.Body)
 	if err != nil {

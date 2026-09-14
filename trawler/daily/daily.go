@@ -370,7 +370,11 @@ func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Co
 		UserAgent: viper.GetString("cdx.user_agent"),
 		Retries:   viper.GetInt("cdx.retries"),
 		Backoff:   viper.GetDuration("cdx.backoff"),
-		Debug:     true,
+		// A retrying CDX query is silent for long enough to outlast this
+		// activity's heartbeat timeout; without this the server times the
+		// activity out and cancels its context mid-crawl.
+		OnRetry: func(int) { activity.RecordHeartbeat(ctx, "cdx-retry") },
+		Debug:   true,
 	})
 
 	var res crawling.CrawlResult

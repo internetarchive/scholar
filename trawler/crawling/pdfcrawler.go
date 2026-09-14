@@ -248,27 +248,11 @@ func (c PDFCrawler) spnSlotStatusTTL() time.Duration {
 	return defaultSPNSlotStatusTTL
 }
 
-// maxDrainBytes bounds how much of an unwanted body we read before closing.
-// Redirect and error bodies are small, so this is generous; the cap is what
-// keeps a surprise multi-megabyte body from being downloaded just to be
-// discarded.
-const maxDrainBytes = 64 << 10
-
-// drainAndClose finishes with a response whose body we are not going to use. It
-// reads a bounded amount so the transport can put the connection back in its
-// pool, then closes it.
-//
-// This is not housekeeping: an undrained, unclosed body keeps both its
-// connection and the transport's read goroutine alive until the far end gives
-// up on us. At one leak per redirect hop and crawls running in the hundreds,
-// that is a file descriptor exhaustion bug, and it shows up as unrelated crawl
-// failures long after the crawls that caused it.
+// drainAndClose finishes with a response whose body we are not going to use.
+// The CDX client needs the same thing, so the implementation lives in
+// httpclient; see httpclient.DrainAndClose for why it matters.
 func drainAndClose(resp *http.Response) {
-	if resp == nil || resp.Body == nil {
-		return
-	}
-	io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainBytes))
-	resp.Body.Close()
+	httpclient.DrainAndClose(resp)
 }
 
 func (c PDFCrawler) toWaybackURL(URL string, ts time.Time) string {
@@ -310,9 +294,16 @@ func (c PDFCrawler) fetchWayback(ctx context.Context, client *http.Client, URL s
 	for {
 		attempts++
 		resp, wbErr = client.Do(req)
-		if wbErr == nil || attempts == retries {
+		// >= rather than ==: an unset wayback.retries would otherwise never
+		// match and leave this looping until the context gives out.
+		if wbErr == nil || attempts >= retries {
 			break
 		}
+		// Say we are still here before napping. Like the CDX query, a replay
+		// fetch that retries says nothing for long enough to outlast an
+		// activity's heartbeat timeout, and being killed for silence mid-retry
+		// is how a crawl ends up carrying on with a cancelled context.
+		c.beatHeart("wayback-retry")
 		if err := sleepCtx(ctx, backoff*time.Duration(attempts)); err != nil {
 			cancel()
 			return nil, err
@@ -443,6 +434,14 @@ func (c PDFCrawler) Crawl(ctx context.Context, startURL string) (CrawlResult, er
 			Limit: -c.cdxRowsPerLookup(),
 		})
 		if err != nil {
+			// A cancelled or expired context is not CDX being unavailable, it
+			// is nobody waiting for the answer any more. Falling through would
+			// spend an SPN call on a dead context and then report the failure
+			// against SPN -- which is where this used to surface, and is not
+			// where it happened.
+			if ctx.Err() != nil {
+				return *out, err
+			}
 			// Not fatal: an unavailable CDX means we don't know what's already
 			// archived, and SPN is how we find out.
 			c.slogInfo("cdx lookup failed, falling through to SPN", "url", u, "err", err.Error())

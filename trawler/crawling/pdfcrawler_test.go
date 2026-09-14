@@ -14,6 +14,7 @@ import (
 	"time"
 
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
+	"git.archive.org/webgroup/scholar/trawler/httpclient"
 	spn "git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/spf13/viper"
 )
@@ -63,7 +64,7 @@ func Test_drainAndClose(t *testing.T) {
 
 	// A body big enough to matter is closed without being read to the end:
 	// draining is for connection reuse, not for downloading what we discarded.
-	big := &countingBody{r: strings.NewReader(strings.Repeat("x", maxDrainBytes*4))}
+	big := &countingBody{r: strings.NewReader(strings.Repeat("x", httpclient.MaxDrainBytes*4))}
 	drainAndClose(&http.Response{Body: big})
 	if big.closes != 1 {
 		t.Errorf("expected large body closed once, got %d closes", big.closes)
@@ -73,7 +74,7 @@ func Test_drainAndClose(t *testing.T) {
 		t.Fatalf("reading remainder: %s", err)
 	}
 	if len(left) == 0 {
-		t.Error("drained the whole of a large body; maxDrainBytes was not honoured")
+		t.Error("drained the whole of a large body; MaxDrainBytes was not honoured")
 	}
 
 	// Nothing to close is not a crash: Crawl reaches this with a nil response

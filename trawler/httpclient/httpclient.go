@@ -128,6 +128,31 @@ func (g *stallGuard) Close() error {
 	return g.body.Close()
 }
 
+// MaxDrainBytes bounds how much of an unwanted body DrainAndClose reads before
+// closing it. It is exported because it is part of that function's contract:
+// a body larger than this is closed part-read rather than downloaded.
+// Redirect and error bodies are small, so this is generous; the cap is what
+// keeps a surprise multi-megabyte body from being downloaded just to be
+// discarded.
+const MaxDrainBytes = 64 << 10
+
+// DrainAndClose finishes with a response whose body is not going to be used.
+// It reads a bounded amount so the transport can put the connection back in
+// its pool, then closes it.
+//
+// This is not housekeeping: an undrained, unclosed body keeps both its
+// connection and the transport's read goroutine alive until the far end gives
+// up on us. At one leak per retry or redirect hop and crawls running in the
+// hundreds, that is a file descriptor exhaustion bug, and it shows up as
+// unrelated failures long after the requests that caused it.
+func DrainAndClose(resp *http.Response) {
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	io.Copy(io.Discard, io.LimitReader(resp.Body, MaxDrainBytes))
+	resp.Body.Close()
+}
+
 // Transport is the connection pool shared by every client in this package.
 //
 // It deliberately leaves MaxConnsPerHost unset. That setting looks like a

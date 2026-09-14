@@ -614,6 +614,10 @@ func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlT
 		UserAgent: viper.GetString("cdx.user_agent"),
 		Retries:   viper.GetInt("cdx.retries"),
 		Backoff:   viper.GetDuration("cdx.backoff"),
+		// A retrying CDX query is silent for long enough to outlast this
+		// activity's heartbeat timeout; without this the server times the
+		// activity out and cancels its context mid-crawl.
+		OnRetry: func(int) { activity.RecordHeartbeat(ctx, "cdx-retry") },
 	})
 
 	// Read fresh per execution rather than from the startup config, so a

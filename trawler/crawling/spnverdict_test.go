@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	spn "git.archive.org/webgroup/scholar/trawler/spn/spnclient"
@@ -128,5 +129,48 @@ func Test_Crawl_cdxNoRowsBecomesAVerdict(t *testing.T) {
 	}
 	if res.FailReason != "cdx-no-rows" {
 		t.Errorf("expected fail reason cdx-no-rows, got %q", res.FailReason)
+	}
+}
+
+// The log line that started this: a crawl whose activity context had already
+// been cancelled reported `Post ".../save": context canceled`, blaming SPN for
+// a cancellation that the CDX lookup one step earlier had already seen and
+// discarded as "CDX is unavailable, fall through to SPN".
+func Test_Crawl_cancelledCDXLookupDoesNotReachSPN(t *testing.T) {
+	t.Cleanup(spnSlotCache.reset)
+	spnSlotCache.reset()
+
+	// A CDX server slow enough that cancellation lands while the query is in
+	// flight, rather than at the hop check that precedes it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(srv.Close)
+
+	f := &fakeSPN{}
+	c := quietCrawler()
+	c.SPNClient = f
+	c.CDXClient = cdx.NewClient(cdx.Config{
+		Auth:       "test",
+		Endpoint:   srv.URL,
+		HTTPClient: srv.Client(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+
+	_, err := c.Crawl(ctx, "https://example.com/paper.pdf")
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected the cancellation to be reported, got %v", err)
+	}
+	// The whole point: no SPN call on a context nobody is waiting on, and no
+	// error that names SPN for something that happened at CDX.
+	if got := f.saves.Load(); got != 0 {
+		t.Errorf("crawl went on to call SPN %d time(s) with a cancelled context", got)
 	}
 }

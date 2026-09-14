@@ -11,6 +11,13 @@ import (
 // defaultSPNSlotStatusTTL is used when crawling.spn_slot_status_ttl is unset.
 const defaultSPNSlotStatusTTL = 5 * time.Second
 
+// spnSlotStatusTimeout bounds the status query itself. The gate is advisory --
+// a crawl that cannot get an answer proceeds and finds out from /save -- so
+// there is no reason to let it inherit the transport's 120s patience and sit
+// in front of every capture. Short enough that failing is cheaper than
+// waiting.
+const spnSlotStatusTimeout = 10 * time.Second
+
 // spnSlots caches what SPN's /status/user endpoint says about how many capture
 // sessions the account has free.
 //
@@ -52,7 +59,9 @@ var spnSlotCache = &spnSlots{}
 // credentials, here and in the daily workflow.
 func (s *spnSlots) Claim(ctx context.Context, c spn.Client, ttl time.Duration, now time.Time) bool {
 	if s.beginRefresh(now, ttl) {
-		st, err := c.StatusUser(ctx)
+		qctx, cancel := context.WithTimeout(ctx, spnSlotStatusTimeout)
+		st, err := c.StatusUser(qctx)
+		cancel()
 		s.endRefresh(st.Available, now, err == nil)
 	}
 	return s.take(now, ttl)

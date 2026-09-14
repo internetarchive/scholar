@@ -33,10 +33,16 @@ type fakeSPN struct {
 	block chan struct{}
 }
 
-func (f *fakeSPN) StatusUser(context.Context) (spn.UserStatus, error) {
+func (f *fakeSPN) StatusUser(ctx context.Context) (spn.UserStatus, error) {
 	f.statusCalls.Add(1)
 	if f.block != nil {
-		<-f.block
+		// Honour the context the way the real client does, so a test can
+		// assert that the gate bounds a status query that never answers.
+		select {
+		case <-f.block:
+		case <-ctx.Done():
+			return spn.UserStatus{}, ctx.Err()
+		}
 	}
 	if f.statusErr != nil {
 		return spn.UserStatus{}, f.statusErr
@@ -289,5 +295,51 @@ func Test_spnToCdx_stillPollsWhenDeferralIsOff(t *testing.T) {
 	// And it never consulted the gate, so the daily crawl pays nothing for it.
 	if got := f.statusCalls.Load(); got != 0 {
 		t.Errorf("expected no status query with deferral off, got %d", got)
+	}
+}
+
+// The gate is advisory, so it must never become the thing that holds up a
+// crawl. A status endpoint that hangs is bounded and the crawl goes on.
+func Test_spnSlots_boundsASlowStatusQuery(t *testing.T) {
+	s := &spnSlots{}
+	f := &fakeSPN{block: make(chan struct{})}
+	t.Cleanup(func() { close(f.block) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	// The caller's own deadline cuts the query short here, standing in for
+	// spnSlotStatusTimeout doing the same on a longer-lived context.
+	start := time.Now()
+	if !s.Claim(ctx, f, testTTL, time.Now()) {
+		t.Error("a crawl was refused because the status query did not answer")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("the gate blocked the crawl for %s", elapsed)
+	}
+}
+
+// A crawl whose context is already dead must not open an SPN session; the
+// POST would fail with "context canceled" and read as an SPN fault.
+func Test_spnToCdx_doesNotStartOnADeadContext(t *testing.T) {
+	t.Cleanup(spnSlotCache.reset)
+	spnSlotCache.reset()
+
+	f := &fakeSPN{}
+	c := quietCrawler()
+	c.SPNClient = f
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := c.spnToCdx(ctx, "https://example.com/paper.pdf", false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if got := f.saves.Load(); got != 0 {
+		t.Errorf("called SPN %d time(s) on a cancelled context", got)
+	}
+	if got := f.statusCalls.Load(); got != 0 {
+		t.Errorf("queried SPN status %d time(s) on a cancelled context", got)
 	}
 }

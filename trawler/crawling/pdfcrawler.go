@@ -652,6 +652,13 @@ func (c PDFCrawler) Crawl(ctx context.Context, startURL string) (CrawlResult, er
 func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cdx.CDXRow, error) {
 	var out *cdx.CDXRow
 
+	// Nobody is waiting, so do not start a capture. Without this the first
+	// thing to notice would be the POST to /save failing with "context
+	// canceled", which reads as an SPN fault and is not one.
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+
 	req := spn.SaveRequest{
 		URL:                u,
 		CaptureAll:         true,
@@ -675,6 +682,7 @@ func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cd
 	// reading is shared with every other crawl in this worker, so this is one
 	// query between all of them rather than one each, and a worker that has
 	// already been told the pool is empty defers without asking again.
+	c.beatHeart("spn-slot-check")
 	if c.DeferWhenSPNBusy &&
 		!spnSlotCache.Claim(ctx, c.SPNClient, c.spnSlotStatusTTL(), time.Now()) {
 		c.slogInfo("SPN has no free sessions, deferring", "url", u)

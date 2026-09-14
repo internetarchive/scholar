@@ -17,6 +17,14 @@ import (
 // It is written on the worker host rather than shipped anywhere, so with
 // several workers on the queue each holds the rows for the URLs it happened to
 // crawl. Concatenating the files gives the whole run.
+//
+// Rows are appended as a batch's watermark advances, so within one batch they
+// come out in list order even though the crawls finish out of order. A seed URL
+// can appear more than once: a batch that dies between checkpoints is resumed
+// from the last checkpoint that reached Temporal, and the URLs it had already
+// crawled past that point are crawled -- and logged -- again. Analysis should
+// treat a repeated seed_url as one URL rather than assume the file is unique on
+// it.
 
 // Status values. These are the whole vocabulary of the log on purpose: the
 // question it answers is "did this URL end up as a PDF in Wayback, and where".

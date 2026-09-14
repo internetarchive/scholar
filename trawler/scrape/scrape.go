@@ -9,24 +9,23 @@
 //
 // PDFCrawler.Crawl is still the crawler, so a URL that does resolve to a PDF is
 // reported as such; we just do not do anything with the bytes afterwards.
+//
+// The work is organised in batches rather than one URL per activity. A run
+// plans the list into byte ranges (plan.go) and hands each range to one
+// activity that crawls it with a pool of its own (crawl.go). Temporal therefore
+// sees a few events per few hundred URLs instead of a few per URL, which is
+// what keeps a scrape of millions of URLs from costing more in workflow history
+// than it does in crawling. What Temporal still guarantees is the part that
+// matters: a batch whose worker dies comes back, and its heartbeat checkpoint
+// says where to resume.
 package scrape
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
-	"strings"
 	"time"
 
-	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
-	"git.archive.org/webgroup/scholar/trawler/crawling"
-	"git.archive.org/webgroup/scholar/trawler/s3"
-	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
 	"github.com/spf13/viper"
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -39,59 +38,20 @@ const SetConcurrencySignal = "set-concurrency"
 const (
 	defaultConcurrency          = 4
 	defaultMaxConcurrency       = 64
-	defaultURLsPerCAN           = 2000
-	defaultBatchSize            = 1000
+	defaultURLsPerCAN           = 50000
+	defaultBatchSize            = 200
+	defaultBatchesInFlight      = 4
+	defaultBatchesPerPlan       = 64
 	defaultChunkSize            = 102400
 	defaultMaxConsecutiveErrors = 50
+	defaultURLAttempts          = 4
 )
-
-const (
-	// spnDeferAttempts is how many of a crawl's attempts hand the URL straight
-	// back when SPN has no capture session free, instead of waiting in place
-	// for one.
-	//
-	// Handing it back is the point: a crawl parked in SPN's slot-poll loop
-	// holds a worker activity slot while doing nothing, and that slot is what
-	// a URL already in CDX needs to finish in the second or two it takes. So
-	// the early attempts defer, and the wait happens in Temporal's retry
-	// backoff, where it costs no slot.
-	//
-	// The later attempts do not defer. A scrape running through an SPN outage
-	// longer than the deferrals cover would otherwise abandon URLs wholesale
-	// and trip max_consecutive_errors, so the tail falls back to waiting in
-	// place, which is what the crawler did before. Keep this below the crawl
-	// RetryPolicy's MaximumAttempts, or a busy SPN consumes the whole budget
-	// and no attempt is left to actually crawl with.
-	spnDeferAttempts = 3
-	// crawlMaxAttempts is the crawl activity's whole attempt budget. The first
-	// spnDeferAttempts of it may go on deferrals, so the URL's real retry
-	// budget is the difference -- keep that at or above what a crawl had
-	// before deferrals existed, which was 4.
-	crawlMaxAttempts = spnDeferAttempts + 4
-	// errTypeSPNBusy is what a deferral is called in workflow history, and
-	// what the worker's Sentry filter looks for.
-	errTypeSPNBusy = "spn-busy"
-	// defaultSPNBusyRetryDelay is used when crawling.spn_slot_poll_interval is
-	// unset.
-	defaultSPNBusyRetryDelay = 15 * time.Second
-)
-
-// spnBusyRetryDelay is how long Temporal holds a deferred URL before handing
-// it to a worker again. It tracks the slot poll interval because that is the
-// cadence the crawler used when it did this waiting itself; all that changed
-// is where the waiting happens.
-func spnBusyRetryDelay() time.Duration {
-	if d := viper.GetDuration("crawling.spn_slot_poll_interval"); d > 0 {
-		return d
-	}
-	return defaultSPNBusyRetryDelay
-}
 
 // ScrapeCounts is the running tally for a scrape. Crawl outcomes that are
 // simply "no PDF at the other end" are normal and expected, so they are counted
 // rather than treated as failures.
 type ScrapeCounts struct {
-	// URLs is how many URLs we dispatched a crawl for.
+	// URLs is how many URLs reached a verdict.
 	URLs int
 	// PDFFound is how many crawls ended on a PDF in Wayback.
 	PDFFound int
@@ -108,8 +68,11 @@ type ScrapeCounts struct {
 	FailReasons map[string]int
 }
 
-// Add merges two tallies. It is used to fold each activity result into the
+// Add merges two tallies. It is used to fold each batch result into the
 // workflow's running total, including across ContinueAsNew.
+//
+// It never mutates either operand, which is what lets a batch snapshot its
+// running counts into a heartbeat and keep counting.
 func (c ScrapeCounts) Add(o ScrapeCounts) ScrapeCounts {
 	out := ScrapeCounts{
 		URLs:     c.URLs + o.URLs,
@@ -130,13 +93,6 @@ func (c ScrapeCounts) Add(o ScrapeCounts) ScrapeCounts {
 	return out
 }
 
-// skipReasons are the FailReason values PDFCrawler produces before it ever
-// touches the network. Everything else means SPN was asked to fetch something.
-var skipReasons = map[string]bool{
-	"blocklist": true,
-	"bad-url":   true,
-}
-
 // ScrapeToWaybackInput drives the workflow. Callers starting a fresh run set
 // S3Key (and optionally Concurrency); every other field is either populated
 // from config on the first run or carried across ContinueAsNew.
@@ -144,13 +100,14 @@ type ScrapeToWaybackInput struct {
 	// S3Key points at a newline-delimited list of URLs, one per line. Blank
 	// lines are ignored.
 	S3Key string
-	// Concurrency is how many crawls are in flight at once. Zero means "use the
-	// configured default".
+	// Concurrency is how many URLs the run crawls at once, across all of its
+	// batches. Zero means "use the configured default".
 	Concurrency int
 	// TaskQueue is the Temporal task queue for both activities.
 	TaskQueue string
 
-	// Offset is the byte position in the list to resume reading from.
+	// Offset is the byte position in the list to resume reading from. It only
+	// ever sits on a batch boundary.
 	Offset int64
 	// Counts accumulates across every run in the ContinueAsNew chain.
 	Counts ScrapeCounts
@@ -158,12 +115,22 @@ type ScrapeToWaybackInput struct {
 	// The fields below are viper-sourced settings snapshotted once on the first
 	// run (see the SideEffect in the workflow) and threaded across
 	// ContinueAsNew, so a config change under a running chain cannot desync its
-	// replay. A zero BatchSize means we have not captured them yet.
+	// replay. A zero BatchesPerPlan means we have not captured them yet.
+	//
+	// BatchesPerPlan is the sentinel rather than BatchSize because BatchSize
+	// existed before this workflow moved to batches, and meant something else
+	// then: a run handed on by a pre-batch worker carries a non-zero one. Keying
+	// off a field only this version sets means such a handoff re-reads config
+	// and carries on from its byte offset, instead of starting with the batch
+	// settings all zero.
 	MaxConcurrency       int
 	URLsPerCAN           int
 	BatchSize            int
+	BatchesInFlight      int
+	BatchesPerPlan       int
 	ChunkSize            int
 	MaxConsecutiveErrors int
+	URLAttempts          int
 }
 
 // scrapeConfig is the snapshot of viper-sourced settings taken via SideEffect.
@@ -172,8 +139,11 @@ type scrapeConfig struct {
 	MaxConcurrency       int
 	URLsPerCAN           int
 	BatchSize            int
+	BatchesInFlight      int
+	BatchesPerPlan       int
 	ChunkSize            int
 	MaxConsecutiveErrors int
+	URLAttempts          int
 	TaskQueue            string
 }
 
@@ -184,13 +154,30 @@ func nonZero(v, fallback int) int {
 	return v
 }
 
-// ScrapeToWaybackWorkflow walks a URL list and crawls each entry, keeping a
-// bounded number of crawls in flight.
+// splitConcurrency turns the run's URL concurrency -- the number operators
+// actually think in, and the one the retune signal carries -- into how many
+// batch activities to keep in flight and how many crawls each of them runs at
+// once.
+//
+// Spreading the run over several batches is what puts it on more than one
+// worker host, so we prefer to use the whole allowance of batches and divide
+// the crawls between them. Below one crawl per batch there is nothing to
+// divide, and the batch count comes down instead.
+func splitConcurrency(concurrency, batchesInFlight int) (batches, parallelism int) {
+	concurrency = max(concurrency, 1)
+	batches = min(max(batchesInFlight, 1), concurrency)
+	parallelism = (concurrency + batches - 1) / batches
+	return batches, parallelism
+}
+
+// ScrapeToWaybackWorkflow walks a URL list in batches, crawling each batch in
+// one activity.
 //
 // Per-URL failures never fail the run: a list of millions of URLs will always
-// contain dead hosts, and one of them must not strand the other millions. Only
-// a sustained run of errors -- which means something systemic like bad SPN
-// credentials, not a bad URL -- aborts the workflow.
+// contain dead hosts, and one of them must not strand the other millions. They
+// are counted and logged inside the batch. Only a sustained run of errors --
+// which means something systemic like bad SPN credentials, not a bad URL -- or
+// a batch that cannot run at all aborts the workflow.
 func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (ScrapeCounts, error) {
 	l := workflow.GetLogger(ctx)
 
@@ -202,7 +189,7 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 	// the read in history so replays reuse the recorded values rather than
 	// re-reading viper, which is what keeps an in-flight chain deterministic
 	// when the deployed config changes underneath it.
-	if in.BatchSize == 0 {
+	if in.BatchesPerPlan == 0 {
 		var cfg scrapeConfig
 		if err := workflow.SideEffect(ctx, func(workflow.Context) any {
 			return scrapeConfig{
@@ -210,8 +197,11 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 				MaxConcurrency:       viper.GetInt("scrape.max_concurrency"),
 				URLsPerCAN:           viper.GetInt("scrape.urls_per_can"),
 				BatchSize:            viper.GetInt("scrape.batch_size"),
+				BatchesInFlight:      viper.GetInt("scrape.batches_in_flight"),
+				BatchesPerPlan:       viper.GetInt("scrape.batches_per_plan"),
 				ChunkSize:            viper.GetInt("scrape.chunk_size"),
 				MaxConsecutiveErrors: viper.GetInt("scrape.max_consecutive_errors"),
+				URLAttempts:          viper.GetInt("scrape.url_attempts"),
 				TaskQueue:            viper.GetString("scrape.task_queue"),
 			}
 		}).Get(&cfg); err != nil {
@@ -220,8 +210,11 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 		in.MaxConcurrency = nonZero(cfg.MaxConcurrency, defaultMaxConcurrency)
 		in.URLsPerCAN = nonZero(cfg.URLsPerCAN, defaultURLsPerCAN)
 		in.BatchSize = nonZero(cfg.BatchSize, defaultBatchSize)
+		in.BatchesInFlight = nonZero(cfg.BatchesInFlight, defaultBatchesInFlight)
+		in.BatchesPerPlan = nonZero(cfg.BatchesPerPlan, defaultBatchesPerPlan)
 		in.ChunkSize = nonZero(cfg.ChunkSize, defaultChunkSize)
 		in.MaxConsecutiveErrors = nonZero(cfg.MaxConsecutiveErrors, defaultMaxConsecutiveErrors)
+		in.URLAttempts = nonZero(cfg.URLAttempts, defaultURLAttempts)
 		if in.Concurrency <= 0 {
 			in.Concurrency = nonZero(cfg.Concurrency, defaultConcurrency)
 		}
@@ -233,7 +226,7 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 		in.Concurrency = in.MaxConcurrency
 	}
 
-	readCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+	planCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
 		TaskQueue:           in.TaskQueue,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -244,33 +237,24 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 		},
 	})
 
-	// A single crawl can sit for a long time: SPN slot polling, a headless
-	// browser capture, then a Wayback replay fetch. The heartbeat is what
-	// distinguishes "still working" from "wedged", so the StartToClose budget is
-	// generous while the heartbeat timeout is short.
+	// A batch is hours of work in one activity, so the heartbeat -- not the
+	// StartToClose budget -- is what says whether it is alive. StartToClose is
+	// only a backstop against a batch that keeps heartbeating and never
+	// finishes.
+	//
+	// The attempt budget is generous because a retry is cheap: it resumes from
+	// the checkpoint rather than re-crawling the batch. Most of what lands here
+	// is a worker restart, and a run must survive several of those without
+	// giving up on a batch.
 	crawlCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 1 * time.Hour,
+		StartToCloseTimeout: 6 * time.Hour,
 		HeartbeatTimeout:    5 * time.Minute,
 		TaskQueue:           in.TaskQueue,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    30 * time.Second,
 			BackoffCoefficient: 1.5,
 			MaximumInterval:    5 * time.Minute,
-			// The first spnDeferAttempts of these can be spent handing the URL
-			// back while SPN has no session for it, which is not a failure of
-			// the URL and should not eat its retry budget.
-			MaximumAttempts: crawlMaxAttempts,
-		},
-	})
-
-	logCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 2 * time.Minute,
-		TaskQueue:           in.TaskQueue,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    5 * time.Second,
-			BackoffCoefficient: 2.0,
-			MaximumInterval:    1 * time.Minute,
-			MaximumAttempts:    4,
+			MaximumAttempts:    10,
 		},
 	})
 
@@ -278,24 +262,47 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 
 	sel := workflow.NewSelector(ctx)
 	inFlight := 0
-	consecutiveErrors := 0
 
-	// Rows for URLs we gave up on. CrawlToWaybackActivity logs its own verdict,
-	// but an abandoned URL never reached one, and it would be missing from the
-	// log entirely if we did not record it here. Collected rather than written
-	// from the selector callback, because blocking on an activity inside a
-	// callback would stall the Select that is draining the window.
-	var abandoned []Outcome
+	// failure is the first reason we have to stop the run. It is set from the
+	// selector callback and read by the dispatch loop, which is why it is not
+	// simply returned.
+	var failure error
 
-	flushAbandoned := func() error {
-		for _, o := range abandoned {
-			if err := workflow.ExecuteActivity(logCtx, RecordOutcomeActivity, o).
-				Get(logCtx, nil); err != nil {
-				return err
+	// dispatch starts a batch and registers its completion handler. Results are
+	// folded in as they land, in whatever order they land; the selector callback
+	// is the only place Counts is mutated.
+	dispatch := func(ref BatchRef, parallelism int) {
+		f := workflow.ExecuteActivity(crawlCtx, CrawlBatchActivity, CrawlBatchInput{
+			S3Key:                in.S3Key,
+			Batch:                ref,
+			ChunkSize:            in.ChunkSize,
+			Parallelism:          parallelism,
+			URLAttempts:          in.URLAttempts,
+			MaxConsecutiveErrors: in.MaxConsecutiveErrors,
+		})
+		inFlight++
+		sel.AddFuture(f, func(f workflow.Future) {
+			inFlight--
+			var res CrawlBatchOutput
+			if err := f.Get(ctx, &res); err != nil {
+				// A batch only fails for something systemic -- an unreadable
+				// list, an unwritable log, a batch stopped before it finished.
+				// A URL that will not crawl is counted inside the batch and
+				// never reaches here, so unlike a single URL this is not
+				// something to absorb and carry on from.
+				if failure == nil {
+					failure = fmt.Errorf("scrape: batch of %d urls at offset %d failed: %w",
+						ref.URLCount, ref.Offset, err)
+				}
+				l.Error("batch failed", "offset", ref.Offset, "err", err)
+				return
 			}
-		}
-		abandoned = nil
-		return nil
+			in.Counts = in.Counts.Add(res.Counts)
+			if res.Aborted && failure == nil {
+				failure = fmt.Errorf("scrape: batch at offset %d aborted: %s (resume at offset %d)",
+					ref.Offset, res.AbortReason, res.NextOffset)
+			}
+		})
 	}
 
 	drain := func() {
@@ -304,49 +311,33 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 		}
 	}
 
-	// dispatch starts a crawl and registers its completion handler. Results are
-	// folded in as they land, in whatever order they land; the selector callback
-	// is the only place Counts is mutated by a crawl.
-	dispatch := func(u string) {
-		f := workflow.ExecuteActivity(crawlCtx, CrawlToWaybackActivity, CrawlToWaybackInput{URL: u})
-		inFlight++
-		sel.AddFuture(f, func(f workflow.Future) {
-			inFlight--
-			var res CrawlToWaybackOutput
-			if err := f.Get(ctx, &res); err != nil {
-				// Retries are exhausted. Abandon this URL and keep going.
-				in.Counts.URLs++
-				in.Counts.Errored++
-				consecutiveErrors++
-				abandoned = append(abandoned, Outcome{
-					SeedURL: u,
-					Status:  StatusError,
-					Reason:  err.Error(),
-					At:      workflow.Now(ctx),
-				})
-				l.Warn("giving up on url", "url", u, "err", err)
-				return
-			}
-			consecutiveErrors = 0
-			in.Counts = in.Counts.Add(res.Counts())
-		})
+	// quiesce waits for the in-flight batches so the offset we hand on is fully
+	// accounted for. A run that is already failing skips the wait: the rows for
+	// everything those batches finished are on disk either way, and grinding
+	// hundreds more URLs against whatever just broke helps nobody.
+	quiesce := func() error {
+		if failure == nil {
+			drain()
+		}
+		return failure
 	}
 
 	var urlsThisRun int
 	stop := false
 
 	for !stop {
-		var batch ReadURLBatchOutput
-		if err := workflow.ExecuteActivity(readCtx, ReadURLBatch, ReadURLBatchInput{
-			S3Key:     in.S3Key,
-			Offset:    in.Offset,
-			MaxURLs:   in.BatchSize,
-			ChunkSize: in.ChunkSize,
-		}).Get(readCtx, &batch); err != nil {
+		var plan PlanBatchesOutput
+		if err := workflow.ExecuteActivity(planCtx, PlanBatchesActivity, PlanBatchesInput{
+			S3Key:      in.S3Key,
+			Offset:     in.Offset,
+			BatchSize:  in.BatchSize,
+			MaxBatches: in.BatchesPerPlan,
+			ChunkSize:  in.ChunkSize,
+		}).Get(planCtx, &plan); err != nil {
 			return in.Counts, err
 		}
 
-		for _, ref := range batch.URLs {
+		for _, ref := range plan.Batches {
 			// Apply any pending retune before deciding whether the window is
 			// full. ReceiveAsync keeps this deterministic without a coroutine.
 			var want int
@@ -360,19 +351,25 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 				}
 			}
 
-			for inFlight >= in.Concurrency {
+			// A retune reaches the batches dispatched after it, not the ones
+			// already running: a batch's parallelism is fixed when it starts.
+			// So the knob takes a batch to bite rather than a URL, which is the
+			// price of not paying Temporal per URL.
+			batches, parallelism := splitConcurrency(in.Concurrency, in.BatchesInFlight)
+
+			for inFlight >= batches {
 				sel.Select(ctx)
 			}
-			if consecutiveErrors >= in.MaxConsecutiveErrors {
+			if failure != nil {
 				stop = true
 				break
 			}
 
-			dispatch(ref.URL)
-			urlsThisRun++
-			// Resume just past the URL we last dispatched. Everything dispatched
-			// is drained before ContinueAsNew below, so this neither re-crawls
-			// nor skips.
+			dispatch(ref, parallelism)
+			urlsThisRun += ref.URLCount
+			// Resume just past the batch we last dispatched. Everything
+			// dispatched is drained before ContinueAsNew below, so this neither
+			// re-crawls nor skips.
 			in.Offset = ref.End
 
 			if urlsThisRun >= in.URLsPerCAN || workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
@@ -381,33 +378,25 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 			}
 		}
 
-		// Flush once per batch so abandonment rows land promptly and the pending
-		// slice stays bounded by the batch size.
-		if err := flushAbandoned(); err != nil {
-			return in.Counts, err
-		}
-
 		if stop {
 			break
 		}
 
-		// A batch that yields no URLs and does not advance would spin forever.
-		// That should be impossible, but this loop is the one place a bad read
-		// could hang a run indefinitely rather than fail it.
-		if len(batch.URLs) == 0 && !batch.EOF && batch.NextOffset == in.Offset {
-			drain()
-			if err := flushAbandoned(); err != nil {
+		// A planning call that yields no batches and does not advance would
+		// spin forever. That should be impossible, but this loop is the one
+		// place a bad read could hang a run indefinitely rather than fail it.
+		if len(plan.Batches) == 0 && !plan.EOF && plan.NextOffset == in.Offset {
+			if err := quiesce(); err != nil {
 				return in.Counts, err
 			}
 			return in.Counts, fmt.Errorf(
-				"scrape: read of %s made no progress at offset %d", in.S3Key, in.Offset)
+				"scrape: planning %s made no progress at offset %d", in.S3Key, in.Offset)
 		}
 
-		in.Offset = batch.NextOffset
-		if batch.EOF {
-			// Drain before reporting the final total.
-			drain()
-			if err := flushAbandoned(); err != nil {
+		in.Offset = plan.NextOffset
+
+		if plan.EOF {
+			if err := quiesce(); err != nil {
 				return in.Counts, err
 			}
 			l.Info("scrape complete", "s3key", in.S3Key, "counts", in.Counts)
@@ -415,314 +404,10 @@ func ScrapeToWaybackWorkflow(ctx workflow.Context, in ScrapeToWaybackInput) (Scr
 		}
 	}
 
-	// Quiesce the window so the offset we carry forward is fully accounted for,
-	// and get every row on disk before this run hands over.
-	drain()
-	if err := flushAbandoned(); err != nil {
+	if err := quiesce(); err != nil {
 		return in.Counts, err
-	}
-
-	if consecutiveErrors >= in.MaxConsecutiveErrors {
-		return in.Counts, fmt.Errorf(
-			"scrape: %d consecutive crawl failures, aborting (last offset %d)",
-			consecutiveErrors, in.Offset)
 	}
 
 	l.Info("continue-as-new", "s3key", in.S3Key, "offset", in.Offset, "urls", urlsThisRun)
 	return in.Counts, workflow.NewContinueAsNewError(ctx, ScrapeToWaybackWorkflow, in)
-}
-
-// URLRef is one URL from the list plus the byte offset just past its trailing
-// newline, which is where a resume should pick up.
-type URLRef struct {
-	URL string
-	End int64
-}
-
-type ReadURLBatchInput struct {
-	S3Key     string
-	Offset    int64
-	MaxURLs   int
-	ChunkSize int
-}
-
-type ReadURLBatchOutput struct {
-	URLs []URLRef
-	// NextOffset is where to resume if every returned URL is consumed.
-	NextOffset int64
-	// EOF reports that the scan reached the end of the object.
-	EOF bool
-}
-
-// ReadURLBatch range-reads a slice of the URL list and returns the URLs it
-// found. Returning the URLs themselves -- rather than offsets for the crawl
-// activity to re-read, as the daily and periodic workflows do -- costs one S3
-// request per batch instead of one per URL. Over millions of URLs that is the
-// difference between thousands of S3 reads and millions of them, and a URL is
-// small enough to sit in workflow history comfortably.
-func ReadURLBatch(ctx context.Context, in ReadURLBatchInput) (ReadURLBatchOutput, error) {
-	if in.MaxURLs <= 0 || in.ChunkSize <= 0 {
-		return ReadURLBatchOutput{NextOffset: in.Offset},
-			fmt.Errorf("scrape: bad batch config (max=%d chunk=%d)", in.MaxURLs, in.ChunkSize)
-	}
-
-	obj, err := s3.GetObject(ctx, in.S3Key)
-	if err != nil {
-		return ReadURLBatchOutput{NextOffset: in.Offset}, err
-	}
-	defer obj.Close()
-
-	out, err := scanURLs(in, obj)
-	if err != nil {
-		return out, fmt.Errorf("scrape: reading %s: %w", in.S3Key, err)
-	}
-	return out, nil
-}
-
-// scanURLs is the reading logic, split out from the activity so it can be
-// tested without S3.
-func scanURLs(in ReadURLBatchInput, r io.ReaderAt) (ReadURLBatchOutput, error) {
-	out := ReadURLBatchOutput{NextOffset: in.Offset}
-
-	pos := in.Offset
-	var partial []byte
-
-	// flush emits a trailing final line that has no newline terminator.
-	flush := func() {
-		if u := strings.TrimSpace(string(partial)); u != "" {
-			out.URLs = append(out.URLs, URLRef{URL: u, End: pos})
-		}
-		partial = nil
-	}
-
-	for len(out.URLs) < in.MaxURLs {
-		buf := make([]byte, in.ChunkSize)
-		n, err := r.ReadAt(buf, pos)
-		atEnd := errors.Is(err, io.EOF)
-		if err != nil && !atEnd {
-			return out, fmt.Errorf("range read at %d failed: %w", pos, err)
-		}
-		if n == 0 {
-			if atEnd {
-				flush()
-				out.EOF = true
-				out.NextOffset = pos
-			}
-			return out, nil
-		}
-
-		rest := buf[:n]
-		for len(rest) > 0 && len(out.URLs) < in.MaxURLs {
-			i := bytes.IndexByte(rest, '\n')
-			if i < 0 {
-				// Line spans past this chunk; carry it into the next read.
-				partial = append(partial, rest...)
-				pos += int64(len(rest))
-				rest = nil
-				break
-			}
-			line := append(partial, rest[:i]...)
-			partial = nil
-			pos += int64(i + 1)
-			rest = rest[i+1:]
-			if u := strings.TrimSpace(string(line)); u != "" {
-				out.URLs = append(out.URLs, URLRef{URL: u, End: pos})
-			}
-		}
-		out.NextOffset = pos
-
-		// Only a read that hit the end of the object *and* whose buffer we fully
-		// consumed proves there is nothing left. Filling MaxURLs mid-buffer does
-		// not, so EOF stays false and the caller resumes from NextOffset.
-		if atEnd && len(rest) == 0 {
-			if len(out.URLs) < in.MaxURLs {
-				flush()
-				out.NextOffset = pos
-				out.EOF = true
-			}
-			return out, nil
-		}
-	}
-
-	return out, nil
-}
-
-type CrawlToWaybackInput struct {
-	URL string
-}
-
-type CrawlToWaybackOutput struct {
-	URL string
-	// Success reports that the crawl ended on a PDF.
-	Success bool
-	// FailReason is PDFCrawler's reason when Success is false.
-	FailReason string
-	// SnapshotURL is the Wayback replay URL of the PDF, when there is one.
-	SnapshotURL string
-	Mimetype    string
-	// Chain is the hop sequence the crawler followed, useful when diagnosing
-	// why a repository's URLs are not resolving.
-	Chain      []string
-	Techniques []string
-}
-
-// Counts turns one crawl outcome into a tally the workflow can fold in.
-func (o CrawlToWaybackOutput) Counts() ScrapeCounts {
-	c := ScrapeCounts{URLs: 1}
-	if o.Success {
-		c.PDFFound = 1
-		return c
-	}
-	reason := o.FailReason
-	if reason == "" {
-		reason = "unknown"
-	}
-	if skipReasons[reason] {
-		c.Skipped = 1
-	} else {
-		c.NoPDF = 1
-	}
-	c.FailReasons = map[string]int{reason: 1}
-	return c
-}
-
-// CrawlToWaybackActivity crawls one URL. Reaching a PDF is the good outcome,
-// but it is not the only useful one: any hop SPN actually fetched is now in
-// Wayback, which is the point of this workflow.
-//
-// A crawl that simply does not find a PDF returns a nil error -- that is data,
-// not failure. Only transport-level trouble (SPN or CDX misbehaving) is
-// returned as an error for Temporal to retry.
-func CrawlToWaybackActivity(ctx context.Context, in CrawlToWaybackInput) (CrawlToWaybackOutput, error) {
-	activity.RecordHeartbeat(ctx, "started")
-	l := activity.GetLogger(ctx)
-
-	out := CrawlToWaybackOutput{URL: in.URL}
-
-	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
-		AccessKey: viper.GetString("spn.access_key"),
-		SecretKey: viper.GetString("spn.secret_key"),
-		Endpoint:  viper.GetString("spn.endpoint"),
-	})
-	if err != nil {
-		return out, fmt.Errorf("spn client creation failed: %w", err)
-	}
-
-	cdxClient := cdx.NewClient(cdx.Config{
-		Auth:      viper.GetString("cdx.auth"),
-		Endpoint:  viper.GetString("cdx.endpoint"),
-		UserAgent: viper.GetString("cdx.user_agent"),
-		Retries:   viper.GetInt("cdx.retries"),
-		Backoff:   viper.GetDuration("cdx.backoff"),
-		// A retrying CDX query is silent for long enough to outlast this
-		// activity's heartbeat timeout; without this the server times the
-		// activity out and cancels its context mid-crawl.
-		OnRetry: func(int) { activity.RecordHeartbeat(ctx, "cdx-retry") },
-	})
-
-	// Read fresh per execution rather than from the startup config, so a
-	// blocklist edit lands on the next crawl of a running scrape. A URL matching
-	// it is not crawled and shows up in the outcome log as fail/blocklist.
-	blocklist, err := loadBlocklist()
-	if err != nil {
-		l.Warn("using url blocklist as loaded at startup", "err", err.Error())
-	}
-
-	// Early attempts hand a URL back rather than wait for an SPN session; the
-	// last ones wait, so an outage that outlasts the deferrals cannot abandon
-	// the URL. See spnDeferAttempts.
-	attempt := activity.GetInfo(ctx).Attempt
-
-	crawler := crawling.PDFCrawler{
-		SPNClient:       spnClient,
-		CDXClient:       cdxClient,
-		MaxHops:         viper.GetInt("scrape.max_hops"),
-		UserAgent:       viper.GetString("crawling.user_agent"),
-		WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
-		SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
-		Blocklist:       blocklist,
-		Logger:          slog.Default(),
-		Heartbeater: func(msg string) {
-			activity.RecordHeartbeat(ctx, msg)
-		},
-		FreshnessCutoff:  21915 * time.Hour,
-		DeferWhenSPNBusy: attempt <= spnDeferAttempts,
-	}
-	if crawler.MaxHops <= 0 {
-		crawler.MaxHops = 8
-	}
-
-	res, err := crawler.Crawl(ctx, in.URL)
-
-	// Crawl hands back the Wayback replay body on success and never closes it.
-	// We do not want the bytes, but at this volume leaking a connection per URL
-	// would exhaust the worker, so drain and close it before doing anything else.
-	if res.Content != nil {
-		io.Copy(io.Discard, res.Content)
-		res.Content.Close()
-	}
-
-	var busy *crawling.SPNBusyError
-	if errors.As(err, &busy) {
-		// Not a verdict on this URL -- SPN never looked at it -- so no outcome
-		// row is written and the counts are left alone. Returning lets
-		// Temporal do the waiting and gives this worker's activity slot to a
-		// URL that can make progress now.
-		l.Info("deferring url, spn is busy",
-			"url", in.URL, "reason", busy.Reason, "attempt", attempt)
-		return out, temporal.NewApplicationErrorWithOptions(
-			busy.Error(), errTypeSPNBusy,
-			temporal.ApplicationErrorOptions{
-				// Come back at roughly the cadence the in-crawl poll loop used.
-				// Servers older than 1.24.2 ignore this and fall back to the
-				// RetryPolicy's interval, which is slower but still correct.
-				NextRetryDelay: spnBusyRetryDelay(),
-				// SPN being busy is ordinary operation, not an incident.
-				Category: temporal.ApplicationErrorCategoryBenign,
-			})
-	}
-
-	if err != nil {
-		return out, fmt.Errorf("crawl of %q failed: %w", in.URL, err)
-	}
-
-	out.Success = res.Success
-	out.FailReason = res.FailReason
-	out.SnapshotURL = res.SnapshotUrl
-	out.Mimetype = res.Mimetype
-	out.Chain = res.Chain
-	out.Techniques = res.Techniques
-
-	if res.Success {
-		l.Info("pdf captured", "url", in.URL, "snapshot", res.SnapshotUrl)
-	} else {
-		l.Info("no pdf", "url", in.URL, "reason", res.FailReason, "hops", len(res.Chain))
-	}
-
-	// Written here, at the one point we know this URL's verdict, and only for a
-	// crawl that reached a verdict -- an attempt that errors returns above and
-	// gets retried, so retries do not each leave a row. URLs whose retries run
-	// out are logged by the workflow via RecordOutcomeActivity instead.
-	//
-	// A failure to write is returned rather than swallowed: the log is a
-	// deliverable of this workflow, so an unwritable log dir is a broken
-	// deployment we want to hear about immediately, not silently lose rows to.
-	// The retry re-crawls, but a re-crawl inside the CDX freshness window is a
-	// CDX lookup rather than another SPN capture.
-	if err := appendOutcome(viper.GetString("scrape.log_dir"),
-		activity.GetInfo(ctx).WorkflowExecution.ID,
-		outcomeFor(in.URL, res, time.Now())); err != nil {
-		return out, err
-	}
-
-	activity.RecordHeartbeat(ctx, "done")
-	return out, nil
-}
-
-// RecordOutcomeActivity appends a single row to the outcome log. The workflow
-// uses it for URLs it abandons after their crawl retries are exhausted, which
-// are the only outcomes CrawlToWaybackActivity never gets to record itself.
-func RecordOutcomeActivity(ctx context.Context, o Outcome) error {
-	return appendOutcome(viper.GetString("scrape.log_dir"),
-		activity.GetInfo(ctx).WorkflowExecution.ID, o)
 }

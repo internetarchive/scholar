@@ -1,11 +1,9 @@
 package scrape
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,165 +12,86 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 )
-
-// --- scanURLs -------------------------------------------------------------
-
-func scan(t *testing.T, body string, offset int64, maxURLs, chunk int) ReadURLBatchOutput {
-	t.Helper()
-	out, err := scanURLs(ReadURLBatchInput{
-		Offset:    offset,
-		MaxURLs:   maxURLs,
-		ChunkSize: chunk,
-	}, bytes.NewReader([]byte(body)))
-	require.NoError(t, err)
-	return out
-}
-
-func urls(refs []URLRef) []string {
-	out := make([]string, 0, len(refs))
-	for _, r := range refs {
-		out = append(out, r.URL)
-	}
-	return out
-}
-
-func Test_scanURLs_readsWholeList(t *testing.T) {
-	out := scan(t, "http://a/\nhttp://b/\nhttp://c/\n", 0, 100, 4096)
-	require.Equal(t, []string{"http://a/", "http://b/", "http://c/"}, urls(out.URLs))
-	require.True(t, out.EOF)
-	require.Equal(t, int64(30), out.NextOffset)
-	// End is the byte after each line's newline, which is where a resume picks up.
-	require.Equal(t, int64(10), out.URLs[0].End)
-	require.Equal(t, int64(20), out.URLs[1].End)
-	require.Equal(t, int64(30), out.URLs[2].End)
-}
-
-func Test_scanURLs_skipsBlankLinesAndTrimsCR(t *testing.T) {
-	out := scan(t, "http://a/\r\n\n   \nhttp://b/\r\n", 0, 100, 4096)
-	require.Equal(t, []string{"http://a/", "http://b/"}, urls(out.URLs))
-	require.True(t, out.EOF)
-}
-
-// A final line with no trailing newline still counts.
-func Test_scanURLs_unterminatedFinalLine(t *testing.T) {
-	out := scan(t, "http://a/\nhttp://b/", 0, 100, 4096)
-	require.Equal(t, []string{"http://a/", "http://b/"}, urls(out.URLs))
-	require.True(t, out.EOF)
-	require.Equal(t, int64(19), out.URLs[1].End)
-}
-
-// Filling MaxURLs part-way through the object is not EOF: reporting it there
-// would silently abandon the rest of the list.
-func Test_scanURLs_batchFullIsNotEOF(t *testing.T) {
-	out := scan(t, "http://a/\nhttp://b/\nhttp://c/\n", 0, 2, 4096)
-	require.Equal(t, []string{"http://a/", "http://b/"}, urls(out.URLs))
-	require.False(t, out.EOF)
-	require.Equal(t, int64(20), out.NextOffset)
-
-	// Resuming from NextOffset yields exactly the remainder, no repeats.
-	rest := scan(t, "http://a/\nhttp://b/\nhttp://c/\n", out.NextOffset, 2, 4096)
-	require.Equal(t, []string{"http://c/"}, urls(rest.URLs))
-	require.True(t, rest.EOF)
-}
-
-// A URL longer than one chunk must be stitched across reads, not truncated.
-func Test_scanURLs_lineSpansChunks(t *testing.T) {
-	long := "http://example.com/" + string(bytes.Repeat([]byte("x"), 200))
-	out := scan(t, long+"\nhttp://b/\n", 0, 100, 8)
-	require.Equal(t, []string{long, "http://b/"}, urls(out.URLs))
-	require.True(t, out.EOF)
-}
-
-func Test_scanURLs_emptyObject(t *testing.T) {
-	out := scan(t, "", 0, 100, 4096)
-	require.Empty(t, out.URLs)
-	require.True(t, out.EOF)
-	require.Equal(t, int64(0), out.NextOffset)
-}
-
-func Test_scanURLs_offsetPastEnd(t *testing.T) {
-	out := scan(t, "http://a/\n", 10, 100, 4096)
-	require.Empty(t, out.URLs)
-	require.True(t, out.EOF)
-}
-
-func Test_ReadURLBatch_rejectsBadConfig(t *testing.T) {
-	_, err := ReadURLBatch(t.Context(), ReadURLBatchInput{S3Key: "b/k", MaxURLs: 0, ChunkSize: 10})
-	require.Error(t, err)
-}
-
-// --- counts ---------------------------------------------------------------
-
-func Test_CrawlOutcomeCounts(t *testing.T) {
-	pdf := CrawlToWaybackOutput{Success: true}.Counts()
-	require.Equal(t, 1, pdf.URLs)
-	require.Equal(t, 1, pdf.PDFFound)
-	require.Empty(t, pdf.FailReasons)
-
-	// A dead end still means SPN captured a page, so it is NoPDF, not Skipped.
-	deadEnd := CrawlToWaybackOutput{FailReason: "dead-end"}.Counts()
-	require.Equal(t, 1, deadEnd.NoPDF)
-	require.Equal(t, 0, deadEnd.Skipped)
-	require.Equal(t, map[string]int{"dead-end": 1}, deadEnd.FailReasons)
-
-	// Blocklisted URLs never reached the network at all.
-	blocked := CrawlToWaybackOutput{FailReason: "blocklist"}.Counts()
-	require.Equal(t, 1, blocked.Skipped)
-	require.Equal(t, 0, blocked.NoPDF)
-}
-
-func Test_ScrapeCountsAdd(t *testing.T) {
-	a := ScrapeCounts{URLs: 2, PDFFound: 1, NoPDF: 1, FailReasons: map[string]int{"dead-end": 1}}
-	b := ScrapeCounts{URLs: 3, NoPDF: 3, FailReasons: map[string]int{"dead-end": 2, "status-404": 1}}
-	got := a.Add(b)
-	require.Equal(t, 5, got.URLs)
-	require.Equal(t, 1, got.PDFFound)
-	require.Equal(t, 4, got.NoPDF)
-	require.Equal(t, map[string]int{"dead-end": 3, "status-404": 1}, got.FailReasons)
-
-	// Adding empties must not allocate a map that then serialises as {}.
-	require.Nil(t, ScrapeCounts{}.Add(ScrapeCounts{}).FailReasons)
-}
-
-// --- workflow -------------------------------------------------------------
 
 func configureViper(concurrency, urlsPerCAN int) {
 	viper.Set("scrape.task_queue", "scrape_test")
 	viper.Set("scrape.concurrency", concurrency)
 	viper.Set("scrape.max_concurrency", 64)
 	viper.Set("scrape.urls_per_can", urlsPerCAN)
-	viper.Set("scrape.batch_size", 1000)
+	viper.Set("scrape.batch_size", 10)
+	viper.Set("scrape.batches_in_flight", 2)
+	viper.Set("scrape.batches_per_plan", 8)
 	viper.Set("scrape.chunk_size", 4096)
 	viper.Set("scrape.max_consecutive_errors", 50)
+	viper.Set("scrape.url_attempts", 4)
 }
 
-func refs(n int, from int64) []URLRef {
-	out := make([]URLRef, 0, n)
-	for i := range n {
-		out = append(out, URLRef{
-			URL: fmt.Sprintf("http://example.com/%d", i),
-			End: from + int64(i+1)*10,
-		})
+// refs builds n batches of urlsEach URLs, tiled from the given offset. Ten
+// bytes per URL keeps the arithmetic in the assertions readable.
+func refs(n, urlsEach int, from int64) []BatchRef {
+	out := make([]BatchRef, 0, n)
+	pos := from
+	for range n {
+		end := pos + int64(urlsEach)*10
+		out = append(out, BatchRef{Offset: pos, End: end, URLCount: urlsEach})
+		pos = end
 	}
 	return out
 }
 
+// --- splitConcurrency -----------------------------------------------------
+
+// The signal and the CLI flag both speak in URLs, because that is what an
+// operator watching SPN cares about. Turning that into batches is this
+// function's whole job, and getting it wrong means either overrunning SPN or
+// leaving worker hosts idle.
+func Test_splitConcurrency(t *testing.T) {
+	for _, tc := range []struct {
+		concurrency, inFlight int
+		batches, parallelism  int
+	}{
+		{concurrency: 8, inFlight: 4, batches: 4, parallelism: 2},
+		{concurrency: 4, inFlight: 4, batches: 4, parallelism: 1},
+		// Fewer URLs than batches: there is nothing to divide, so the batch
+		// count comes down instead of the pool going below one.
+		{concurrency: 2, inFlight: 4, batches: 2, parallelism: 1},
+		{concurrency: 1, inFlight: 4, batches: 1, parallelism: 1},
+		// Rounding up rather than down: a run must not quietly crawl fewer URLs
+		// at once than it was told to.
+		{concurrency: 10, inFlight: 4, batches: 4, parallelism: 3},
+		{concurrency: 0, inFlight: 0, batches: 1, parallelism: 1},
+	} {
+		t.Run(fmt.Sprintf("c=%d/f=%d", tc.concurrency, tc.inFlight), func(t *testing.T) {
+			batches, parallelism := splitConcurrency(tc.concurrency, tc.inFlight)
+			require.Equal(t, tc.batches, batches)
+			require.Equal(t, tc.parallelism, parallelism)
+			require.GreaterOrEqual(t, batches*parallelism, max(tc.concurrency, 1),
+				"the run would crawl fewer urls at once than asked")
+		})
+	}
+}
+
+// --- workflow -------------------------------------------------------------
+
 func Test_Workflow_HappyPathEOF(t *testing.T) {
-	configureViper(2, 1_000_000)
+	configureViper(4, 1_000_000)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.MatchedBy(func(in ReadURLBatchInput) bool {
-		return in.S3Key == "bucket/urls.txt" && in.Offset == 0
-	})).Return(ReadURLBatchOutput{URLs: refs(3, 0), NextOffset: 30, EOF: true}, nil).Once()
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.MatchedBy(func(in PlanBatchesInput) bool {
+		return in.S3Key == "bucket/urls.txt" && in.Offset == 0 &&
+			in.BatchSize == 10 && in.MaxBatches == 8
+	})).Return(PlanBatchesOutput{Batches: refs(3, 10, 0), NextOffset: 300, EOF: true}, nil).Once()
 
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{Success: true}, nil).Times(3)
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+		Return(CrawlBatchOutput{
+			Counts:      ScrapeCounts{URLs: 10, PDFFound: 7, NoPDF: 3},
+			DoneThrough: 10,
+		}, nil).Times(3)
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
 
@@ -181,26 +100,30 @@ func Test_Workflow_HappyPathEOF(t *testing.T) {
 
 	var got ScrapeCounts
 	require.NoError(t, env.GetWorkflowResult(&got))
-	require.Equal(t, 3, got.URLs)
-	require.Equal(t, 3, got.PDFFound)
+	require.Equal(t, 30, got.URLs)
+	require.Equal(t, 21, got.PDFFound)
+	require.Equal(t, 9, got.NoPDF)
 	env.AssertExpectations(t)
 }
 
-// Failing to find a PDF is an ordinary outcome, recorded by reason and folded
-// into the totals rather than failing the run.
-func Test_Workflow_CountsFailReasons(t *testing.T) {
-	configureViper(2, 1_000_000)
+// Batch results are folded in whatever order they land, including their fail
+// reason breakdowns.
+func Test_Workflow_FoldsBatchCounts(t *testing.T) {
+	configureViper(4, 1_000_000)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(2, 0), NextOffset: 20, EOF: true}, nil).Once()
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{Batches: refs(2, 10, 0), NextOffset: 200, EOF: true}, nil).Once()
 
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{FailReason: "dead-end"}, nil).Once()
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{FailReason: "blocklist"}, nil).Once()
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+		Return(CrawlBatchOutput{
+			Counts: ScrapeCounts{
+				URLs: 10, NoPDF: 9, Skipped: 1,
+				FailReasons: map[string]int{"dead-end": 9, "blocklist": 1},
+			},
+		}, nil).Twice()
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
 
@@ -209,106 +132,109 @@ func Test_Workflow_CountsFailReasons(t *testing.T) {
 
 	var got ScrapeCounts
 	require.NoError(t, env.GetWorkflowResult(&got))
-	require.Equal(t, 2, got.URLs)
-	require.Equal(t, 0, got.PDFFound)
-	require.Equal(t, 1, got.NoPDF)
-	require.Equal(t, 1, got.Skipped)
-	require.Equal(t, map[string]int{"dead-end": 1, "blocklist": 1}, got.FailReasons)
+	require.Equal(t, 20, got.URLs)
+	require.Equal(t, 18, got.NoPDF)
+	require.Equal(t, 2, got.Skipped)
+	require.Equal(t, map[string]int{"dead-end": 18, "blocklist": 2}, got.FailReasons)
 }
 
-// One URL whose crawl exhausts its retries must not strand the rest of the
-// list: it is counted and the run carries on.
-func Test_Workflow_AbandonsFailingURLAndContinues(t *testing.T) {
+// A batch reporting its circuit breaker tripped stops the run, and says where
+// to resume from so the list does not have to be restarted from the top.
+func Test_Workflow_AbortedBatchStopsTheRun(t *testing.T) {
 	configureViper(1, 1_000_000)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(2, 0), NextOffset: 20, EOF: true}, nil).Once()
-
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.MatchedBy(func(in CrawlToWaybackInput) bool {
-		return in.URL == "http://example.com/0"
-	})).Return(CrawlToWaybackOutput{}, errors.New("spn is sad"))
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.MatchedBy(func(in CrawlToWaybackInput) bool {
-		return in.URL == "http://example.com/1"
-	})).Return(CrawlToWaybackOutput{Success: true}, nil).Once()
-	// The abandoned URL still gets a row (see Test_Workflow_LogsAbandonedURLs).
-	env.OnActivity(RecordOutcomeActivity, mock.Anything, mock.Anything).Return(nil).Once()
-
-	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-
-	var got ScrapeCounts
-	require.NoError(t, env.GetWorkflowResult(&got))
-	require.Equal(t, 2, got.URLs)
-	require.Equal(t, 1, got.Errored)
-	require.Equal(t, 1, got.PDFFound)
-}
-
-// An unbroken streak of failures is systemic, not a bad URL, and stops the run
-// rather than burning the whole list against a broken SPN.
-func Test_Workflow_AbortsOnConsecutiveErrors(t *testing.T) {
-	configureViper(1, 1_000_000)
-	viper.Set("scrape.max_consecutive_errors", 3)
-	defer viper.Set("scrape.max_consecutive_errors", 50)
-
-	var ts testsuite.WorkflowTestSuite
-	env := ts.NewTestWorkflowEnvironment()
-
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(10, 0), NextOffset: 100, EOF: true}, nil).Once()
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{}, errors.New("bad credentials"))
-	env.OnActivity(RecordOutcomeActivity, mock.Anything, mock.Anything).Return(nil)
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{Batches: refs(4, 10, 0), NextOffset: 400, EOF: true}, nil).Once()
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+		Return(CrawlBatchOutput{
+			Counts:      ScrapeCounts{URLs: 3, Errored: 3},
+			DoneThrough: 3,
+			NextOffset:  30,
+			Aborted:     true,
+			AbortReason: "3 consecutive crawl failures",
+		}, nil)
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
 
 	require.True(t, env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "consecutive crawl failures")
+	require.ErrorContains(t, err, "consecutive crawl failures")
+	require.ErrorContains(t, err, "resume at offset 30")
+}
+
+// A batch activity only fails for something systemic, so unlike a single dead
+// URL it is not something the run absorbs and carries on from.
+func Test_Workflow_FailedBatchStopsTheRun(t *testing.T) {
+	configureViper(1, 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{Batches: refs(2, 10, 0), NextOffset: 200, EOF: true}, nil).Once()
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+		Return(CrawlBatchOutput{}, errors.New("read-only file system"))
+
+	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.ErrorContains(t, env.GetWorkflowError(), "read-only file system")
+}
+
+// A planning call that yields nothing and does not advance would spin forever.
+func Test_Workflow_StopsIfPlanningMakesNoProgress(t *testing.T) {
+	configureViper(1, 1_000_000)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{NextOffset: 0, EOF: false}, nil)
+
+	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.ErrorContains(t, env.GetWorkflowError(), "made no progress")
 }
 
 // Hitting urls_per_can hands off to a fresh run rather than growing one run's
 // history without bound.
 func Test_Workflow_ContinuesAsNewAtThreshold(t *testing.T) {
-	configureViper(1, 3)
+	configureViper(1, 30)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(5, 0), NextOffset: 50, EOF: false}, nil).Once()
-	// Only three of the five are dispatched before the handoff.
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{Success: true}, nil).Times(3)
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{Batches: refs(5, 10, 0), NextOffset: 500, EOF: false}, nil).Once()
+	// Only three of the five batches are dispatched before the handoff.
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+		Return(CrawlBatchOutput{Counts: ScrapeCounts{URLs: 10, PDFFound: 10}}, nil).Times(3)
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
 
 	require.True(t, env.IsWorkflowCompleted())
-	err := env.GetWorkflowError()
-	require.Error(t, err)
 	var canErr *workflow.ContinueAsNewError
-	require.True(t, errors.As(err, &canErr), "expected ContinueAsNewError, got %v", err)
+	require.True(t, errors.As(env.GetWorkflowError(), &canErr),
+		"expected ContinueAsNewError, got %v", env.GetWorkflowError())
 	env.AssertExpectations(t)
 }
 
-// The resume offset is the end of the last URL actually dispatched, so the next
-// run neither re-crawls nor skips. refs() spaces URLs 10 bytes apart, so three
-// dispatched URLs means resuming at 30 -- not at the batch's NextOffset of 50.
-func Test_Workflow_ResumeOffsetIsLastDispatchedURL(t *testing.T) {
-	configureViper(1, 3)
+// The resume offset is the end of the last batch actually dispatched, so the
+// next run neither re-crawls nor skips. It only ever sits on a batch boundary.
+func Test_Workflow_ResumeOffsetIsLastDispatchedBatch(t *testing.T) {
+	configureViper(1, 30)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(5, 0), NextOffset: 50, EOF: false}, nil).Once()
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{Success: true}, nil).Times(3)
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{Batches: refs(5, 10, 0), NextOffset: 500, EOF: false}, nil).Once()
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+		Return(CrawlBatchOutput{Counts: ScrapeCounts{URLs: 10, PDFFound: 10}}, nil).Times(3)
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
 
@@ -316,25 +242,28 @@ func Test_Workflow_ResumeOffsetIsLastDispatchedURL(t *testing.T) {
 	require.True(t, errors.As(env.GetWorkflowError(), &canErr))
 
 	var next ScrapeToWaybackInput
-	require.NoError(t, converter.GetDefaultDataConverter().
-		FromPayloads(canErr.Input, &next))
-	require.Equal(t, int64(30), next.Offset)
-	require.Equal(t, 3, next.Counts.URLs)
+	require.NoError(t, converter.GetDefaultDataConverter().FromPayloads(canErr.Input, &next))
+	// Three batches of ten URLs at ten bytes each -- not the plan's NextOffset
+	// of 500.
+	require.Equal(t, int64(300), next.Offset)
+	require.Equal(t, 30, next.Counts.URLs)
 }
 
 // A resumed run reuses the carried config and offset instead of re-reading
 // viper, which is what keeps a ContinueAsNew chain replay-deterministic.
-func Test_Workflow_ResumeUsesCarriedOffset(t *testing.T) {
+func Test_Workflow_ResumeUsesCarriedConfig(t *testing.T) {
 	configureViper(1, 1_000_000)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.MatchedBy(func(in ReadURLBatchInput) bool {
-		return in.Offset == 500 && in.MaxURLs == 7 && in.ChunkSize == 99
-	})).Return(ReadURLBatchOutput{URLs: refs(1, 500), NextOffset: 510, EOF: true}, nil).Once()
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{Success: true}, nil).Once()
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.MatchedBy(func(in PlanBatchesInput) bool {
+		return in.Offset == 500 && in.BatchSize == 7 && in.MaxBatches == 3 && in.ChunkSize == 99
+	})).Return(PlanBatchesOutput{Batches: refs(1, 7, 500), NextOffset: 570, EOF: true}, nil).Once()
+
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.MatchedBy(func(in CrawlBatchInput) bool {
+		return in.ChunkSize == 99 && in.URLAttempts == 9 && in.MaxConsecutiveErrors == 5
+	})).Return(CrawlBatchOutput{Counts: ScrapeCounts{URLs: 7, PDFFound: 7}}, nil).Once()
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{
 		S3Key:                "bucket/urls.txt",
@@ -343,8 +272,11 @@ func Test_Workflow_ResumeUsesCarriedOffset(t *testing.T) {
 		MaxConcurrency:       8,
 		URLsPerCAN:           100,
 		BatchSize:            7,
+		BatchesInFlight:      1,
+		BatchesPerPlan:       3,
 		ChunkSize:            99,
 		MaxConsecutiveErrors: 5,
+		URLAttempts:          9,
 		Counts:               ScrapeCounts{URLs: 42, PDFFound: 40},
 	})
 
@@ -353,8 +285,8 @@ func Test_Workflow_ResumeUsesCarriedOffset(t *testing.T) {
 
 	var got ScrapeCounts
 	require.NoError(t, env.GetWorkflowResult(&got))
-	require.Equal(t, 43, got.URLs) // 42 carried + 1 new
-	require.Equal(t, 41, got.PDFFound)
+	require.Equal(t, 49, got.URLs) // 42 carried + 7 new
+	require.Equal(t, 47, got.PDFFound)
 	env.AssertExpectations(t)
 }
 
@@ -375,10 +307,12 @@ func Test_Workflow_ClampsConcurrencyToMax(t *testing.T) {
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(2, 0), NextOffset: 20, EOF: true}, nil).Once()
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{Success: true}, nil).Times(2)
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{Batches: refs(1, 10, 0), NextOffset: 100, EOF: true}, nil).Once()
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.MatchedBy(func(in CrawlBatchInput) bool {
+		// 64 URLs over 2 batches in flight, not 10_000 over 2.
+		return in.Parallelism == 32
+	})).Return(CrawlBatchOutput{Counts: ScrapeCounts{URLs: 10}}, nil).Once()
 
 	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{
 		S3Key:       "bucket/urls.txt",
@@ -387,43 +321,62 @@ func Test_Workflow_ClampsConcurrencyToMax(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
 }
 
-func Test_WorkflowID(t *testing.T) {
-	require.Equal(t, "scrape_to_wayback_bucket_etd_wayback-seeds.txt",
-		WorkflowID("bucket/etd/wayback-seeds.txt"))
-}
-
-// The sliding window must actually bound in-flight crawls -- that is the whole
-// throttle. Mocked returns alone would pass whether the window worked or not,
-// so this drives real activity functions that record how many ran at once.
-func runWithConcurrency(t *testing.T, concurrency, urlCount int) int32 {
-	t.Helper()
-	configureViper(concurrency, 1_000_000)
+// The run's concurrency reaches the batch as its pool size, which is the only
+// way it reaches SPN at all now.
+func Test_Workflow_ConcurrencyReachesTheBatch(t *testing.T) {
+	configureViper(6, 1_000_000)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	var cur, max atomic.Int32
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(func(ctx context.Context, in CrawlToWaybackInput) (CrawlToWaybackOutput, error) {
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{Batches: refs(2, 10, 0), NextOffset: 200, EOF: true}, nil).Once()
+	// batches_in_flight is 2, so six URLs at once means three per batch.
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.MatchedBy(func(in CrawlBatchInput) bool {
+		return in.Parallelism == 3
+	})).Return(CrawlBatchOutput{Counts: ScrapeCounts{URLs: 10}}, nil).Twice()
+
+	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+// The window must actually bound batches in flight -- that is what keeps a run
+// from handing every batch of a huge list to the workers at once. Mocked
+// returns alone would pass whether the window worked or not, so this drives a
+// real activity function that records how many ran at once.
+func runWithBatchesInFlight(t *testing.T, inFlight, batches int) int32 {
+	t.Helper()
+	configureViper(inFlight, 1_000_000)
+	viper.Set("scrape.batches_in_flight", inFlight)
+
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	var cur, peak atomic.Int32
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+		Return(func(context.Context, CrawlBatchInput) (CrawlBatchOutput, error) {
 			n := cur.Add(1)
 			for {
-				m := max.Load()
-				if n <= m || max.CompareAndSwap(m, n) {
+				m := peak.Load()
+				if n <= m || peak.CompareAndSwap(m, n) {
 					break
 				}
 			}
-			// Long enough that genuinely parallel crawls overlap.
 			time.Sleep(50 * time.Millisecond)
 			cur.Add(-1)
-			return CrawlToWaybackOutput{Success: true}, nil
+			return CrawlBatchOutput{Counts: ScrapeCounts{URLs: 10, PDFFound: 10}}, nil
 		})
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{
-			URLs:       refs(urlCount, 0),
-			NextOffset: int64(urlCount) * 10,
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+		Return(PlanBatchesOutput{
+			Batches:    refs(batches, 10, 0),
+			NextOffset: int64(batches) * 100,
 			EOF:        true,
 		}, nil).Once()
 
@@ -433,18 +386,18 @@ func runWithConcurrency(t *testing.T, concurrency, urlCount int) int32 {
 
 	var got ScrapeCounts
 	require.NoError(t, env.GetWorkflowResult(&got))
-	require.Equal(t, urlCount, got.URLs, "every url should still be crawled")
-	return max.Load()
+	require.Equal(t, batches*10, got.URLs, "every batch should still be crawled")
+	return peak.Load()
 }
 
-func Test_Workflow_ConcurrencyIsBounded(t *testing.T) {
-	max := runWithConcurrency(t, 3, 9)
-	require.LessOrEqual(t, max, int32(3), "window let more than 3 crawls run at once")
-	require.Greater(t, max, int32(1), "crawls ran serially; the window is not dispatching")
+func Test_Workflow_BatchesInFlightIsBounded(t *testing.T) {
+	peak := runWithBatchesInFlight(t, 3, 9)
+	require.LessOrEqual(t, peak, int32(3), "the window let more than 3 batches run at once")
+	require.Greater(t, peak, int32(1), "batches ran serially; the window is not dispatching")
 }
 
-func Test_Workflow_ConcurrencyOneIsSerial(t *testing.T) {
-	require.Equal(t, int32(1), runWithConcurrency(t, 1, 4))
+func Test_Workflow_OneBatchInFlightIsSerial(t *testing.T) {
+	require.Equal(t, int32(1), runWithBatchesInFlight(t, 1, 4))
 }
 
 // A retune signal is applied mid-run, and an out-of-range one is ignored rather
@@ -465,10 +418,10 @@ func Test_Workflow_RetuneSignal(t *testing.T) {
 			var ts testsuite.WorkflowTestSuite
 			env := ts.NewTestWorkflowEnvironment()
 
-			env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-				Return(ReadURLBatchOutput{URLs: refs(4, 0), NextOffset: 40, EOF: true}, nil).Once()
-			env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-				Return(CrawlToWaybackOutput{Success: true}, nil).Times(4)
+			env.OnActivity(PlanBatchesActivity, mock.Anything, mock.Anything).
+				Return(PlanBatchesOutput{Batches: refs(4, 10, 0), NextOffset: 400, EOF: true}, nil).Once()
+			env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+				Return(CrawlBatchOutput{Counts: ScrapeCounts{URLs: 10, PDFFound: 10}}, nil).Times(4)
 
 			env.RegisterDelayedCallback(func() {
 				env.SignalWorkflow(SetConcurrencySignal, tc.signal)
@@ -481,145 +434,54 @@ func Test_Workflow_RetuneSignal(t *testing.T) {
 
 			var got ScrapeCounts
 			require.NoError(t, env.GetWorkflowResult(&got))
-			require.Equal(t, 4, got.URLs, "every url is crawled regardless of the signal")
+			require.Equal(t, 40, got.URLs, "every url is crawled regardless of the signal")
 		})
 	}
 }
 
-// A URL whose crawl retries run out is the one outcome CrawlToWaybackActivity
-// never gets to record, so the workflow must log it or the URL would be missing
-// from the log entirely.
-func Test_Workflow_LogsAbandonedURLs(t *testing.T) {
-	configureViper(1, 1_000_000)
+func Test_WorkflowID(t *testing.T) {
+	require.Equal(t, "scrape_to_wayback_bucket_etd_wayback-seeds.txt",
+		WorkflowID("bucket/etd/wayback-seeds.txt"))
+}
+
+// A run handed on by a worker from before this workflow used batches carries a
+// BatchSize that meant something else -- URLs per S3 read -- and none of the
+// batch settings. It has to notice that and re-read config, or it would plan
+// with a zero batch count and fail the moment it tried.
+func Test_Workflow_ResumeFromPreBatchInputRereadsConfig(t *testing.T) {
+	configureViper(4, 1_000_000)
 
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(2, 0), NextOffset: 20, EOF: true}, nil).Once()
+	env.OnActivity(PlanBatchesActivity, mock.Anything, mock.MatchedBy(func(in PlanBatchesInput) bool {
+		// The configured values, not the carried ones.
+		return in.Offset == 4096 && in.BatchSize == 10 && in.MaxBatches == 8 && in.ChunkSize == 4096
+	})).Return(PlanBatchesOutput{Batches: refs(1, 10, 4096), NextOffset: 4196, EOF: true}, nil).Once()
+	env.OnActivity(CrawlBatchActivity, mock.Anything, mock.Anything).
+		Return(CrawlBatchOutput{Counts: ScrapeCounts{URLs: 10, PDFFound: 10}}, nil).Once()
 
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.MatchedBy(func(in CrawlToWaybackInput) bool {
-		return in.URL == "http://example.com/0"
-	})).Return(CrawlToWaybackOutput{}, errors.New("spn is sad"))
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.MatchedBy(func(in CrawlToWaybackInput) bool {
-		return in.URL == "http://example.com/1"
-	})).Return(CrawlToWaybackOutput{Success: true}, nil).Once()
-
-	// Only the abandoned URL is logged by the workflow; the one that crawled
-	// cleanly logged itself inside the activity.
-	env.OnActivity(RecordOutcomeActivity, mock.Anything, mock.MatchedBy(func(o Outcome) bool {
-		return o.SeedURL == "http://example.com/0" &&
-			o.Status == StatusError &&
-			o.WaybackURL == "" &&
-			strings.Contains(o.Reason, "spn is sad")
-	})).Return(nil).Once()
-
-	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	env.AssertExpectations(t)
-}
-
-// Nothing is abandoned on a clean run, so the workflow must not call the log
-// activity at all -- rows for successful crawls come from the crawl activity.
-func Test_Workflow_NoLogActivityWhenNothingAbandoned(t *testing.T) {
-	configureViper(2, 1_000_000)
-
-	var ts testsuite.WorkflowTestSuite
-	env := ts.NewTestWorkflowEnvironment()
-
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(3, 0), NextOffset: 30, EOF: true}, nil).Once()
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{Success: true}, nil).Times(3)
-
-	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	// RecordOutcomeActivity is unmocked, so any call to it would fail the run.
-	require.NoError(t, env.GetWorkflowError())
-}
-
-// An unwritable log is a broken deployment, not a per-URL hiccup: it stops the
-// run rather than quietly dropping the record of what happened.
-func Test_Workflow_LogWriteFailureStopsRun(t *testing.T) {
-	configureViper(1, 1_000_000)
-
-	var ts testsuite.WorkflowTestSuite
-	env := ts.NewTestWorkflowEnvironment()
-
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(1, 0), NextOffset: 10, EOF: true}, nil).Once()
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(CrawlToWaybackOutput{}, errors.New("crawl blew up"))
-	env.OnActivity(RecordOutcomeActivity, mock.Anything, mock.Anything).
-		Return(errors.New("read-only file system"))
-
-	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.ErrorContains(t, env.GetWorkflowError(), "read-only file system")
-}
-
-// --- deferring while SPN is busy ------------------------------------------
-
-// A deferral spends an attempt, so leaving too few behind it would mean a busy
-// SPN quietly halving what a URL gets to fail at before we abandon it.
-func Test_crawlAttemptBudget_leavesRoomToActuallyCrawl(t *testing.T) {
-	require.Greater(t, crawlMaxAttempts-spnDeferAttempts, spnDeferAttempts,
-		"deferrals may not be the majority of a crawl's attempts")
-	require.GreaterOrEqual(t, crawlMaxAttempts-spnDeferAttempts, 4,
-		"a URL should keep the retry budget it had before deferrals existed")
-}
-
-func Test_spnBusyRetryDelay(t *testing.T) {
-	viper.Set("crawling.spn_slot_poll_interval", "7s")
-	t.Cleanup(func() { viper.Set("crawling.spn_slot_poll_interval", nil) })
-	require.Equal(t, 7*time.Second, spnBusyRetryDelay())
-
-	// Unset, a deferred URL still has to come back on some cadence.
-	viper.Set("crawling.spn_slot_poll_interval", nil)
-	require.Equal(t, defaultSPNBusyRetryDelay, spnBusyRetryDelay())
-}
-
-// A deferral is not a verdict: SPN never looked at the URL, so the URL must
-// come back rather than be counted as a failure. This pins the error as
-// retryable -- marking it NonRetryable would silently drop every URL that
-// arrived while SPN was busy.
-func Test_Workflow_DeferredURLIsRetriedNotAbandoned(t *testing.T) {
-	configureViper(1, 1_000_000)
-
-	var ts testsuite.WorkflowTestSuite
-	env := ts.NewTestWorkflowEnvironment()
-
-	env.OnActivity(ReadURLBatch, mock.Anything, mock.Anything).
-		Return(ReadURLBatchOutput{URLs: refs(1, 0), NextOffset: 10, EOF: true}, nil).Once()
-
-	deferral := temporal.NewApplicationErrorWithOptions(
-		"SPN busy (no-sessions), deferring capture", errTypeSPNBusy,
-		temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
-
-	// Busy for the first few attempts, then a session frees up.
-	var attempts atomic.Int32
-	env.OnActivity(CrawlToWaybackActivity, mock.Anything, mock.Anything).
-		Return(func(context.Context, CrawlToWaybackInput) (CrawlToWaybackOutput, error) {
-			if attempts.Add(1) <= spnDeferAttempts {
-				return CrawlToWaybackOutput{}, deferral
-			}
-			return CrawlToWaybackOutput{Success: true}, nil
-		})
-
-	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{S3Key: "bucket/urls.txt"})
+	env.ExecuteWorkflow(ScrapeToWaybackWorkflow, ScrapeToWaybackInput{
+		S3Key: "bucket/urls.txt",
+		// Everything a pre-batch run would have been carrying, and nothing else.
+		Offset:               4096,
+		Concurrency:          4,
+		MaxConcurrency:       64,
+		URLsPerCAN:           2000,
+		BatchSize:            1000,
+		ChunkSize:            102400,
+		MaxConsecutiveErrors: 50,
+		Counts:               ScrapeCounts{URLs: 900_000, PDFFound: 500_000},
+	})
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 
+	// The byte offset and the running totals survive the handoff -- that is the
+	// whole point of letting it resume rather than making it start over.
 	var got ScrapeCounts
 	require.NoError(t, env.GetWorkflowResult(&got))
-	require.Equal(t, 1, got.URLs)
-	require.Equal(t, 1, got.PDFFound)
-	require.Zero(t, got.Errored, "a deferral was counted as a failed URL")
-	require.Greater(t, int(attempts.Load()), spnDeferAttempts,
-		"the deferred URL was never retried")
+	require.Equal(t, 900_010, got.URLs)
+	require.Equal(t, 500_010, got.PDFFound)
+	env.AssertExpectations(t)
 }

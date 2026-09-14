@@ -105,10 +105,15 @@ type PDFCrawler struct {
 	// dropping the release.
 	//
 	// Set true, the crawl gives up at once with an SPNBusyError and expects
-	// its caller to retry the URL later. That is what the scrape workflow
-	// wants: waiting here holds a Temporal activity slot doing nothing, and
-	// that slot is what a URL already in CDX needs in order to finish in the
-	// second or two it actually takes.
+	// its caller to retry the URL later. That suits a caller for whom waiting
+	// here would hold something scarce -- it was written for the scrape
+	// workflow back when one URL was one Temporal activity, and waiting meant
+	// an activity slot sat idle while a URL already in CDX queued behind it.
+	//
+	// No caller in trawler sets it any more: scrape crawls a whole batch of
+	// URLs in one activity now, so a crawl waiting on SPN holds one goroutine
+	// of that batch's pool and the URLs behind it keep moving. The mode is
+	// kept for a caller that has the old shape of problem.
 	DeferWhenSPNBusy bool
 }
 

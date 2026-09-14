@@ -39,7 +39,8 @@ func init() {
 		"Override the task queue. Defaults to scrape.task_queue from config.")
 
 	SetConcurrencyCmd.Flags().IntVar(&concurrency, "concurrency", 0,
-		"How many URLs the running scrape should crawl at once")
+		"How many URLs the running scrape should crawl at once. Takes effect on "+
+			"the next batch it dispatches, not the ones already running.")
 	SetConcurrencyCmd.MarkFlagRequired("concurrency")
 
 	Cmd.AddCommand(StartOneOffCmd)

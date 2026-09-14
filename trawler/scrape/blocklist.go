@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -55,4 +57,46 @@ func loadBlocklist() ([]string, error) {
 	}
 
 	return fresh, nil
+}
+
+// blocklistReloader keeps the last blocklist read from disk so a batch of
+// hundreds of URLs re-reads the config file on a TTL rather than once per
+// crawl.
+//
+// Re-reading at all is the point -- see loadBlocklist -- but "on the next
+// crawl" used to mean "on the next activity", and an activity was one URL. A
+// batch activity runs for hours, so the property has to be kept by something
+// other than the activity boundary. A TTL gives it back without putting a file
+// read in front of every URL.
+type blocklistReloader struct {
+	mu       sync.Mutex
+	patterns []string
+	at       time.Time
+	loaded   bool
+}
+
+// blocklist is shared by every batch in the worker; the file it reads is too.
+var blocklist = &blocklistReloader{}
+
+// get returns the blocklist, re-reading it when the cached copy is older than
+// ttl.
+//
+// The error is only ever from a read that just happened, so a caller that logs
+// it hears about a bad config file once per ttl rather than once per URL. The
+// patterns are still returned alongside it: loadBlocklist falls back to what
+// was loaded at startup, and crawling with a stale blocklist beats crawling
+// with none.
+func (b *blocklistReloader) get(ttl time.Duration, now time.Time) ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.loaded && now.Sub(b.at) < ttl {
+		return b.patterns, nil
+	}
+
+	patterns, err := loadBlocklist()
+	b.patterns = patterns
+	b.at = now
+	b.loaded = true
+	return patterns, err
 }

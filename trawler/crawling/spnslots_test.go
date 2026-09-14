@@ -23,6 +23,11 @@ type fakeSPN struct {
 	// saveMessage is what /save answers with; the empty string means a normal
 	// response carrying a job id.
 	saveMessage string
+	// noJobID makes /save answer without a job id, the malformed response
+	// spnToCdx turns into an SPNError carrying no status_ext at all.
+	noJobID bool
+	// jobStatus is what /status/<job id> answers with once a save is accepted.
+	jobStatus spn.JobStatus
 	// block, when non-nil, holds StatusUser until it is closed, so a test can
 	// have a second caller arrive mid-refresh.
 	block chan struct{}
@@ -44,6 +49,9 @@ func (f *fakeSPN) Save(context.Context, spn.SaveRequest) (spn.SaveResult, error)
 	if f.saveMessage != "" {
 		return spn.SaveResult{Message: f.saveMessage}, nil
 	}
+	if f.noJobID {
+		return spn.SaveResult{}, nil
+	}
 	return spn.SaveResult{JobID: "job-1"}, nil
 }
 
@@ -52,7 +60,7 @@ func (f *fakeSPN) StatusSystem(context.Context) (spn.SystemStatus, error) {
 }
 
 func (f *fakeSPN) StatusJob(context.Context, string) (spn.JobStatus, error) {
-	return spn.JobStatus{}, nil
+	return f.jobStatus, nil
 }
 
 const testTTL = time.Minute

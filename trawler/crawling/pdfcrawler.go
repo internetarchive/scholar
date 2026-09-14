@@ -31,7 +31,11 @@ type SPNError struct {
 	URL       string
 }
 
-func (e SPNError) Error() string {
+// Error is on the pointer receiver, and every site returns &SPNError{}: Crawl
+// picks these out with errors.As against a *SPNError, which a value of the
+// type does not satisfy. Returning one by value compiles and then silently
+// never matches.
+func (e *SPNError) Error() string {
 	return fmt.Sprintf("SPN job %s failed for %q: %s: %q", e.JobID, e.URL, e.Message, e.StatusExt)
 }
 
@@ -39,7 +43,8 @@ type CdxNoRowsError struct {
 	URL string
 }
 
-func (e CdxNoRowsError) Error() string {
+// Error is on the pointer receiver; see SPNError.Error.
+func (e *CdxNoRowsError) Error() string {
 	return fmt.Sprintf("CDX query for '%s' returned errorless empty result set", e.URL)
 }
 
@@ -480,6 +485,7 @@ func (c PDFCrawler) Crawl(ctx context.Context, startURL string) (CrawlResult, er
 						// crawl, though, and leave it for a re-run of the day instead of
 						// blocking since SPN outages can take a long time to recover.
 						out.FailReason = "spn-error:job-failed"
+						return *out, nil
 					case "error:browser-running-error":
 						// something about the page crashed the headless browser. I found
 						// that this was not transient for at least zenodo. It may mean
@@ -487,11 +493,19 @@ func (c PDFCrawler) Crawl(ctx context.Context, startURL string) (CrawlResult, er
 						// that doesn't lead to successful crawls it might need to be
 						// blocked.
 						out.FailReason = "spn-error:browser-running-error"
+						return *out, nil
 					case "error:no-captures":
 						// SPN was not able to reach the host at all; it was either down or blocking them
 						out.FailReason = "spn-error:no-captures"
+						return *out, nil
 					}
-					return *out, nil
+					// Any other SPN failure -- an unrecognised status_ext, or the
+					// malformed response that carries none at all -- is not
+					// something we have characterised, so it stays an error and
+					// gets retried. The verdicts above are terminal because we
+					// know what each one means; turning an unknown SPN failure
+					// into a reasonless "no PDF here" would burn a whole list
+					// against a broken SPN and call it data.
 				}
 				return *out, err
 			}
@@ -733,7 +747,7 @@ func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cd
 
 		if resp.JobID == "" {
 			c.slogInfo("spn response lacked job id", "resp", resp)
-			return out, SPNError{
+			return out, &SPNError{
 				Message: resp.Message,
 				URL:     resp.URL,
 			}
@@ -774,7 +788,7 @@ func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cd
 		if spnJobResult.OriginalURL != "" {
 			errUrl = spnJobResult.OriginalURL
 		}
-		return out, SPNError{
+		return out, &SPNError{
 			Message:   spnJobResult.Message,
 			StatusExt: spnJobResult.StatusExt,
 			URL:       errUrl,
@@ -800,7 +814,7 @@ func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cd
 		return out, fmt.Errorf("failed to find successful SPN job in CDX: %w", err)
 	}
 	if len(rows) == 0 {
-		return out, CdxNoRowsError{URL: spnJobResult.OriginalURL}
+		return out, &CdxNoRowsError{URL: spnJobResult.OriginalURL}
 	}
 
 	return &rows[0], nil

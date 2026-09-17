@@ -1,13 +1,11 @@
 package scrape
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"strings"
 
+	"git.archive.org/webgroup/scholar/trawler/harvesting"
 	"git.archive.org/webgroup/scholar/trawler/s3"
 )
 
@@ -167,76 +165,10 @@ func sliceURLs(ref BatchRef, chunkSize int, r io.ReaderAt) ([]URLRef, error) {
 	return out, nil
 }
 
-// scanLines walks newline-delimited text out of r in chunkSize-byte reads,
-// handing each non-blank line to fn along with the byte offset just past its
-// newline.
-//
-// The scan covers [start, end); a negative end means "to the end of the
-// object". fn returning false stops the scan there. The bool result reports
-// whether the scan consumed its whole range rather than stopping early, which
-// is how the planner tells "the list ran out" apart from "I have enough
-// batches".
-//
-// Planning and reading share this so they cannot disagree about where a line
-// ends or which lines count. They are the two halves of the same decision --
-// one records byte ranges, the other re-reads them, possibly hours later and
-// on another host -- and a difference of one blank line between them would
-// mean URLs quietly skipped or crawled twice.
+// scanLines is harvesting.ScanLines under the name the rest of this package
+// uses. The scan itself is shared with the periodic pipeline, which walks its
+// PDF-CDX lists exactly the same way; see that function for why planning and
+// reading must not be able to disagree about where a line ends.
 func scanLines(r io.ReaderAt, start, end int64, chunkSize int, fn func(line string, lineEnd int64) bool) (bool, error) {
-	if chunkSize <= 0 {
-		return false, fmt.Errorf("chunk size must be positive, got %d", chunkSize)
-	}
-
-	pos := start
-	var partial []byte
-
-	for end < 0 || pos < end {
-		n := chunkSize
-		if end >= 0 && int64(n) > end-pos {
-			n = int(end - pos)
-		}
-
-		buf := make([]byte, n)
-		read, err := r.ReadAt(buf, pos)
-		atEnd := errors.Is(err, io.EOF)
-		if err != nil && !atEnd {
-			return false, fmt.Errorf("range read at %d failed: %w", pos, err)
-		}
-
-		rest := buf[:read]
-		for len(rest) > 0 {
-			i := bytes.IndexByte(rest, '\n')
-			if i < 0 {
-				// The line runs past this read; carry it into the next one.
-				partial = append(partial, rest...)
-				pos += int64(len(rest))
-				rest = nil
-				break
-			}
-			line := append(partial, rest[:i]...)
-			partial = nil
-			pos += int64(i + 1)
-			rest = rest[i+1:]
-			if u := strings.TrimSpace(string(line)); u != "" {
-				if !fn(u, pos) {
-					return false, nil
-				}
-			}
-		}
-
-		// A read that came back short of the object's end with nothing in it is
-		// not something ReadAt should do, but treating it as the end beats
-		// spinning on it forever.
-		if atEnd || read == 0 {
-			break
-		}
-	}
-
-	// A final line with no trailing newline is still a URL.
-	if u := strings.TrimSpace(string(partial)); u != "" {
-		if !fn(u, pos) {
-			return false, nil
-		}
-	}
-	return true, nil
+	return harvesting.ScanLines(r, start, end, chunkSize, fn)
 }

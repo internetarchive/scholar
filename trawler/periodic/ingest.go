@@ -1,76 +1,81 @@
+// Package periodic ingests PDFs out of WARCs on petabox, rather than off the
+// live web the way `daily` does. We complement the daily crawling with periodic
+// heritrix (or whatever) wide crawls in the hope of capturing PDFs, and this is
+// what turns the results of one of those crawls into fatcat files and search
+// documents.
+//
+// The entry workflow is PeriodicIngestWorkflow. A run walks one IA collection:
+// it pins the collection's item list, stages each item's PDF CDX rows in S3,
+// and works those rows in batches.
+//
+// The work is organised in batches rather than one CDX row per activity. A run
+// plans the collection into byte ranges (plan.go) and hands each range to one
+// activity that ingests it with a pool of its own (batch.go). Temporal
+// therefore sees a few events per few hundred PDFs instead of a few per PDF,
+// which is what keeps a collection of millions of rows from costing more in
+// workflow history than it does in GROBID time. It is also what lets more than
+// one PDF be in flight at once without needing a worker activity slot each.
+// What Temporal still guarantees is the part that matters: a batch whose worker
+// dies comes back, and its heartbeat checkpoint says where to resume.
 package periodic
 
-/*
-This package is like `daily` but for the ingestion of PDFs from warcs on
-petabox instead of the live web. We complement the daily crawling with periodic
-heritrix (or whatever) based wide crawls in the hope of capturing PDFs.
-
-The entry workflow is PeriodicIngestWorkflow. It pages through a crawl collection on petabox, pulls CDX files, then reads and processes any PDFs within.
-*/
-
 import (
-	"bufio"
-	"bytes"
-	"context"
-	"crypto/sha1"
-	"encoding/base32"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"maps"
-	"net/http"
-	"path/filepath"
-	"regexp"
-	"slices"
-	"strconv"
-	"strings"
 	"time"
 
-	"git.archive.org/webgroup/scholar/trawler/cdx/cdxfile"
-	"git.archive.org/webgroup/scholar/trawler/cleaning"
-	"git.archive.org/webgroup/scholar/trawler/fatcat2"
-	"git.archive.org/webgroup/scholar/trawler/harvesting"
-	"git.archive.org/webgroup/scholar/trawler/ia"
-	"git.archive.org/webgroup/scholar/trawler/indexing"
-	"git.archive.org/webgroup/scholar/trawler/pdf"
-	"git.archive.org/webgroup/scholar/trawler/s3"
-	"github.com/google/uuid"
-	warc "github.com/internetarchive/gowarc"
-	"github.com/miku/grobidclient/tei"
 	"github.com/spf13/viper"
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
+// SetConcurrencySignal retunes how many PDFs are ingested at once without
+// restarting the workflow. A run over a whole crawl collection lasts long
+// enough that "back off, GROBID is unhappy" needs to be answerable while it is
+// in flight.
+const SetConcurrencySignal = "set-concurrency"
+
 const (
-	itemsPerPage = 100
+	defaultConcurrency          = 8
+	defaultMaxConcurrency       = 64
+	defaultLinesPerCAN          = 20000
+	defaultBatchSize            = 100
+	defaultBatchesInFlight      = 4
+	defaultBatchesPerPlan       = 32
+	defaultItemsPerPlan         = 8
+	defaultChunkSize            = 102400
+	defaultMaxConsecutiveErrors = 50
+	defaultLineAttempts         = 3
 )
 
-// ErrTruncatedCapture marks a WARC record the crawler flagged as truncated
-// (WARC-Truncated header): the stored payload is incomplete, so callers skip
-// the row rather than treating the short HTTP body as a hard error.
-var ErrTruncatedCapture = errors.New("warc capture truncated at crawl time")
-
+// PeriodicCounts is the running tally for an ingest. Most PDF CDX rows are
+// skipped -- already in fatcat, already indexed, no external ID to hang a
+// release off -- so skipping is counted rather than treated as a failure.
 type PeriodicCounts struct {
-	// Total is number of PDF CDX line in a collection
+	// Lines is how many PDF CDX rows reached a verdict.
 	Lines int
-	// PdfsSkipped is how many PDF lines we passed on without adding to any DB or index
+	// PdfsSkipped is how many rows we passed on without adding to any DB or index
 	PdfsSkipped int
 	// FilesUpdated is how many existing file records we added a URL to
 	FilesUpdated int
 	// PdfsFailed is how many PDFs grobid choked on
 	PdfsFailed int
+	// PdfsErrored is how many rows exhausted their retries and were abandoned so
+	// the run could continue.
+	PdfsErrored int
 	// PdfsAddedToDB is how many new file records we created
 	PdfsAddedToDB int
-	//PdfsAddedToES is how many PDFs we added to fatcat's file index
+	// PdfsAddedToES is how many PDFs we added to fatcat's file index
 	PdfsAddedToES int
 	// FulltextAddedToES is how many PDFs whose full text we ingested into ES
 	FulltextAddedToES int
 }
 
+// Add merges two tallies. It is used to fold each batch result into the
+// workflow's running total, including across ContinueAsNew.
+//
+// It never mutates either operand, which is what lets a batch snapshot its
+// running counts into a heartbeat and keep counting.
 func (c PeriodicCounts) Add(oc PeriodicCounts) PeriodicCounts {
 	return PeriodicCounts{
 		Lines:             c.Lines + oc.Lines,
@@ -78,931 +83,431 @@ func (c PeriodicCounts) Add(oc PeriodicCounts) PeriodicCounts {
 		PdfsAddedToDB:     c.PdfsAddedToDB + oc.PdfsAddedToDB,
 		PdfsAddedToES:     c.PdfsAddedToES + oc.PdfsAddedToES,
 		PdfsFailed:        c.PdfsFailed + oc.PdfsFailed,
+		PdfsErrored:       c.PdfsErrored + oc.PdfsErrored,
 		FulltextAddedToES: c.FulltextAddedToES + oc.FulltextAddedToES,
 		FilesUpdated:      c.FilesUpdated + oc.FilesUpdated,
 	}
 }
 
+// PeriodicIngestInput drives the workflow. Callers starting a fresh run set
+// CollectionName (and optionally SourceOverride and Concurrency); every other
+// field is either populated from config on the first run or carried across
+// ContinueAsNew.
 type PeriodicIngestInput struct {
-	// CollectionName is which petabox collection of warcs/cdx to ingest
+	// CollectionName is which petabox collection of warcs/cdx to ingest.
 	CollectionName string
-	// SourceOverride overrides the default source name generation
+	// SourceOverride overrides the default source name generation.
 	SourceOverride string
-	// TaskQueue is which temporal task queue to use
+	// Concurrency is how many PDFs the run ingests at once, across all of its
+	// batches. Zero means "use the configured default".
+	Concurrency int
+	// TaskQueue is the Temporal task queue for every activity.
 	TaskQueue string
-	// ItemIdMap is a dictionary mapping item IDs to s3keys where their PDF CDX lines can be found
-	ItemIdMap map[string]string
-	// ItemId is the current item whence cdx lines are being pulled
-	ItemId string
-	// Offset is the offset within the current item's cdx lines
-	Offset int64
-	// Counts is the running total of pdf lines processed
+
+	// StartAtItem begins the run at a named item rather than at the top of the
+	// collection, and StartAtOffset begins it part way into that item. They are
+	// resolved against the item list this run pins, so they are honoured only on
+	// a fresh start -- a run resumed from its own ContinueAsNew carries a Cursor
+	// and ignores these.
+	//
+	// They exist for picking up where a previous, separate run left off: the
+	// per-row work is idempotent, but proving a row is already done still costs
+	// lookups against fatcat and both ES indices, and doing that for a
+	// collection somebody already ingested is hours of no-ops. Naming the item
+	// rather than an index is deliberate -- an index means nothing across two
+	// enumerations of a collection that has grown since.
+	//
+	// The offset is a byte position in the item's staged PDF CDX and must land
+	// on a line boundary. One that does not costs a single garbage row, logged
+	// as an unparsable skip; the scan re-syncs at the next newline.
+	StartAtItem   string
+	StartAtOffset int64
+
+	// Source is the resolved provenance label. It is resolved once, on the first
+	// run, and carried: deriving it per run would stamp every ContinueAsNew
+	// handoff of the same ingest with a different source.
+	Source string
+	// ItemListKey is the pinned list of items this run walks; see ItemListKey.
+	ItemListKey string
+	// ItemCount is how many items that list holds, for progress logging.
+	ItemCount int
+	// Cursor is the resume point: which item, and how far into it.
+	Cursor ItemCursor
+	// Counts accumulates across every run in the ContinueAsNew chain.
 	Counts PeriodicCounts
+
+	// The fields below are viper-sourced settings snapshotted once on the first
+	// run (see the SideEffect in the workflow) and threaded across
+	// ContinueAsNew, so a config change under a running chain cannot desync its
+	// replay. A zero BatchesPerPlan means we have not captured them yet.
+	MaxConcurrency       int
+	LinesPerCAN          int
+	BatchSize            int
+	BatchesInFlight      int
+	BatchesPerPlan       int
+	ItemsPerPlan         int
+	ChunkSize            int
+	MaxConsecutiveErrors int
+	LineAttempts         int
 }
 
+// periodicConfig is the snapshot of viper-sourced settings taken via SideEffect.
+type periodicConfig struct {
+	Concurrency          int
+	MaxConcurrency       int
+	LinesPerCAN          int
+	BatchSize            int
+	BatchesInFlight      int
+	BatchesPerPlan       int
+	ItemsPerPlan         int
+	ChunkSize            int
+	MaxConsecutiveErrors int
+	LineAttempts         int
+	TaskQueue            string
+}
+
+func nonZero(v, fallback int) int {
+	if v <= 0 {
+		return fallback
+	}
+	return v
+}
+
+// splitConcurrency turns the run's PDF concurrency -- the number operators
+// actually think in, and the one the retune signal carries -- into how many
+// batch activities to keep in flight and how many rows each of them ingests at
+// once.
+//
+// Spreading the run over several batches is what puts it on more than one
+// worker host, so we prefer to use the whole allowance of batches and divide
+// the rows between them. Below one row per batch there is nothing to divide,
+// and the batch count comes down instead.
+func splitConcurrency(concurrency, batchesInFlight int) (batches, parallelism int) {
+	concurrency = max(concurrency, 1)
+	batches = min(max(batchesInFlight, 1), concurrency)
+	parallelism = (concurrency + batches - 1) / batches
+	return batches, parallelism
+}
+
+// PeriodicIngestWorkflow walks an IA crawl collection in batches, ingesting
+// each batch of PDF CDX rows in one activity.
+//
+// Per-row failures never fail the run: a crawl collection will always contain
+// PDFs petabox will not serve and PDFs GROBID will not answer for, and one of
+// them must not strand the rest of the collection. They are counted and logged
+// inside the batch. Only a sustained run of errors -- which means something
+// systemic like GROBID being down, not a bad PDF -- or a batch that cannot run
+// at all aborts the workflow.
 func PeriodicIngestWorkflow(ctx workflow.Context, in PeriodicIngestInput) (PeriodicCounts, error) {
 	l := workflow.GetLogger(ctx)
-	taskQueue := in.TaskQueue
-	source := in.SourceOverride
-	if source == "" {
-		now := workflow.Now(ctx).Format("20060102")
-		runid := workflow.GetInfo(ctx).WorkflowExecution.RunID
-		if len(runid) > 8 {
-			runid = runid[:8]
-		}
-		source = fmt.Sprintf("periodic-%s-%s-%s", now, runid, in.CollectionName)
+
+	if in.CollectionName == "" {
+		return in.Counts, errors.New("periodic: CollectionName is required")
 	}
 
-	itemIds := []string{}
-
-	if len(in.ItemIdMap) == 0 {
-		in.ItemIdMap = map[string]string{}
-		ao := workflow.ActivityOptions{
-			StartToCloseTimeout: 2 * time.Hour,
-			TaskQueue:           taskQueue,
-			HeartbeatTimeout:    10 * time.Minute,
-			RetryPolicy: &temporal.RetryPolicy{
-				BackoffCoefficient: 1.5,
-				InitialInterval:    30 * time.Second,
-				MaximumInterval:    180 * time.Second,
-			},
-		}
-		var listOut ListCollectionOutput
-		err := workflow.ExecuteActivity(
-			workflow.WithActivityOptions(ctx, ao),
-			ListCollectionActivity,
-			ListCollectionInput{CollectionName: in.CollectionName}).Get(ctx, &listOut)
-		if err != nil {
+	// Snapshot config once, on the first run of the chain. SideEffect records
+	// the read in history so replays reuse the recorded values rather than
+	// re-reading viper, which is what keeps an in-flight chain deterministic
+	// when the deployed config changes underneath it.
+	if in.BatchesPerPlan == 0 {
+		var cfg periodicConfig
+		if err := workflow.SideEffect(ctx, func(workflow.Context) any {
+			return periodicConfig{
+				Concurrency:          viper.GetInt("periodic.concurrency"),
+				MaxConcurrency:       viper.GetInt("periodic.max_concurrency"),
+				LinesPerCAN:          viper.GetInt("periodic.lines_per_can"),
+				BatchSize:            viper.GetInt("periodic.batch_size"),
+				BatchesInFlight:      viper.GetInt("periodic.batches_in_flight"),
+				BatchesPerPlan:       viper.GetInt("periodic.batches_per_plan"),
+				ItemsPerPlan:         viper.GetInt("periodic.items_per_plan"),
+				ChunkSize:            viper.GetInt("periodic.chunk_size"),
+				MaxConsecutiveErrors: viper.GetInt("periodic.max_consecutive_errors"),
+				LineAttempts:         viper.GetInt("periodic.line_attempts"),
+				TaskQueue:            viper.GetString("periodic.task_queue"),
+			}
+		}).Get(&cfg); err != nil {
 			return in.Counts, err
 		}
+		in.MaxConcurrency = nonZero(cfg.MaxConcurrency, defaultMaxConcurrency)
+		in.LinesPerCAN = nonZero(cfg.LinesPerCAN, defaultLinesPerCAN)
+		in.BatchSize = nonZero(cfg.BatchSize, defaultBatchSize)
+		in.BatchesInFlight = nonZero(cfg.BatchesInFlight, defaultBatchesInFlight)
+		in.BatchesPerPlan = nonZero(cfg.BatchesPerPlan, defaultBatchesPerPlan)
+		in.ItemsPerPlan = nonZero(cfg.ItemsPerPlan, defaultItemsPerPlan)
+		in.ChunkSize = nonZero(cfg.ChunkSize, defaultChunkSize)
+		in.MaxConsecutiveErrors = nonZero(cfg.MaxConsecutiveErrors, defaultMaxConsecutiveErrors)
+		in.LineAttempts = nonZero(cfg.LineAttempts, defaultLineAttempts)
+		if in.Concurrency <= 0 {
+			in.Concurrency = nonZero(cfg.Concurrency, defaultConcurrency)
+		}
+		if in.TaskQueue == "" {
+			in.TaskQueue = cfg.TaskQueue
+		}
+	}
+	if in.Concurrency > in.MaxConcurrency {
+		in.Concurrency = in.MaxConcurrency
+	}
 
-		for _, itemId := range listOut.ItemIds {
-			var s3key string
-			err = workflow.ExecuteActivity(
-				workflow.WithActivityOptions(ctx, ao),
-				CacheItemPdfActivity,
-				CacheItemPdfActivityInput{CollectionName: in.CollectionName, ItemId: itemId},
-			).Get(ctx, &s3key)
-			if err != nil {
-				return in.Counts, err
+	info := workflow.GetInfo(ctx)
+
+	// Resolve the provenance label once and carry it. Deriving it per run would
+	// stamp every ContinueAsNew handoff of one ingest with a different source,
+	// which is exactly what makes a source label useless later.
+	if in.Source == "" {
+		if in.SourceOverride != "" {
+			in.Source = in.SourceOverride
+		} else {
+			runid := info.WorkflowExecution.RunID
+			if len(runid) > 8 {
+				runid = runid[:8]
 			}
-			in.ItemIdMap[itemId] = s3key
+			in.Source = fmt.Sprintf("periodic-%s-%s-%s",
+				workflow.Now(ctx).Format("20060102"), runid, in.CollectionName)
 		}
 	}
 
-	for k := range maps.Keys(in.ItemIdMap) {
-		itemIds = append(itemIds, k)
-	}
-	slices.Sort(itemIds)
-
-	if len(itemIds) == 0 {
-		l.Warn("found no items in collection, exiting")
-		return in.Counts, nil
-	}
-
-	linesPerCAN := 1000
-	linesThisRun := 0
-	findCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
-		TaskQueue:           taskQueue,
-	})
-
-	if in.ItemId == "" {
-		in.ItemId = itemIds[0]
-	}
-
-	currentItemIx := slices.Index(itemIds, in.ItemId)
-	if currentItemIx == -1 {
-		l.Warn("item id not found in list", "itemId", in.ItemId)
-		return in.Counts, nil
-	}
-	left := itemIds[currentItemIx:]
-
-	lCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout:    4 * time.Hour,
-		ScheduleToCloseTimeout: 8 * time.Hour,
-		HeartbeatTimeout:       20 * time.Minute,
-		TaskQueue:              taskQueue,
+	listCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 2 * time.Hour,
+		HeartbeatTimeout:    10 * time.Minute,
+		TaskQueue:           in.TaskQueue,
 		RetryPolicy: &temporal.RetryPolicy{
-			BackoffCoefficient: 1.5,
 			InitialInterval:    30 * time.Second,
-			MaximumInterval:    90 * time.Second,
+			BackoffCoefficient: 1.5,
+			MaximumInterval:    3 * time.Minute,
+			MaximumAttempts:    10,
 		},
 	})
 
-	findInput := harvesting.FindLineBatchInput{
-		Offset:    in.Offset,
-		BatchSize: 10000,
-		ChunkSize: 102400,
+	// Enumerating the collection is the one thing that has to happen before
+	// anything else, and exactly once: the cursor is an index into the list it
+	// writes, and a collection that grows while we ingest it would shift every
+	// index under a running cursor.
+	if in.ItemListKey == "" {
+		key := ItemListKey(info.WorkflowExecution.ID, info.WorkflowExecution.RunID)
+		var listOut ListCollectionOutput
+		if err := workflow.ExecuteActivity(listCtx, ListCollectionActivity, ListCollectionInput{
+			CollectionName: in.CollectionName,
+			ItemListKey:    key,
+			StartAtItem:    in.StartAtItem,
+		}).Get(ctx, &listOut); err != nil {
+			return in.Counts, err
+		}
+		if listOut.ItemCount == 0 {
+			l.Warn("found no items in collection, exiting", "collection", in.CollectionName)
+			return in.Counts, nil
+		}
+		in.ItemListKey = key
+		in.ItemCount = listOut.ItemCount
+		l.Info("pinned collection item list",
+			"collection", in.CollectionName, "items", in.ItemCount, "key", key)
+
+		if in.StartAtItem != "" {
+			in.Cursor = ItemCursor{Index: listOut.StartIndex, Offset: in.StartAtOffset}
+			l.Info("skipping ahead to a named item",
+				"item", in.StartAtItem,
+				"index", listOut.StartIndex,
+				"of", in.ItemCount,
+				"offset", in.StartAtOffset)
+		}
 	}
 
-	for _, itemId := range left {
-		in.ItemId = itemId
-		findInput.S3Key = in.ItemIdMap[itemId]
-		for {
-			var findOutput harvesting.FindLineBatchOutput
-			if err := workflow.ExecuteActivity(findCtx, harvesting.FindLineBatch, findInput).Get(findCtx, &findOutput); err != nil {
-				return in.Counts, err
+	// Planning stages items, which means downloading and filtering whole rollup
+	// CDX files, so it gets a real timeout and heartbeats rather than the
+	// seconds a pure list-cutting call would need.
+	planCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 1 * time.Hour,
+		HeartbeatTimeout:    10 * time.Minute,
+		TaskQueue:           in.TaskQueue,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    30 * time.Second,
+			BackoffCoefficient: 1.5,
+			MaximumInterval:    3 * time.Minute,
+			MaximumAttempts:    10,
+		},
+	})
+
+	// A batch is hours of work in one activity, so the heartbeat -- not the
+	// StartToClose budget -- is what says whether it is alive. StartToClose is
+	// only a backstop against a batch that keeps heartbeating and never
+	// finishes.
+	//
+	// The attempt budget is generous because a retry is cheap: it resumes from
+	// the checkpoint rather than re-ingesting the batch. Most of what lands here
+	// is a worker restart, and a run must survive several of those without
+	// giving up on a batch.
+	ingestCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 8 * time.Hour,
+		HeartbeatTimeout:    20 * time.Minute,
+		TaskQueue:           in.TaskQueue,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    30 * time.Second,
+			BackoffCoefficient: 1.5,
+			MaximumInterval:    5 * time.Minute,
+			MaximumAttempts:    10,
+		},
+	})
+
+	sigCh := workflow.GetSignalChannel(ctx, SetConcurrencySignal)
+
+	sel := workflow.NewSelector(ctx)
+	inFlight := 0
+
+	// failure is the first reason we have to stop the run. It is set from the
+	// selector callback and read by the dispatch loop, which is why it is not
+	// simply returned.
+	var failure error
+
+	// dispatch starts a batch and registers its completion handler. Results are
+	// folded in as they land, in whatever order they land; the selector callback
+	// is the only place Counts is mutated.
+	dispatch := func(ref BatchRef, parallelism int) {
+		f := workflow.ExecuteActivity(ingestCtx, IngestBatchActivity, IngestBatchInput{
+			Batch:                ref,
+			CollectionName:       in.CollectionName,
+			Source:               in.Source,
+			ChunkSize:            in.ChunkSize,
+			Parallelism:          parallelism,
+			LineAttempts:         in.LineAttempts,
+			MaxConsecutiveErrors: in.MaxConsecutiveErrors,
+		})
+		inFlight++
+		sel.AddFuture(f, func(f workflow.Future) {
+			inFlight--
+			var res IngestBatchOutput
+			if err := f.Get(ctx, &res); err != nil {
+				// A batch only fails for something systemic -- an unreadable
+				// staged CDX, an unwritable log, a batch stopped before it
+				// finished. A PDF that will not ingest is counted inside the
+				// batch and never reaches here, so unlike a single row this is
+				// not something to absorb and carry on from.
+				if failure == nil {
+					failure = fmt.Errorf("periodic: batch of %d rows from %s at offset %d failed: %w",
+						ref.LineCount, ref.ItemID, ref.Offset, err)
+				}
+				l.Error("batch failed", "item", ref.ItemID, "offset", ref.Offset, "err", err)
+				return
 			}
-			for _, offset := range findOutput.Offsets {
-				in.Counts.Lines += 1
-				lin := ProcessPdfLineInput{
-					S3Key:          in.ItemIdMap[itemId],
-					LineStart:      offset[0],
-					Length:         offset[1],
-					CollectionName: in.CollectionName,
-					ItemId:         in.ItemId,
-					SourceLabel:    source,
-				}
-				var c PeriodicCounts
-				if err := workflow.ExecuteActivity(lCtx, ProcessPdfLineActivity, lin).Get(lCtx, &c); err != nil {
-					return in.Counts, err
-				}
-				in.Counts = in.Counts.Add(c)
-				linesThisRun++
+			in.Counts = in.Counts.Add(res.Counts)
+			if res.Aborted && failure == nil {
+				failure = fmt.Errorf(
+					"periodic: batch from %s at offset %d aborted: %s (resume at item %d offset %d)",
+					ref.ItemID, ref.Offset, res.AbortReason, ref.ItemIndex, res.NextOffset)
+			}
+		})
+	}
 
-				// Advance the resume point to just past the line we finished.
-				// offset[0]+offset[1] is the byte after this line's trailing newline
-				// (see harvesting.chunk), so a mid-batch ContinueAsNew neither
-				// re-processes nor skips a line.
-				in.Offset = offset[0] + offset[1]
-				findInput.Offset = in.Offset
+	drain := func() {
+		for inFlight > 0 {
+			sel.Select(ctx)
+		}
+	}
 
-				if linesThisRun >= linesPerCAN || workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
-					l.Info(fmt.Sprintf("continue-as-new for '%s/%s' at offset %d (%d lines this run)",
-						in.CollectionName, in.ItemId, in.Offset, linesThisRun))
-					return in.Counts, workflow.NewContinueAsNewError(ctx, PeriodicIngestWorkflow, in)
+	// quiesce waits for the in-flight batches so the cursor we hand on is fully
+	// accounted for. A run that is already failing skips the wait: the records
+	// for everything those batches finished are written either way, and grinding
+	// hundreds more PDFs against whatever just broke helps nobody.
+	quiesce := func() error {
+		if failure == nil {
+			drain()
+		}
+		return failure
+	}
+
+	var linesThisRun int
+	stop := false
+
+	for !stop {
+		var plan PlanBatchesOutput
+		if err := workflow.ExecuteActivity(planCtx, PlanBatchesActivity, PlanBatchesInput{
+			CollectionName: in.CollectionName,
+			ItemListKey:    in.ItemListKey,
+			Cursor:         in.Cursor,
+			BatchSize:      in.BatchSize,
+			MaxBatches:     in.BatchesPerPlan,
+			MaxItems:       in.ItemsPerPlan,
+			ChunkSize:      in.ChunkSize,
+		}).Get(planCtx, &plan); err != nil {
+			return in.Counts, err
+		}
+
+		for _, ref := range plan.Batches {
+			// Apply any pending retune before deciding whether the window is
+			// full. ReceiveAsync keeps this deterministic without a coroutine.
+			var want int
+			for sigCh.ReceiveAsync(&want) {
+				if want > 0 && want <= in.MaxConcurrency {
+					l.Info("concurrency retuned", "from", in.Concurrency, "to", want)
+					in.Concurrency = want
+				} else {
+					l.Warn("ignoring out-of-range concurrency signal",
+						"want", want, "max", in.MaxConcurrency)
 				}
 			}
 
-			in.Offset = findOutput.BytesRead
-			findInput.Offset = findOutput.BytesRead
+			// A retune reaches the batches dispatched after it, not the ones
+			// already running: a batch's parallelism is fixed when it starts. So
+			// the knob takes a batch to bite rather than a PDF, which is the
+			// price of not paying Temporal per PDF.
+			batches, parallelism := splitConcurrency(in.Concurrency, in.BatchesInFlight)
 
-			if findOutput.EOF {
-				l.Info(fmt.Sprintf("item %q complete for coll %q: %#v",
-					in.ItemId, in.CollectionName, in.Counts))
-				in.Offset = 0
-				findInput.Offset = 0
+			for inFlight >= batches {
+				sel.Select(ctx)
+			}
+			if failure != nil {
+				stop = true
+				break
+			}
+
+			dispatch(ref, parallelism)
+			linesThisRun += ref.LineCount
+			// Resume just past the batch we last dispatched. Everything
+			// dispatched is drained before ContinueAsNew below, so this neither
+			// re-ingests nor skips.
+			in.Cursor = ref.NextCursor
+
+			if linesThisRun >= in.LinesPerCAN || workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
+				stop = true
 				break
 			}
 		}
-	}
 
-	return in.Counts, nil
-}
-
-type ListCollectionInput struct {
-	CollectionName string
-}
-
-type ListCollectionOutput struct {
-	ItemIds []string
-}
-
-func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCollectionOutput, error) {
-	out := ListCollectionOutput{
-		ItemIds: []string{},
-	}
-	client := &http.Client{Timeout: 120 * time.Second}
-	page := 1
-
-	for {
-		ids, hasMore, err := ia.SearchCollection(
-			ctx, client, in.CollectionName, page, itemsPerPage)
-		if err != nil {
-			return out, fmt.Errorf("failed to search '%s': %w", in.CollectionName, err)
-		}
-
-		for _, id := range ids {
-			if !strings.HasSuffix(id, "-CRL") {
-				out.ItemIds = append(out.ItemIds, id)
-			}
-		}
-
-		if !hasMore {
+		if stop {
 			break
 		}
 
-		page += 1
-	}
-
-	return out, nil
-}
-
-// activity: for an item, write just its pdf cdx lines to s3
-// use find line batch to get X lines
-// start processing lines, using CAN every Y lines
-// in-memory worker cache for shas since i'm seeing shas duplicate across URLs
-//
-
-type CacheItemPdfActivityInput struct {
-	CollectionName string
-	ItemId         string
-}
-
-func CacheItemPdfActivity(ctx context.Context, in CacheItemPdfActivityInput) (string, error) {
-	client := &http.Client{Timeout: 10 * time.Minute}
-	//
-	// pull petabox item file list, get its CDX file, filter the CDX down to pdfs.
-	//
-	activity.RecordHeartbeat(ctx, "metadata")
-	files, err := ia.ItemFiles(ctx, client, in.ItemId)
-	if err != nil {
-		return "", fmt.Errorf("metadata for %s: %w", in.ItemId, err)
-	}
-	rollup, err := ia.FindRollupCDX(files)
-	if err != nil {
-		return "", fmt.Errorf("find rollup CDX for %s: %w", in.ItemId, err)
-	}
-
-	activity.RecordHeartbeat(ctx, "download-cdx")
-	rdr, err := ia.OpenFile(ctx, client, in.ItemId, rollup)
-	if err != nil {
-		return "", fmt.Errorf("open rollup CDX %s/%s: %w", in.ItemId, rollup, err)
-	}
-	defer rdr.Close()
-
-	activity.RecordHeartbeat(ctx, "parse-cdx")
-	pdfLines, err := cdxfile.Parse(rdr, cdxfile.PDFFilter)
-	if err != nil {
-		return "", fmt.Errorf("parse rollup CDX %s/%s: %w", in.ItemId, rollup, err)
-	}
-
-	jsonl := []byte{}
-	for _, line := range pdfLines {
-		jl, err := json.Marshal(line)
-		if err != nil {
-			return "", fmt.Errorf("failed to encode cdx row '%#v': %w", line, err)
-		}
-		jsonl = append(jsonl, jl...)
-		jsonl = append(jsonl, '\n')
-	}
-	s3key := fmt.Sprintf("sandcrawler/pdfcdx/%s/%s", in.CollectionName, in.ItemId)
-	err = s3.PutObject(ctx, s3key, jsonl, "application/x-ndjson")
-	if err != nil {
-		return "", fmt.Errorf("failed to write pdf cdx to s3 key '%s': %w", s3key, err)
-	}
-
-	return s3key, nil
-}
-
-const (
-	cursedShasKey        = "periodic.cursed_shas"
-	urlIgnorePatternsKey = "periodic.url_ignore_patterns"
-)
-
-// pdfSkipRules are the denylists consulted before doing any expensive work on a
-// PDF line: sha1s (base32) of PDFs that wedge the pipeline, and URL substrings
-// for PDFs we do not want (eg publisher supplements linked from landing pages).
-type pdfSkipRules struct {
-	CursedShas        []string
-	URLIgnorePatterns []string
-}
-
-// loadPdfSkipRules reads the denylists fresh from the config file so they can be
-// edited on a running worker and picked up by the next activity execution. It
-// parses the file into a throwaway viper instead of re-reading the process
-// global, which only loads the file at startup and would race with the other
-// activities calling viper.Get. On a read error the values loaded at startup are
-// returned along with the error.
-func loadPdfSkipRules() (pdfSkipRules, error) {
-	fallback := pdfSkipRules{
-		CursedShas:        viper.GetStringSlice(cursedShasKey),
-		URLIgnorePatterns: viper.GetStringSlice(urlIgnorePatternsKey),
-	}
-
-	path := viper.ConfigFileUsed()
-	if path == "" {
-		return fallback, errors.New("no config file was loaded at startup")
-	}
-
-	v := viper.New()
-	v.SetConfigFile(path)
-	if filepath.Ext(path) == "" {
-		// the deployed config file is named "config" with no extension, so viper
-		// can't sniff a format from it; main.go tells the global the same thing.
-		v.SetConfigType("toml")
-	}
-	if err := v.ReadInConfig(); err != nil {
-		return fallback, fmt.Errorf("failed to re-read config %s: %w", path, err)
-	}
-
-	return pdfSkipRules{
-		CursedShas:        v.GetStringSlice(cursedShasKey),
-		URLIgnorePatterns: v.GetStringSlice(urlIgnorePatternsKey),
-	}, nil
-}
-
-type ProcessPdfLineInput struct {
-	S3Key          string
-	LineStart      int64
-	Length         int64
-	CollectionName string
-	ItemId         string
-	SourceLabel    string
-}
-
-func ProcessPdfLineActivity(ctx context.Context, in ProcessPdfLineInput) (PeriodicCounts, error) {
-	out := PeriodicCounts{}
-	l := activity.GetLogger(ctx)
-	client := &http.Client{Timeout: 10 * time.Minute}
-	jsonline, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
-	if err != nil {
-		return out, fmt.Errorf("failed to read line in %q at %d for %d bytes: %w",
-			in.S3Key, in.LineStart, in.Length, err)
-	}
-
-	var pdfLine cdxfile.Row
-	err = json.Unmarshal(jsonline, &pdfLine)
-	if err != nil {
-		return out, fmt.Errorf("failed to parse %q: %w", string(jsonline), err)
-	}
-
-	l.Debug("handling pdf line", "line", pdfLine)
-	sha1, err := decodeSha1Base32(pdfLine.Sha1Base32)
-	if err != nil {
-		l.Warn("skipping row with bad sha1", "sha1_b32", pdfLine.Sha1Base32, "err", err.Error())
-		out.PdfsSkipped++
-		return out, nil
-	}
-
-	l.Debug("decoded sha1", "orig_sha1", pdfLine.Sha1Base32, "decoded_sha1", sha1)
-
-	skipRules, err := loadPdfSkipRules()
-	if err != nil {
-		l.Warn("falling back to skip rules loaded at startup", "err", err.Error())
-	}
-
-	for _, curse := range skipRules.CursedShas {
-		if pdfLine.Sha1Base32 == curse {
-			l.Warn("skipping a cursed sha", "sha1", pdfLine.Sha1Base32)
-			out.PdfsSkipped++
-			return out, nil
-		}
-	}
-
-	for _, substr := range skipRules.URLIgnorePatterns {
-		if strings.Contains(pdfLine.URL, substr) {
-			l.Warn("skipping an ignored url", "sha1", pdfLine.Sha1Base32,
-				"url", pdfLine.URL, "pattern", substr)
-			out.PdfsSkipped++
-			return out, nil
-		}
-	}
-
-	//
-	// the conditions that mean we can avoid petabox read:
-	// 1. sha1 is in fatcat file index
-	// 2. sha1 is in full text index
-	// 3. file record exists already in DB and is connected to a release with an external ID
-	//
-	// we start here because petabox reads are expensive.
-	//
-	fileInES, err := indexing.ElasticDocExists(client,
-		viper.GetString("indexing.fatcat_file_ix"), "sha1", sha1)
-	if err != nil {
-		return out, fmt.Errorf("fatcat_file existence check failed: %w", err)
-	}
-
-	fulltextInES, err := indexing.ElasticDocExists(client,
-		viper.GetString("indexing.fulltext_ix"), "fulltext.file_sha1", sha1)
-	if err != nil {
-		return out, fmt.Errorf("scholar_fulltext existence check failed: %w", err)
-	}
-
-	extantFid, err := fatcat2.LookupSha1(client, sha1)
-	if err != nil {
-		return out, fmt.Errorf("could not look up sha1 in fc2: %w", err)
-	}
-
-	extantFileReleases := []fatcat2.Release{}
-	var extantFileHasParent bool
-
-	if extantFid != nil {
-		extantFileReleases, err = fatcat2.FileReleases(client, *extantFid)
-		if err != nil {
-			return out, fmt.Errorf("could not get releases for '%s': %w", extantFid, err)
-		}
-		if len(extantFileReleases) > 0 {
-			extidCount := 0
-			for _, rel := range extantFileReleases {
-				extidCount += len(rel.ExternalIDs)
+		// A planning call that yields no batches and does not advance would spin
+		// forever. That should be impossible, but this loop is the one place a
+		// bad read could hang a run indefinitely rather than fail it.
+		if len(plan.Batches) == 0 && !plan.EOF && plan.NextCursor == in.Cursor {
+			if err := quiesce(); err != nil {
+				return in.Counts, err
 			}
-			if extidCount > 0 {
-				extantFileHasParent = true
+			return in.Counts, fmt.Errorf(
+				"periodic: planning %s made no progress at item %d offset %d",
+				in.CollectionName, in.Cursor.Index, in.Cursor.Offset)
+		}
+
+		in.Cursor = plan.NextCursor
+
+		if plan.EOF {
+			if err := quiesce(); err != nil {
+				return in.Counts, err
 			}
+			l.Info("collection complete",
+				"collection", in.CollectionName, "items", in.ItemCount, "counts", in.Counts)
+			return in.Counts, nil
 		}
 	}
 
-	if fileInES && fulltextInES && extantFileHasParent {
-		l.Info("skipping known and indexed sha1", "sha1_b32", pdfLine.Sha1Base32, "fid", extantFid)
-		out.PdfsSkipped++
-		return out, nil
+	if err := quiesce(); err != nil {
+		return in.Counts, err
 	}
 
-	//
-	// get PDF bytes from petabox, run through grobid, parse Grobid XML.
-	//
-	activity.RecordHeartbeat(ctx, "range-read")
-	warcItem, warcFile := pdfLine.WARCItemAndFile()
-	if warcItem == "" {
-		warcItem = in.ItemId
-	}
-	raw, err := ia.ReadRange(ctx, client, warcItem, warcFile, pdfLine.WarcOffset, pdfLine.WarcSize)
-	if err != nil {
-		return out, fmt.Errorf("range read failed: %w", err)
-	}
-
-	activity.RecordHeartbeat(ctx, "pdf-extract")
-	pdfBs, err := extractWARCPayload(raw)
-	if errors.Is(err, ErrTruncatedCapture) {
-		// Expected data condition, not a failure: the crawler stored only
-		// part of this PDF. Skip and move on. Any other extraction error
-		// stays fatal so a real bug still surfaces.
-		l.Warn("skipping truncated capture",
-			"url", pdfLine.URL, "sha1_b32", pdfLine.Sha1Base32, "reason", err.Error())
-		out.PdfsSkipped++
-		return out, nil
-	}
-	if err != nil {
-		if strings.Contains(err.Error(), "malformed MIME header line") {
-			l.Warn("corrupt warc", "url", pdfLine.URL, "sha1_b32", pdfLine.Sha1Base32, "error", err.Error())
-			out.PdfsSkipped++
-			return out, nil
-		}
-		return out, fmt.Errorf("could not extract pdf bytes from warc: %w", err)
-	}
-
-	processor, err := pdf.NewProcessor(func(msg string) {
-		activity.RecordHeartbeat(ctx, msg)
-	})
-	if err != nil {
-		return out, fmt.Errorf("could not create pdf processor: %w", err)
-	}
-
-	activity.RecordHeartbeat(ctx, "pdf-process")
-	pdfContent, err := processor.Process(ctx, pdfBs, sha1)
-	if err != nil {
-		return out, fmt.Errorf("pdf processing failed: %w", err)
-	}
-
-	if len(pdfContent.GrobidXML) == 0 {
-		l.Warn("empty grobid XML indicates bad pdf", "sha1", sha1)
-		out.PdfsFailed++
-		return out, nil
-	}
-
-	gdoc, err := tei.ParseDocument(bytes.NewReader(pdfContent.GrobidXML))
-	if err != nil {
-		l.Warn("failed to parse grobid xml", "sha1", sha1, "error", err.Error(), "tei", pdfContent.GrobidXML)
-		// now that we have non-200s from grobid as errors in Process we should
-		// consider this a hard failure worthy of human intervention
-		return out, fmt.Errorf("bad grobid xml: %w", err)
-	}
-
-	extIds := findExtIds(*gdoc)
-	if len(extIds) == 0 {
-		l.Warn("skipping parsed PDF with no external ID", "sha1_b32", pdfLine.Sha1Base32)
-		out.PdfsSkipped++
-		return out, nil
-	}
-
-	var rid *uuid.UUID
-	for _, pair := range extIds {
-		idType := pair[0]
-		idVal := pair[1]
-		rid, err = fatcat2.LookupRelease(client, idType, idVal)
-		if err != nil {
-			return out, fmt.Errorf("fc2 release lookup failed: %w", err)
-		}
-
-		if rid != nil {
-			break
-		}
-	}
-
-	if rid == nil {
-		l.Warn("skipping parsed PDF with no matching release", "sha1_b32", pdfLine.Sha1Base32)
-		// TODO we might add releases in the future; see grobidToRelease
-		out.PdfsSkipped++
-		return out, nil
-	}
-
-	release, err := fatcat2.GetRelease(client, *rid)
-	if err != nil {
-		return out, fmt.Errorf("could not get release '%s': %w", rid, err)
-	}
-
-	// The fatcat file URL must point at the archived copy, not the live-web
-	// URL from the CDX row (pdfLine.URL). Build the wayback replay URL from
-	// the capture timestamp + original URL.
-	wbURL := toWaybackURL(pdfLine.Timestamp, pdfLine.URL)
-
-	var fid uuid.UUID
-	var file *fatcat2.File
-	if extantFid != nil {
-		fid = *extantFid
-		f, err := fatcat2.GetFile(client, fid)
-		if err != nil {
-			return out, fmt.Errorf("could not get file '%s': %w", fid, err)
-		}
-		file = &f
-		var foundUrl bool
-		for _, u := range file.URLs {
-			if u.URL == wbURL {
-				foundUrl = true
-			}
-		}
-		if !foundUrl {
-			newUrl := fatcat2.FileURL{
-				URL:    wbURL,
-				Rel:    "webarchive",
-				FileID: fid,
-			}
-			added, err := fatcat2.AddFileURL(client, fid, newUrl)
-			if err != nil {
-				return out, fmt.Errorf("could not update fid '%s' with url '%s': %w", fid, wbURL, err)
-			}
-			if added {
-				// we want to trigger a re-ingest if we added a url for this file
-				file.URLs = append(file.URLs, newUrl)
-				fileInES = false
-				out.FilesUpdated++
-
-			}
-		}
-		// `extantFileReleases` contains any releases we found connected to a file
-		// record with the found sha1; `release` is a release record we found
-		// looking up the external ID we found in the parsed grobid. `release`
-		// *should* be in `extantFileReleases` but it's not guaranteed. Ideally,
-		// these different releases would be merged but for now we just log about
-		// it.
-		var foundRelease bool
-		for _, r := range extantFileReleases {
-			if r.ID == release.ID {
-				foundRelease = true
-			}
-		}
-		if !foundRelease && len(extantFileReleases) > 0 {
-			l.Warn("found probable dupe releases", "fid", fid,
-				"ridBySha1", extantFileReleases[0].ID, "ridByExtId", release.ID)
-		}
-	} else {
-		fid, err = uuid.NewV7()
-		if err != nil {
-			return out, fmt.Errorf("uuid creation failed: %w", err)
-		}
-		file = &fatcat2.File{
-			ID:       fid,
-			Releases: []fatcat2.Release{release},
-			Mimetype: "application/pdf",
-			Source:   in.SourceLabel,
-			URLs: []fatcat2.FileURL{
-				{
-					Rel:    "webarchive",
-					URL:    wbURL,
-					FileID: fid,
-				},
-			},
-		}
-		if err = file.SetMetadata(pdfBs); err != nil {
-			return out, fmt.Errorf("could not compute pdf metadata: %w", err)
-		}
-		_, err = fatcat2.CreateFile(client, file)
-		if err != nil {
-			return out, fmt.Errorf("failed to create file '%s': %w", file.Sha1, err)
-		}
-		l.Info("created file", "fid", file.ID, "rid", release.ID)
-		out.PdfsAddedToDB++
-	}
-
-	//
-	// check on sha1 in the two relevant ES indices. We're particular about
-	// this for idempotency.
-	//
-	if !fileInES {
-		fileDoc := indexing.PrepareFatcatFileDoc(*file)
-		bs, err := json.Marshal(fileDoc)
-		if err != nil {
-			return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
-		}
-		err = indexing.DoElasticIndex(client,
-			viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
-		if err != nil {
-			return out, fmt.Errorf("failed to index file: %w", err)
-		}
-		out.PdfsAddedToES++
-	}
-
-	activity.RecordHeartbeat(ctx, "file-indexed")
-
-	if !fulltextInES {
-		var container *fatcat2.Container
-		if release.ContainerID != nil {
-			c, err := fatcat2.GetContainer(client, *release.ContainerID)
-			if err != nil {
-				return out, fmt.Errorf("failed to look up container '%s': %w", release.ContainerID, err)
-			}
-			container = &c
-		}
-		tctx := indexing.FulltextTransformCtx{
-			HttpClient: client,
-			Release:    release,
-			Container:  container,
-			File:       file,
-			GrobidXML:  pdfContent.GrobidXML,
-			PdfText:    pdfContent.PdfText,
-		}
-
-		esDoc := indexing.PrepareFulltextDoc(tctx)
-
-		bs, err := json.Marshal(esDoc)
-		if err != nil {
-			return out, fmt.Errorf("es doc serialization failed: %w", err)
-		}
-
-		err = indexing.DoElasticIndex(client, viper.GetString("indexing.fulltext_ix"), esDoc.Key, bs)
-		if err != nil {
-			return out, fmt.Errorf("failed to full text ingest '%s': %w", fid, err)
-		}
-		out.FulltextAddedToES++
-	}
-
-	return out, nil
-}
-
-// findExtIds determines which external IDs we care about are defined on a
-// grobid document. We return a list of pairs so we can prioritize which ones
-// we later look up a release for.
-func findExtIds(gdoc tei.GrobidDocument) [][]string {
-	out := [][]string{}
-	pairs := [][]string{
-		[]string{"doi", gdoc.Header.DOI},
-		[]string{"pmid", gdoc.Header.PMID},
-		[]string{"pmcid", gdoc.Header.PMCID},
-		[]string{"arxiv", gdoc.Header.ArxivID},
-	}
-	for _, pair := range pairs {
-		idType := pair[0]
-		idVal := pair[1]
-		if idVal != "" {
-			out = append(out, []string{idType, idVal})
-		} else {
-			continue
-		}
-	}
-	return out
-}
-
-// grobidToRelease converts what metadata we extract from a PDF into a fatcat2
-// release. This is currently unused as the quality of this release is stubby
-// and at this time we aren't handling release updates in the daily crawl. If
-// the daily crawl is modified to notice when a release could benefit from the
-// addition of new metadata from an upstream source we can make use of this
-// function when ingesting CDX.
-func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocument) (fatcat2.Release, error) {
-	rid, err := uuid.NewV7()
-	if err != nil {
-		return fatcat2.Release{}, fmt.Errorf("failed making uuid: %w", err)
-	}
-
-	out := fatcat2.Release{
-		ID:          rid,
-		Contribs:    []fatcat2.ReleaseContrib{},
-		ExternalIDs: []fatcat2.ExternalID{},
-		Extra:       map[string]any{},
-		Language:    cleaning.NormalizeLanguage(gdoc.LanguageCode),
-		Publisher:   gdoc.Header.Publisher,
-		Volume:      gdoc.Header.Volume,
-		Pages:       gdoc.Header.Pages,
-		Issue:       gdoc.Header.Issue,
-		Title:       gdoc.Header.Title,
-		Type:        "article-journal",
-		Source:      source,
-	}
-	if gdoc.Header.DOI != "" {
-		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
-			Type: "doi", Value: gdoc.Header.DOI,
-		})
-	}
-	if gdoc.Header.PMID != "" {
-		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
-			Type: "pmid", Value: gdoc.Header.PMID,
-		})
-	}
-	if gdoc.Header.PMCID != "" {
-		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
-			Type: "PMCID", Value: gdoc.Header.PMCID,
-		})
-	}
-	if gdoc.Header.ArxivID != "" {
-		out.ExternalIDs = append(out.ExternalIDs, fatcat2.ExternalID{
-			Type: "arxiv", Value: gdoc.Header.ArxivID,
-		})
-		out.Stage = "submitted"
-	}
-
-	if out.Stage == "" {
-		out.Stage = "published"
-	}
-
-	// TODO should i handle ISSN in header?
-
-	if len(gdoc.Header.Date) == 10 {
-		d, err := time.Parse("2006-01-02", gdoc.Header.Date)
-		if err == nil {
-			rd := fatcat2.ReleaseDate(d)
-			out.ReleaseDate = &rd
-		}
-	} else if len(gdoc.Header.Date) > 4 {
-		yearPrefixRe := regexp.MustCompile("^[0-9]{4}-")
-		if yearPrefixRe.MatchString(gdoc.Header.Date) {
-			year, err := strconv.Atoi(gdoc.Header.Date[0:4])
-			if err == nil {
-				out.ReleaseYear = year
-			}
-		}
-	}
-
-	out.Extra["raw_date"] = gdoc.Header.Date
-
-	for i, author := range gdoc.Header.Authors {
-		var aid *uuid.UUID
-		var err error
-		if author.ORCID != "" {
-			aid, err = fatcat2.LookupOrcid(client, author.ORCID)
-			if err != nil {
-				return out, fmt.Errorf("failed to look up author '%s': %w", author.ORCID, err)
-			}
-			if aid == nil {
-				creator := fatcat2.Creator{
-					DisplayName: author.FullName,
-					GivenName:   author.GivenName,
-					Surname:     author.Surname,
-					Source:      source,
-					Orcid:       cleaning.NormalizeOrcid(author.ORCID),
-				}
-				aid, err = fatcat2.CreateCreator(client, &creator)
-				if err != nil {
-					return out, fmt.Errorf("could not create creator '%s': %w", creator.Orcid, err)
-				}
-				creator.ID = *aid
-			}
-		}
-		rawAffiliation := author.Affiliation.Institution
-		if author.Affiliation.Department != "" {
-			rawAffiliation += " " + author.Affiliation.Department
-		}
-		contrib := fatcat2.ReleaseContrib{
-			ReleaseID:      &out.ID,
-			CreatorID:      aid,
-			RawName:        author.FullName,
-			GivenName:      author.GivenName,
-			Surname:        author.Surname,
-			Position:       i,
-			Role:           "author",
-			RawAffiliation: rawAffiliation,
-		}
-		out.Contribs = append(out.Contribs, contrib)
-	}
-
-	if gdoc.Abstract != "" {
-		abs := cleaning.CleanString(cleaning.DeTag(gdoc.Abstract))
-		if len(abs) > cleaning.MinAbstractLength {
-			h := sha1.Sum([]byte(abs))
-			out.Abstracts = append(out.Abstracts, fatcat2.Abstract{
-				MIMEType: "application/xml+jats",
-				Content:  abs,
-				Language: cleaning.NormalizeLanguage(gdoc.LanguageCode),
-				SHA1:     fmt.Sprintf("%x", h),
-			})
-		}
-	}
-
-	for _, citation := range gdoc.Citations {
-		rawRef := fatcat2.RawRef{
-			Index:   citation.Index,
-			Locator: citation.FirstPage,
-			Title:   citation.Title,
-			Extra:   map[string]any{},
-		}
-		if len(citation.Date) >= 4 {
-			year, _ := strconv.Atoi(citation.Date[0:4])
-			rawRef.Year = year
-		}
-
-		rawRef.ContainerName = citation.Journal
-
-		if citation.Unstructured != "" {
-			rawRef.Extra["unstructured"] = citation.Unstructured
-		}
-
-		authorNames := []string{}
-		for _, author := range citation.Authors {
-			authorNames = append(authorNames, author.FullName)
-		}
-		if len(authorNames) > 0 {
-			rawRef.Extra["authors"] = authorNames
-		}
-
-		if citation.Volume != "" {
-			rawRef.Extra["volume"] = citation.Volume
-		}
-
-		if citation.Pages != "" {
-			rawRef.Extra["pages"] = citation.Pages
-		}
-
-		if citation.LastPage != "" {
-			rawRef.Extra["last_page"] = citation.LastPage
-		}
-	}
-
-	out.Extra["grobid_version"] = gdoc.GrobidVersion
-	if gdoc.Annex != "" {
-		out.Extra["annex"] = gdoc.Annex
-	}
-
-	// grobid doesn't seem to try and extract license information :(
-
-	// TODO can anything be done about container?
-
-	return out, nil
-}
-
-type GrobidParseError struct {
-	Sha1 string
-	Err  error
-}
-
-func (e *GrobidParseError) Error() string {
-	return fmt.Sprintf("grobid parsing failure for '%s': %v", e.Sha1, e.Err)
-}
-
-func (e *GrobidParseError) Unwrap() error { return e.Err }
-
-// extractWARCPayload reads one WARC record (gzipped) out of raw bytes and
-// returns the HTTP response body bytes. Expects exactly one record per
-// input slice (matches the Range-GET shape we use against petabox).
-func extractWARCPayload(raw []byte) ([]byte, error) {
-	rdr, err := warc.NewReader(bytes.NewReader(raw))
-	if err != nil {
-		return nil, fmt.Errorf("warc reader init: %w", err)
-	}
-	defer rdr.Close()
-
-	rec, err := rdr.ReadRecord()
-	if err != nil {
-		return nil, fmt.Errorf("warc ReadRecord: %w", err)
-	}
-	defer rec.Content.Close()
-
-	// A capture the crawler cut short (time/size budget, dropped connection)
-	// carries a WARC-Truncated header. Its stored body is shorter than the
-	// declared HTTP Content-Length, so reading it below would fail with an
-	// opaque "unexpected EOF". Detect it here, from the record header we
-	// already have, and signal it distinctly so the caller can skip cleanly.
-	if t := rec.Header.Get("WARC-Truncated"); t != "" {
-		return nil, fmt.Errorf("%w (%s)", ErrTruncatedCapture, t)
-	}
-
-	httpResp, err := http.ReadResponse(bufio.NewReader(rec.Content), nil)
-	if err != nil {
-		return nil, fmt.Errorf("parse HTTP response inside WARC: %w", err)
-	}
-	defer httpResp.Body.Close()
-
-	body, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read HTTP body: %w", err)
-	}
-	return body, nil
-}
-
-// toWaybackURL builds the raw ("id_") Wayback replay URL for a captured
-// resource, e.g.
-//
-//	https://web.archive.org/web/20250825174138id_/http://host/paper.pdf
-//
-// cdxTimestamp is the 14-digit CDX capture time (YYYYMMDDhhmmss); originalURL
-// is the captured URL from the CDX row. The original URL is appended verbatim
-// so its scheme "://" and any query string survive (url.JoinPath would
-// path-clean "://" down to ":/"). Same shape the daily crawl stores via
-// crawling.PDFCrawler.toWaybackURL.
-func toWaybackURL(cdxTimestamp, originalURL string) string {
-	endpoint := strings.TrimRight(viper.GetString("wayback.replay_endpoint"), "/")
-	return fmt.Sprintf("%s/%sid_/%s", endpoint, cdxTimestamp, originalURL)
-}
-
-// decodeSha1Base32 converts the CDX-formatted 32-char base32 sha1 digest to
-// fatcat's 40-char lowercase hex form.
-func decodeSha1Base32(s string) (string, error) {
-	bs, err := base32.StdEncoding.DecodeString(strings.ToUpper(s))
-	if err != nil {
-		return "", err
-	}
-	if len(bs) != 20 {
-		return "", fmt.Errorf("expected 20 sha1 bytes, got %d", len(bs))
-	}
-	return hex.EncodeToString(bs), nil
+	l.Info("continue-as-new",
+		"collection", in.CollectionName,
+		"item", in.Cursor.Index,
+		"of", in.ItemCount,
+		"offset", in.Cursor.Offset,
+		"lines", linesThisRun)
+	return in.Counts, workflow.NewContinueAsNewError(ctx, PeriodicIngestWorkflow, in)
 }

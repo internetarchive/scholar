@@ -51,10 +51,25 @@ var dumpCmd = &cobra.Command{
 	},
 }
 
+var (
+	ingestConcurrency   int
+	ingestTaskQueue     string
+	ingestSource        string
+	ingestStartAtItem   string
+	ingestStartAtOffset int64
+)
+
 var ingestWarcsCmd = &cobra.Command{
 	Use:   "ingest-warcs COLLECTION_URL_OR_ID",
 	Short: "Kick off a periodic-ingest workflow over an IA collection, ingesting pdfs from warcs",
-	Args:  cobra.ExactArgs(1),
+	Long: `Walk an IA crawl collection, pulling PDFs out of its WARCs and turning
+them into fatcat file records and search documents.
+
+Every row is idempotent -- a PDF already in fatcat and both indices is
+recognised and passed over -- but recognising it still costs lookups. To pick up
+where a previous run of this collection stopped rather than re-checking what it
+already did, pass --start-at-item (and optionally --start-at-offset).`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		collName := parseCollectionArg(args[0])
 		if collName == "" {
@@ -62,7 +77,31 @@ var ingestWarcsCmd = &cobra.Command{
 		}
 		return periodic.StartCollectionIngest(periodic.PeriodicIngestInput{
 			CollectionName: collName,
+			Concurrency:    ingestConcurrency,
+			TaskQueue:      ingestTaskQueue,
+			SourceOverride: ingestSource,
+			StartAtItem:    ingestStartAtItem,
+			StartAtOffset:  ingestStartAtOffset,
 		})
+	},
+}
+
+var setIngestConcurrencyCmd = &cobra.Command{
+	Use:   "set-ingest-concurrency COLLECTION_URL_OR_ID",
+	Short: "Retune how many PDFs a running periodic ingest works at once",
+	Long: `Signal a running periodic-ingest workflow to change its concurrency.
+
+The new value reaches the batches dispatched after the signal rather than the
+ones already running, so it takes a batch to bite. This is the knob to reach for
+when GROBID or petabox is unhappy and the alternative would be terminating a run
+that is hours deep into a collection.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		collName := parseCollectionArg(args[0])
+		if collName == "" {
+			return fmt.Errorf("could not extract collection name from %q", args[0])
+		}
+		return periodic.SetConcurrency(collName, ingestConcurrency)
 	},
 }
 
@@ -216,8 +255,28 @@ func parseCollectionArg(s string) string {
 }
 
 func init() {
+	ingestWarcsCmd.Flags().IntVar(&ingestConcurrency, "concurrency", 0,
+		"How many PDFs to ingest at once. Defaults to periodic.concurrency from config.")
+	ingestWarcsCmd.Flags().StringVar(&ingestTaskQueue, "task-queue", "",
+		"Override the task queue. Defaults to periodic.task_queue from config.")
+	ingestWarcsCmd.Flags().StringVar(&ingestSource, "source", "",
+		"Override the provenance label stamped on records this run creates.")
+	ingestWarcsCmd.Flags().StringVar(&ingestStartAtItem, "start-at-item", "",
+		"Begin at this item rather than the top of the collection, skipping "+
+			"everything a previous run already got through. Fails if the item is "+
+			"not in the collection.")
+	ingestWarcsCmd.Flags().Int64Var(&ingestStartAtOffset, "start-at-offset", 0,
+		"Byte offset into --start-at-item's staged PDF CDX to begin at. Requires "+
+			"--start-at-item; omit it to redo that one item from the top.")
+
+	setIngestConcurrencyCmd.Flags().IntVar(&ingestConcurrency, "concurrency", 0,
+		"How many PDFs the running ingest should work at once. Takes effect on "+
+			"the next batch it dispatches, not the ones already running.")
+	setIngestConcurrencyCmd.MarkFlagRequired("concurrency")
+
 	Cmd.AddCommand(dumpCmd)
 	Cmd.AddCommand(cdxCmd)
 	Cmd.AddCommand(ingestWarcsCmd)
+	Cmd.AddCommand(setIngestConcurrencyCmd)
 	Cmd.AddCommand(startPeriodicIngestWorkerCmd)
 }

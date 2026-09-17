@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 
-	"github.com/internetarchive/scholar/blobproc"
-	"github.com/miku/grobidclient"
 	"github.com/miku/grobidclient/tei"
 )
 
@@ -17,38 +14,32 @@ type DumpedPDF struct {
 	PdfText string
 }
 
+// Dump runs one PDF on disk through the pipeline and returns what came out, for
+// eyeballing. It uses a Processor with no derivative store, so inspecting a PDF
+// does not write anything to S3.
 func Dump(pdfPath string) (*DumpedPDF, error) {
-	fi, err := os.Stat(pdfPath)
+	pdfBs, err := os.ReadFile(pdfPath)
 	if err != nil {
 		return nil, err
 	}
 
-	grobid := grobidclient.New("https://scholar.archive.org/_grobid")
-
-	l := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	params := blobproc.ProcessPDFParams{
-		Path:              pdfPath,
-		Size:              fi.Size(),
-		Grobid:            grobid,
-		GrobidMaxFileSize: 100 << 20,
-		Logger:            l,
+	content, err := NewProcessorWithoutStore().Process(context.Background(), pdfBs, "")
+	if err != nil {
+		return nil, err
 	}
 
-	result, errs := blobproc.ProcessPDF(context.Background(), params)
-	if len(errs) > 0 {
-		fmt.Fprintf(os.Stderr, "encountered %d errors\n", len(errs))
-		for _, err := range errs {
-			fmt.Fprintln(os.Stderr, err)
-		}
+	if len(content.GrobidXML) == 0 {
+		return nil, fmt.Errorf("no tei for %s: grobid outcome %q %s",
+			pdfPath, content.GrobidOutcome, content.GrobidRejection)
 	}
-	gdoc, err := tei.ParseDocument(bytes.NewReader(result.TEI))
+
+	gdoc, err := tei.ParseDocument(bytes.NewReader(content.GrobidXML))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse grobid xml: %w", err)
 	}
 
 	return &DumpedPDF{
 		Grobid:  *gdoc,
-		PdfText: result.Text,
+		PdfText: string(content.PdfText),
 	}, nil
 }

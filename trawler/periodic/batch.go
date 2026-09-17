@@ -84,6 +84,24 @@ type IngestBatchOutput struct {
 	AbortReason string
 }
 
+// batchHeartbeat is what a batch actually publishes: the checkpoint a retry
+// resumes from, plus a note on what the batch was doing when it published.
+//
+// The note exists for crashes Go cannot report on. PDF processing runs through
+// cgo into MuPDF, and a malformed PDF that segfaults there takes the whole
+// worker process down -- no error, no deferred log line, no outcome row. What
+// survives is the last heartbeat the server accepted, so that heartbeat has to
+// name the PDF. Without it the only evidence is a stack trace with a byte count
+// in it.
+//
+// Phase is deliberately outside batchCheckpoint: a resume decodes the payload
+// into a batchCheckpoint, which ignores the extra field, so this stays a
+// diagnostic and never becomes resume state.
+type batchHeartbeat struct {
+	batchCheckpoint
+	Phase string
+}
+
 // batchCheckpoint is what a batch heartbeats and what a retried batch resumes
 // from.
 //
@@ -136,8 +154,13 @@ func IngestBatchActivity(ctx context.Context, in IngestBatchInput) (IngestBatchO
 	// would hand a retry a stale resume point.
 	var latest atomic.Pointer[batchCheckpoint]
 	latest.Store(&from)
-	beat := func(string) { activity.RecordHeartbeat(ctx, *latest.Load()) }
-	beat("start")
+	beat := func(phase string) {
+		activity.RecordHeartbeat(ctx, batchHeartbeat{
+			batchCheckpoint: *latest.Load(),
+			Phase:           phase,
+		})
+	}
+	beat(fmt.Sprintf("starting %s at offset %d", in.Batch.ItemID, in.Batch.Offset))
 
 	// One HTTP client and one PDF processor for the whole batch rather than one
 	// per line. Both are safe for concurrent use, so the goroutines below share

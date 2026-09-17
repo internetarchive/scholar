@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/converter"
 )
 
 // --- helpers --------------------------------------------------------------
@@ -403,4 +404,36 @@ func Test_ingestBackoff(t *testing.T) {
 	require.Equal(t, time.Minute, ingestBackoff(3))
 	require.Equal(t, lineRetryMax, ingestBackoff(4))
 	require.Equal(t, lineRetryMax, ingestBackoff(20))
+}
+
+// --- heartbeat payload ----------------------------------------------------
+
+// A crash in MuPDF takes the worker down without running anything deferred, so
+// the last heartbeat the server accepted is the only evidence of what was being
+// worked on. It has to name the PDF, and it must still decode as a plain
+// checkpoint -- a retry resumes from this payload, and a diagnostic field that
+// broke resume would be worse than no diagnostic at all.
+func Test_batchHeartbeat_carriesPhaseAndStillDecodesAsACheckpoint(t *testing.T) {
+	hb := batchHeartbeat{
+		batchCheckpoint: batchCheckpoint{
+			DoneThrough: 7,
+			NextOffset:  70,
+			Consecutive: 2,
+			Counts:      PeriodicCounts{Lines: 7, PdfsSkipped: 5, PdfsKnownBad: 2},
+		},
+		Phase: "pdf-process ff8adff053e3aef1f43eea6bdfab3f19c990a7bc",
+	}
+
+	payload, err := converter.GetDefaultDataConverter().ToPayloads(hb)
+	require.NoError(t, err)
+
+	// What a retried attempt does with it.
+	var got batchCheckpoint
+	require.NoError(t, converter.GetDefaultDataConverter().FromPayloads(payload, &got))
+	require.Equal(t, hb.batchCheckpoint, got)
+
+	// What an operator reads in the Temporal UI after a segfault.
+	var full batchHeartbeat
+	require.NoError(t, converter.GetDefaultDataConverter().FromPayloads(payload, &full))
+	require.Contains(t, full.Phase, "ff8adff053e3aef1f43eea6bdfab3f19c990a7bc")
 }

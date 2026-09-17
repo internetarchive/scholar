@@ -182,7 +182,7 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 	//
 	// get PDF bytes from petabox, run through grobid, parse Grobid XML.
 	//
-	d.Beat("range-read")
+	d.Beat("range-read " + sha1)
 	warcItem, warcFile := row.WARCItemAndFile()
 	if warcItem == "" {
 		warcItem = d.ItemID
@@ -192,7 +192,7 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 		return out, oc, fmt.Errorf("range read failed: %w", err)
 	}
 
-	d.Beat("pdf-extract")
+	d.Beat("pdf-extract " + sha1)
 	pdfBs, err := extractWARCPayload(raw)
 	if errors.Is(err, ErrTruncatedCapture) {
 		// Expected data condition, not a failure: the crawler stored only
@@ -203,32 +203,49 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 		return skip("truncated capture")
 	}
 	if err != nil {
-		if strings.Contains(err.Error(), "malformed MIME header line") {
+		if strings.Contains(err.Error(), "malformed MIME header line") || strings.Contains(err.Error(), "unexpected EOF") {
 			d.Log.Warn("corrupt warc",
 				"url", row.URL, "sha1_b32", row.Sha1Base32, "error", err.Error())
 			return skip("corrupt warc record")
 		}
-		return out, oc, fmt.Errorf("could not extract pdf bytes from warc: %w", err)
+		return out, oc, fmt.Errorf("could not extract %q pdf bytes from warc: %w", row.Sha1Base32, err)
 	}
 
-	d.Beat("pdf-process")
+	// Breadcrumb before crossing into cgo. Process runs pdfextract, which renders
+	// page 0 through MuPDF, and a malformed PDF can segfault in there -- killing
+	// the worker outright rather than returning an error. Nothing after this line
+	// runs when that happens, so this is the only record that the PDF was ever
+	// opened.
+	//
+	// The byte count is here because it is the one field a Go stack trace from
+	// such a crash also carries, which is what lets you pick the culprit out of
+	// however many PDFs the batch had in flight.
+	d.Log.Info("processing pdf",
+		"sha1", sha1, "sha1_b32", row.Sha1Base32, "url", row.URL, "bytes", len(pdfBs))
+
+	d.Beat("pdf-process " + sha1)
 	pdfContent, err := d.Processor.Process(ctx, pdfBs, sha1)
 	if err != nil {
 		return out, oc, fmt.Errorf("pdf processing failed: %w", err)
 	}
 
 	if len(pdfContent.GrobidXML) == 0 {
-		if pdfContent.GrobidTimedOut {
-			// GROBID gave up on us rather than on the PDF. Same empty XML, the
-			// opposite meaning: this one is worth trying again later, so it is
-			// counted as a failure but never cached.
-			d.Log.Warn("grobid timed out; not caching this sha1 as bad", "sha1", sha1)
+		// Nothing usable came out. Whether that is worth remembering is the pdf
+		// package's call, not ours: a rejection is a fact about the bytes, while
+		// a timeout or a size skip is a fact about GROBID's afternoon or our own
+		// config, and caching either would blame the PDF for someone else's
+		// problem.
+		reason, cacheable := pdfContent.CacheableVerdict()
+		if cacheable {
+			d.markBad(ctx, sha1, reason)
 		} else {
-			d.markBad(ctx, sha1, "grobid produced no xml")
+			d.Log.Warn("no tei, but not a verdict on the pdf; not caching",
+				"sha1", sha1, "outcome", string(pdfContent.GrobidOutcome))
+			reason = "no tei: " + string(pdfContent.GrobidOutcome)
 		}
 		out.PdfsFailed++
 		oc.Status = StatusFail
-		oc.Detail = "grobid produced no xml"
+		oc.Detail = reason
 		return out, oc, nil
 	}
 
@@ -381,7 +398,7 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 		did = append(did, "indexed file")
 	}
 
-	d.Beat("file-indexed")
+	d.Beat("file-indexed " + sha1)
 
 	if !fulltextInES {
 		var container *fatcat2.Container

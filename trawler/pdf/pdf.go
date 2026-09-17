@@ -34,6 +34,13 @@ const defaultGrobidMaxFileSize = 256 << 20 // 256 MiB
 type Content struct {
 	GrobidXML []byte
 	PdfText   []byte
+	// GrobidTimedOut reports that GROBID never answered, as opposed to
+	// answering that it could make nothing of this PDF. Both leave GrobidXML
+	// empty, so without this flag the two are indistinguishable -- and they mean
+	// opposite things. "This PDF is no good" is a durable fact about the bytes;
+	// "GROBID was too busy to say" is a fact about the last few seconds, and a
+	// caller that records it as the former would blame the PDF for an outage.
+	GrobidTimedOut bool
 }
 
 // Processor runs blobproc.ProcessPDF in-process. Construct once per activity
@@ -141,6 +148,7 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 			if strings.Contains(e.Error(), "Client.Timeout exceeded while awaiting headers") {
 				// grobid timing out means just ignore this pdf
 				out.GrobidXML = []byte{}
+				out.GrobidTimedOut = true
 			} else {
 				return out, e
 			}

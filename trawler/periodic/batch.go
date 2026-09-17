@@ -163,12 +163,21 @@ func IngestBatchActivity(ctx context.Context, in IngestBatchInput) (IngestBatchO
 	logDir := outcomeLogDir()
 	workflowID := activity.GetInfo(ctx).WorkflowExecution.ID
 
+	// Read once per batch rather than per row: the generation is how the cache
+	// is wiped, so it has to be able to change under a running worker, but not
+	// so eagerly that one batch consults two generations.
+	badPDFs := newBadPDFCache()
+	if !badPDFs.enabled() {
+		l.Info("bad-pdf cache is disabled; every unusable pdf will be re-processed")
+	}
+
 	deps := lineDeps{
 		HTTP:      client,
 		Processor: processor,
 		Source:    in.Source,
 		ItemID:    in.Batch.ItemID,
 		SkipRules: func() (pdfSkipRules, error) { return skipRules.get(reload, time.Now()) },
+		BadPDFs:   badPDFs,
 		Beat:      beat,
 		Log:       l,
 	}

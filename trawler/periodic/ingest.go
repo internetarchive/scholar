@@ -56,6 +56,11 @@ type PeriodicCounts struct {
 	Lines int
 	// PdfsSkipped is how many rows we passed on without adding to any DB or index
 	PdfsSkipped int
+	// PdfsKnownBad is how many rows the negative cache let us pass on without
+	// reading the PDF at all. It is counted apart from PdfsSkipped so that the
+	// cache's contribution is legible: on a first pass it is zero, and on a
+	// replay it is the work that did not have to happen. See badPDFCache.
+	PdfsKnownBad int
 	// FilesUpdated is how many existing file records we added a URL to
 	FilesUpdated int
 	// PdfsFailed is how many PDFs grobid choked on
@@ -80,6 +85,7 @@ func (c PeriodicCounts) Add(oc PeriodicCounts) PeriodicCounts {
 	return PeriodicCounts{
 		Lines:             c.Lines + oc.Lines,
 		PdfsSkipped:       c.PdfsSkipped + oc.PdfsSkipped,
+		PdfsKnownBad:      c.PdfsKnownBad + oc.PdfsKnownBad,
 		PdfsAddedToDB:     c.PdfsAddedToDB + oc.PdfsAddedToDB,
 		PdfsAddedToES:     c.PdfsAddedToES + oc.PdfsAddedToES,
 		PdfsFailed:        c.PdfsFailed + oc.PdfsFailed,

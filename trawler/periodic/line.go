@@ -56,8 +56,11 @@ type lineDeps struct {
 	// SkipRules reads the denylists, freshly enough that an edit lands on a
 	// running batch. See skipRulesReloader.
 	SkipRules func() (pdfSkipRules, error)
-	Beat      func(string)
-	Log       log.Logger
+	// BadPDFs remembers sha1s an earlier pass already found unusable, so a
+	// replay does not pay for petabox and GROBID to rediscover it.
+	BadPDFs badPDFIndex
+	Beat    func(string)
+	Log     log.Logger
 }
 
 // ingestLine runs one PDF CDX row to a verdict.
@@ -111,6 +114,22 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 				"sha1", row.Sha1Base32, "url", row.URL, "pattern", substr)
 			return skip("ignored url pattern: " + substr)
 		}
+	}
+
+	// Ask the cheapest question first. A sha1 an earlier pass already found
+	// unusable is not in fatcat or either index -- that is what made it
+	// unusable -- so the lookups below would all miss and we would go on to
+	// spend a petabox read and a GROBID run reaching last week's conclusion.
+	if bad, err := d.BadPDFs.has(ctx, sha1); err != nil {
+		// Advisory in both directions: if we cannot tell, process the PDF.
+		d.Log.Warn("bad-pdf cache lookup failed, processing anyway",
+			"sha1", sha1, "err", err.Error())
+	} else if bad {
+		d.Log.Info("skipping known-bad pdf", "sha1_b32", row.Sha1Base32)
+		out.PdfsKnownBad++
+		oc.Status = StatusSkip
+		oc.Detail = "known-bad pdf, cached"
+		return out, oc, nil
 	}
 
 	//
@@ -199,7 +218,14 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 	}
 
 	if len(pdfContent.GrobidXML) == 0 {
-		d.Log.Warn("empty grobid XML indicates bad pdf", "sha1", sha1)
+		if pdfContent.GrobidTimedOut {
+			// GROBID gave up on us rather than on the PDF. Same empty XML, the
+			// opposite meaning: this one is worth trying again later, so it is
+			// counted as a failure but never cached.
+			d.Log.Warn("grobid timed out; not caching this sha1 as bad", "sha1", sha1)
+		} else {
+			d.markBad(ctx, sha1, "grobid produced no xml")
+		}
 		out.PdfsFailed++
 		oc.Status = StatusFail
 		oc.Detail = "grobid produced no xml"
@@ -220,7 +246,13 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 
 	extIds := findExtIds(*gdoc)
 	if len(extIds) == 0 {
+		// GROBID read this PDF and found no DOI, PMID, PMCID or arXiv ID in it.
+		// On a wide crawl that is the single most common way a row dies, and it
+		// is a property of the bytes and of GROBID -- so it is exactly what the
+		// cache is for, and exactly what bumping the generation un-decides when
+		// GROBID gets better at finding IDs.
 		d.Log.Warn("skipping parsed PDF with no external ID", "sha1_b32", row.Sha1Base32)
+		d.markBad(ctx, sha1, "no external id in grobid output")
 		return skip("no external id in grobid output")
 	}
 
@@ -236,6 +268,10 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 	}
 
 	if rid == nil {
+		// Deliberately not cached. Unlike the dead ends above, this one is not
+		// about the PDF: the IDs were there, fatcat just has no release for them
+		// yet. That changes on its own as fatcat grows, so a cached "no" would
+		// strand this paper for good on the day before its release landed.
 		d.Log.Warn("skipping parsed PDF with no matching release", "sha1_b32", row.Sha1Base32)
 		// TODO we might add releases in the future; see grobidToRelease
 		return skip("no release matches the grobid external ids")
@@ -387,6 +423,16 @@ func ingestLine(ctx context.Context, d lineDeps, jsonLine string) (PeriodicCount
 		oc.Detail = strings.Join(did, ", ")
 	}
 	return out, oc, nil
+}
+
+// markBad records a verdict in the negative cache. A cache write that fails is
+// logged and forgotten: the row still has its verdict, its counts and its log
+// line, and all that is lost is the shortcut on some future pass.
+func (d lineDeps) markBad(ctx context.Context, sha1hex, reason string) {
+	if err := d.BadPDFs.mark(ctx, sha1hex, reason, d.Source); err != nil {
+		d.Log.Warn("could not record known-bad pdf",
+			"sha1", sha1hex, "reason", reason, "err", err.Error())
+	}
 }
 
 const (

@@ -10,6 +10,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/pdfcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/scrapecmd"
+	"git.archive.org/webgroup/scholar/trawler/pdf"
 	"github.com/getsentry/sentry-go"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -19,6 +20,13 @@ var version = "dev"
 var cfgFile string
 
 func main() {
+	// The PDF extraction child process is dispatched before cobra sees the
+	// arguments. It deliberately skips the config read, sentry and the version
+	// banner: it needs none of them, it would fail without a config file, and
+	// its stdout carries data that anything else writing there would corrupt.
+	// See pdf/extractproc.go.
+	pdf.RunExtractWorkerIfInvoked()
+
 	rootCmd.Execute()
 }
 

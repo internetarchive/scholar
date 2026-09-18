@@ -146,6 +146,9 @@ type Processor struct {
 	grobid            *grobidclient.Grobid
 	s3                *minio.Client
 	grobidMaxFileSize int64
+	// extractor runs the MuPDF passes, normally in a child process. See
+	// extractproc.go for why.
+	extractor pdfExtractor
 	// Heartbeater, if set, is invoked periodically while a PDF is being
 	// processed so a long GROBID call doesn't trip an activity HeartbeatTimeout.
 	Heartbeater func(string)
@@ -194,6 +197,7 @@ func newProcessor(mc *minio.Client, heartbeat func(string)) *Processor {
 		grobid:            grobidclient.New(host),
 		s3:                mc,
 		grobidMaxFileSize: maxSize,
+		extractor:         newExtractor(),
 		Heartbeater:       heartbeat,
 	}
 }
@@ -223,6 +227,15 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 	digest := sha1Hex(pdfBs)
 	log := slog.With("sha1", digest)
 
+	// One temp file for the whole pipeline. GROBID's client takes a path, and
+	// so does the extraction child -- handing it a path rather than piping
+	// megabytes down its stdin keeps the parent out of the copy.
+	path, cleanup, err := tempPDF(pdfBs)
+	if err != nil {
+		return out, err
+	}
+	defer cleanup()
+
 	switch {
 	case !looksLikePDF(pdfBs):
 		// Not fatal, and we still ask GROBID: it has its own opinion, and this
@@ -232,41 +245,60 @@ func (p *Processor) Process(ctx context.Context, pdfBs []byte, sha1 string) (Con
 		// The whole point of the list is to keep these away from MuPDF.
 		log.Warn("pdf is on the known-bad list; skipping extraction")
 	default:
-		p.extract(ctx, pdfBs, digest, log, &out)
+		p.extract(ctx, path, digest, log, &out)
 	}
 
-	return out, p.runGrobid(ctx, pdfBs, digest, log, &out)
+	return out, p.runGrobid(ctx, path, int64(len(pdfBs)), digest, log, &out)
 }
 
-// extract runs the MuPDF passes and stores what they produce. Every failure in
-// here is logged rather than returned; see Process.
-func (p *Processor) extract(ctx context.Context, pdfBs []byte, digest string, log *slog.Logger, out *Content) {
-	p.beatHeart("pdf-text")
-	text, err := extractText(ctx, pdfBs)
+// extract runs the MuPDF passes and stores what they produce.
+//
+// Nothing in here is fatal. GROBID is the output that matters, a PDF MuPDF
+// cannot read is often one GROBID can, and since the passes now run in a child
+// process their worst case is a lost derivative rather than a lost worker.
+func (p *Processor) extract(ctx context.Context, pdfPath, digest string, log *slog.Logger, out *Content) {
+	p.beatHeart("pdf-extract")
+
+	res, err := p.extractor.extract(ctx, pdfPath)
+	if err != nil {
+		var crash *ExtractCrashError
+		if errors.As(err, &crash) {
+			// Loud, because this is a PDF that will do it again and the list in
+			// knownbad.go is how we stop asking. Not fatal, because the child
+			// died so that this process would not have to.
+			log.Error("pdf extraction child died; continuing without its derivatives",
+				"err", err, "timed_out", crash.TimedOut)
+		} else {
+			log.Error("pdf extraction failed", "err", err)
+		}
+		// Fall through: a child that crashed on the thumbnail may still have
+		// delivered the text.
+	}
+
 	switch {
-	case err != nil:
-		log.Warn("text extraction failed", "err", err)
-	case len(text) == 0:
+	case res.TextErr != "":
+		log.Warn("text extraction failed", "err", res.TextErr)
+	case len(res.Text) == 0:
 		// blobproc treated a zero-length extraction as a failed run ("empty-pdf")
 		// and threw the thumbnail away with it. Here it is just an empty text
 		// derivative that is not worth storing.
 		log.Warn("pdf produced no text")
 	default:
-		out.PdfText = text
-		if err := putDerivative(ctx, p.s3, textDerivative, digest, text); err != nil {
+		out.PdfText = res.Text
+		if err := putDerivative(ctx, p.s3, textDerivative, digest, res.Text); err != nil {
 			log.Error("could not store text derivative", "err", err)
 		}
 	}
 
-	p.beatHeart("pdf-thumbnail")
-	thumb, err := extractThumbnail(ctx, pdfBs)
 	switch {
-	case err != nil:
-		log.Warn("thumbnail extraction failed", "err", err)
-	case len(thumb) < minThumbnailSize:
-		log.Warn("thumbnail suspiciously small; discarding", "bytes", len(thumb))
+	case res.ThumbnailErr != "":
+		log.Warn("thumbnail extraction failed", "err", res.ThumbnailErr)
+	case len(res.Thumbnail) == 0:
+		// Already reported above if the child died before this pass ran.
+	case len(res.Thumbnail) < minThumbnailSize:
+		log.Warn("thumbnail suspiciously small; discarding", "bytes", len(res.Thumbnail))
 	default:
-		if err := putDerivative(ctx, p.s3, thumbnailDerivative, digest, thumb); err != nil {
+		if err := putDerivative(ctx, p.s3, thumbnailDerivative, digest, res.Thumbnail); err != nil {
 			log.Error("could not store thumbnail derivative", "err", err)
 		}
 	}
@@ -274,22 +306,14 @@ func (p *Processor) extract(ctx context.Context, pdfBs []byte, digest string, lo
 
 // runGrobid asks GROBID for TEI and classifies what comes back. Its return is
 // Process's return, so only a reason to try this PDF again is an error.
-func (p *Processor) runGrobid(ctx context.Context, pdfBs []byte, digest string, log *slog.Logger, out *Content) error {
-	if int64(len(pdfBs)) > p.grobidMaxFileSize {
+func (p *Processor) runGrobid(ctx context.Context, path string, size int64, digest string, log *slog.Logger, out *Content) error {
+	if size > p.grobidMaxFileSize {
 		// Not an error and not a verdict on the PDF: we chose not to ask. The
 		// caller sees empty TEI, which it treats as "nothing usable here".
-		log.Warn("pdf too large for grobid; skipping", "bytes", len(pdfBs))
+		log.Warn("pdf too large for grobid; skipping", "bytes", size)
 		out.GrobidOutcome = GrobidTooLarge
 		return nil
 	}
-
-	// GROBID's client takes a path, so this is the one step that still needs the
-	// bytes on disk -- the MuPDF passes above read them straight from memory.
-	path, cleanup, err := tempPDF(pdfBs)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
 
 	p.beatHeart("grobid")
 	res, err := p.grobid.ProcessPDFContext(ctx, path, "processFulltextDocument", &grobidclient.Options{

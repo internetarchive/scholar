@@ -34,30 +34,53 @@ type ItemFile struct {
 	Source string `json:"source"`
 }
 
-// SearchCollection lists item identifiers in an IA collection, paged. Returns
-// the identifiers from this page plus hasMore=true if more pages remain.
-// pageSize is the "rows" param; page is 1-indexed.
-func SearchCollection(ctx context.Context, c *http.Client, collectionID string, page, pageSize int) ([]string, bool, error) {
+// CollectionPage is one page of a collection listing.
+type CollectionPage struct {
+	Identifiers []string
+	// NumFound is how many items the search says the collection holds. Callers
+	// enumerating the whole collection should check what they collected against
+	// it; see the sort note in SearchCollection for why that is not paranoia.
+	NumFound int
+	// HasMore reports that further pages remain.
+	HasMore bool
+}
+
+// SearchCollection lists item identifiers in an IA collection, one page at a
+// time. pageSize is the "rows" param; page is 1-indexed.
+//
+// The sort is load-bearing, not cosmetic. Offset paging is only coherent over a
+// total ordering, and without an explicit sort these results come back ordered
+// by relevance score -- which for a bare collection filter is identical for
+// every item, leaving the tie-break arbitrary and free to differ between
+// requests. Paging through that returns some items twice and never returns
+// others at all: measured on CATCHUP-CRAWL-2025-06, unsorted paging yielded 415
+// rows holding only 406 distinct items, silently dropping nine. Sorting on a
+// unique field makes the offsets mean something. With this in place the same
+// collection enumerates as 415 rows, 415 distinct, no duplicates.
+func SearchCollection(ctx context.Context, c *http.Client, collectionID string, page, pageSize int) (CollectionPage, error) {
+	var out CollectionPage
+
 	q := url.Values{}
 	q.Set("q", "collection:"+collectionID)
 	q.Set("fl", "identifier")
 	q.Set("output", "json")
 	q.Set("rows", fmt.Sprintf("%d", pageSize))
 	q.Set("page", fmt.Sprintf("%d", page))
+	q.Set("sort[]", "identifier asc")
 	u := Host + "/advancedsearch.php?" + q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
-		return nil, false, err
+		return out, err
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return nil, false, fmt.Errorf("advancedsearch GET failed: %w", err)
+		return out, fmt.Errorf("advancedsearch GET failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, false, fmt.Errorf("advancedsearch returned %d: %s", resp.StatusCode, b)
+		return out, fmt.Errorf("advancedsearch returned %d: %s", resp.StatusCode, b)
 	}
 
 	var payload struct {
@@ -68,17 +91,18 @@ func SearchCollection(ctx context.Context, c *http.Client, collectionID string, 
 		} `json:"response"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, false, fmt.Errorf("advancedsearch decode failed: %w", err)
+		return out, fmt.Errorf("advancedsearch decode failed: %w", err)
 	}
 
-	ids := make([]string, 0, len(payload.Response.Docs))
+	out.Identifiers = make([]string, 0, len(payload.Response.Docs))
 	for _, d := range payload.Response.Docs {
 		if id := d["identifier"]; id != "" {
-			ids = append(ids, id)
+			out.Identifiers = append(out.Identifiers, id)
 		}
 	}
-	hasMore := payload.Response.Start+len(payload.Response.Docs) < payload.Response.NumFound
-	return ids, hasMore, nil
+	out.NumFound = payload.Response.NumFound
+	out.HasMore = payload.Response.Start+len(payload.Response.Docs) < payload.Response.NumFound
+	return out, nil
 }
 
 // ItemFiles returns the file list from an IA item's metadata API response.

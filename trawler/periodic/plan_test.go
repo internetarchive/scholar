@@ -319,3 +319,55 @@ func Test_resolveStartIndex_missingItemIsAnError(t *testing.T) {
 	require.ErrorContains(t, err, "ITEM-typo")
 	require.ErrorContains(t, err, "not in this collection")
 }
+
+// --- enumerationShortfall -------------------------------------------------
+
+// The check exists because its absence let unsorted search paging silently drop
+// about two percent of every collection for months. It has to name both shapes
+// of that failure and stay quiet about the one shape that is benign.
+func Test_enumerationShortfall(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		rows, distinct, numFnd int
+		want                   string
+	}{
+		{
+			name: "complete and clean",
+			rows: 415, distinct: 415, numFnd: 415,
+			want: "",
+		},
+		{
+			// The measured production failure, to the item: unsorted paging over
+			// CATCHUP-CRAWL-2025-06 returned 415 rows holding 406 distinct.
+			name: "overlapping pages mean gaps",
+			rows: 415, distinct: 406, numFnd: 415,
+			want: "paging is unstable",
+		},
+		{
+			name: "short of what the search reports",
+			rows: 400, distinct: 400, numFnd: 415,
+			want: "saw 400 of the 415",
+		},
+		{
+			// A collection that grew mid-enumeration reads as a surplus. Crawl
+			// collections do that, and it is not a gap.
+			name: "more than reported is fine",
+			rows: 420, distinct: 420, numFnd: 415,
+			want: "",
+		},
+		{
+			name: "empty collection",
+			rows: 0, distinct: 0, numFnd: 0,
+			want: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := enumerationShortfall("COLL", tc.rows, tc.distinct, tc.numFnd)
+			if tc.want == "" {
+				require.Empty(t, got)
+			} else {
+				require.Contains(t, got, tc.want)
+			}
+		})
+	}
+}

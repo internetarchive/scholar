@@ -143,18 +143,17 @@ func dumpCollectionPDFCDX(ctx context.Context, collectionID string) error {
 
 	page := 1
 	for {
-		var ids []string
-		var hasMore bool
+		var found ia.CollectionPage
 		err := retryNetwork(ctx, fmt.Sprintf("search collection %q page %d", collectionID, page),
 			func() error {
 				var e error
-				ids, hasMore, e = ia.SearchCollection(ctx, client, collectionID, page, cdxItemsPerPage)
+				found, e = ia.SearchCollection(ctx, client, collectionID, page, cdxItemsPerPage)
 				return e
 			})
 		if err != nil {
 			return fmt.Errorf("search collection %q: %w", collectionID, err)
 		}
-		for _, id := range ids {
+		for _, id := range found.Identifiers {
 			if strings.HasSuffix(id, "-CRL") {
 				continue
 			}
@@ -165,7 +164,7 @@ func dumpCollectionPDFCDX(ctx context.Context, collectionID string) error {
 				log.Printf("skipping item %s: %v", id, err)
 			}
 		}
-		if !hasMore {
+		if !found.HasMore {
 			break
 		}
 		page++

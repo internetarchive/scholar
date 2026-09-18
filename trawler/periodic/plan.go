@@ -133,6 +133,7 @@ type ListCollectionOutput struct {
 // Sorting is what makes ItemCursor.Index mean something stable: advancedsearch
 // paging is not ordered strongly enough to index into directly.
 func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCollectionOutput, error) {
+	l := activity.GetLogger(ctx)
 	var out ListCollectionOutput
 
 	if in.CollectionName == "" || in.ItemListKey == "" {
@@ -140,30 +141,48 @@ func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCo
 	}
 
 	client := metadataClient()
-	var ids []string
+
+	var (
+		seen     = map[string]bool{}
+		rows     int
+		numFound int
+		ids      []string
+	)
 
 	for page := 1; ; page++ {
 		activity.RecordHeartbeat(ctx, fmt.Sprintf("page %d", page))
 
-		found, hasMore, err := ia.SearchCollection(ctx, client, in.CollectionName, page, itemsPerPage)
+		found, err := ia.SearchCollection(ctx, client, in.CollectionName, page, itemsPerPage)
 		if err != nil {
 			return out, fmt.Errorf("failed to search %q: %w", in.CollectionName, err)
 		}
+		numFound = found.NumFound
 
-		for _, id := range found {
+		for _, id := range found.Identifiers {
+			rows++
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
 			// -CRL items hold the crawl log rather than crawled content.
 			if !strings.HasSuffix(id, "-CRL") {
 				ids = append(ids, id)
 			}
 		}
 
-		if !hasMore {
+		if !found.HasMore {
 			break
 		}
 	}
 
+	if err := checkEnumeration(ctx, in.CollectionName, rows, len(seen), numFound); err != nil {
+		return out, err
+	}
+
+	// The search already sorts by identifier, but the cursor's meaning is an
+	// index into this list, so the order is settled here rather than trusted to
+	// match Go's collation.
 	slices.Sort(ids)
-	ids = slices.Compact(ids)
 
 	body := []byte(strings.Join(ids, "\n"))
 	if len(ids) > 0 {
@@ -174,6 +193,9 @@ func ListCollectionActivity(ctx context.Context, in ListCollectionInput) (ListCo
 	}
 
 	out.ItemCount = len(ids)
+	l.Info("enumerated collection",
+		"collection", in.CollectionName,
+		"num_found", numFound, "distinct", len(seen), "ingestable", len(ids))
 
 	if in.StartAtItem != "" {
 		idx, err := resolveStartIndex(ids, in.StartAtItem)
@@ -200,6 +222,58 @@ func resolveStartIndex(items []string, startAt string) (int, error) {
 			"periodic: start-at item %q is not in this collection's %d items", startAt, len(items))
 	}
 	return idx, nil
+}
+
+// enumerationGraceAttempts is how many times an incomplete enumeration is
+// retried before we accept it.
+//
+// A shortfall is normally the search paging coming apart, which a retry fixes.
+// But a crawl collection grows while we read it, and an item added between the
+// first page and the last shifts the offsets under us -- so an indefinitely
+// failing enumeration is a real possibility, and blocking the run forever on it
+// would be worse than starting on 404 of 405 items.
+const enumerationGraceAttempts = 3
+
+// enumerationShortfall names what is wrong with an enumeration, or returns ""
+// when it is sound.
+//
+// This is here because its absence is what let a real bug run for months. Offset
+// paging over an unsorted search silently skipped about two percent of every
+// collection, and nothing compared the list against the count, so runs quietly
+// ingested most of a collection and reported success. Nine missing items out of
+// 415 is invisible in a log line; "distinct 406, num_found 415" is not.
+func enumerationShortfall(collection string, rows, distinct, numFound int) string {
+	// Duplicates mean the pages overlapped, which means they also had gaps.
+	if dupes := rows - distinct; dupes > 0 {
+		return fmt.Sprintf(
+			"enumeration of %s returned %d rows holding only %d distinct items; paging is unstable",
+			collection, rows, distinct)
+	}
+	// A surplus is a collection that grew while we read it, which is not a gap.
+	if distinct < numFound {
+		return fmt.Sprintf("enumeration of %s saw %d of the %d items the search reports",
+			collection, distinct, numFound)
+	}
+	return ""
+}
+
+// checkEnumeration fails the activity when the enumeration does not add up, so
+// that a retry gets a consistent read before the list is pinned for the life of
+// the run. See enumerationGraceAttempts for why it eventually gives in.
+func checkEnumeration(ctx context.Context, collection string, rows, distinct, numFound int) error {
+	reason := enumerationShortfall(collection, rows, distinct, numFound)
+	if reason == "" {
+		return nil
+	}
+
+	if attempt := activity.GetInfo(ctx).Attempt; attempt <= enumerationGraceAttempts {
+		return fmt.Errorf("%s (attempt %d)", reason, attempt)
+	}
+
+	activity.GetLogger(ctx).Error("accepting a questionable enumeration after repeated attempts",
+		"collection", collection, "reason", reason,
+		"rows", rows, "distinct", distinct, "num_found", numFound)
+	return nil
 }
 
 type PlanBatchesInput struct {

@@ -94,8 +94,8 @@ completion. And emptying the list entirely is treated as a bad edit and ignored
 us not to crawl them, so silently dropping all of them is not a mistake worth
 making cheap. Removing individual patterns works normally.
 
-Note the asymmetry: this re-read is the scrape workflow's. The daily crawl still
-reads the same list once at startup.
+The daily crawl does the same thing now, on the same list plus
+`crawling.doi_prefix_blocklist`; see `daily/blocklist.go`.
 
 ## The outcome log
 

@@ -2,191 +2,116 @@ package harvesting
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
-	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-//go:embed crossref_sample.ndjson
-var xrefSample []byte
+// line is one thing ScanLines yielded: the text and the byte offset just past
+// its newline, which is where a resume picks up.
+type line struct {
+	text string
+	end  int64
+}
 
-func Test_chunk(t *testing.T) {
-	r := bytes.NewReader(xrefSample)
+// scan collects everything ScanLines yields over a range.
+func scan(t *testing.T, body string, start, end int64, chunk int) ([]line, bool) {
+	t.Helper()
+	var got []line
+	consumed, err := ScanLines(bytes.NewReader([]byte(body)), start, end, chunk,
+		func(s string, lineEnd int64) bool {
+			got = append(got, line{text: s, end: lineEnd})
+			return true
+		})
+	require.NoError(t, err)
+	return got, consumed
+}
 
-	sequence := []struct {
-		offset            int64
-		expectedOffsets   [][]int64
-		expectedBytesRead int64
-		expectedEOF       bool
-	}{
-		{
-			offset: 0,
-			expectedOffsets: [][]int64{
-				{0, 39429}, {39429, 5899}, {45328, 6600}, {51928, 4551},
-				{56479, 1644}, {58123, 1758}, {59881, 4552}, {64433, 3544},
-				{67977, 981}, {68958, 3036}},
-			expectedBytesRead: 71994,
-		},
-		{
-			offset: 71994,
-			expectedOffsets: [][]int64{
-				{71994, 1021}, {73015, 1718}, {74733, 1560}, {76293, 9180},
-				{85473, 10279}, {95752, 10434}, {106186, 4353}, {110539, 3797},
-				{114336, 13986}, {128322, 1588}},
-			expectedBytesRead: 129910,
-		},
-		{
-			offset: 129910,
-			expectedOffsets: [][]int64{
-				{129910, 1193}, {131103, 2425}, {133528, 4109}, {137637, 3755},
-				{141392, 7007}, {148399, 7063}, {155462, 4004}, {159466, 19505},
-				{178971, 23387}, {202358, 21511},
-			},
-			expectedBytesRead: 223869,
-		},
-		{
-			offset: 223869,
-			expectedOffsets: [][]int64{
-				{223869, 31774}, {255643, 3417}, {259060, 4014}, {263074, 1233},
-				{264307, 14758}, {279065, 3958}, {283023, 24093}, {307116, 21360},
-				{328476, 3517}, {331993, 9773}},
-			expectedBytesRead: 341766,
-		},
-		{
-			offset: 341766,
-			expectedOffsets: [][]int64{
-				{341766, 12272}, {354038, 2211}, {356249, 1291}, {357540, 16254},
-				{373794, 3176}, {376970, 2967}, {379937, 1305}, {381242, 1349},
-				{382591, 1396}, {383987, 1231}},
-			expectedBytesRead: 385218,
-			expectedEOF:       true,
-		},
+func texts(ls []line) []string {
+	out := make([]string, 0, len(ls))
+	for _, l := range ls {
+		out = append(out, l.text)
 	}
+	return out
+}
 
-	for ix, step := range sequence {
-		t.Run(fmt.Sprintf("step %d", ix), func(t *testing.T) {
-			cfg := chunkCfg{
-				Offset:    step.offset,
-				BatchSize: 10,
-				ChunkSize: 64,
-			}
-			out, err := chunk(cfg, r)
-			if err != nil {
-				t.Errorf("error: %s", err.Error())
-			}
+func Test_ScanLines_readsWholeObject(t *testing.T) {
+	got, consumed := scan(t, "aaaaaaaaa\nbbbbbbbbb\nccccccccc\n", 0, -1, 4096)
+	require.Equal(t, []string{"aaaaaaaaa", "bbbbbbbbb", "ccccccccc"}, texts(got))
+	require.True(t, consumed)
+	require.Equal(t, int64(10), got[0].end)
+	require.Equal(t, int64(20), got[1].end)
+	require.Equal(t, int64(30), got[2].end)
+}
 
-			if len(out.Offsets) != cfg.BatchSize && !out.EOF {
-				t.Errorf("expected %d offsets, got %d", cfg.BatchSize, len(out.Offsets))
-			}
+func Test_ScanLines_skipsBlankLinesAndTrimsCR(t *testing.T) {
+	got, consumed := scan(t, "a\r\n\n   \nb\r\n", 0, -1, 4096)
+	require.Equal(t, []string{"a", "b"}, texts(got))
+	require.True(t, consumed)
+}
 
-			if !reflect.DeepEqual(step.expectedOffsets, out.Offsets) {
-				t.Errorf("expected offsets %v, got offsets %v", step.expectedOffsets, out.Offsets)
-			}
+// A final line with no trailing newline is still a record. Dropping it would
+// silently abandon the last record of every object that does not end in one.
+func Test_ScanLines_unterminatedFinalLine(t *testing.T) {
+	got, consumed := scan(t, "aaaaaaaaa\nbbbbbbbbb", 0, -1, 4096)
+	require.Equal(t, []string{"aaaaaaaaa", "bbbbbbbbb"}, texts(got))
+	require.True(t, consumed)
+	require.Equal(t, int64(19), got[1].end)
+}
 
-			if step.expectedBytesRead != out.BytesRead {
-				t.Errorf("expected %d bytes read, saw %d", step.expectedBytesRead, out.BytesRead)
-			}
+// A line longer than one chunk -- which an ordinary crossref document is --
+// must be stitched across reads, not truncated.
+func Test_ScanLines_lineSpansChunks(t *testing.T) {
+	long := strings.Repeat("x", 200)
+	got, consumed := scan(t, long+"\nb\n", 0, -1, 8)
+	require.Equal(t, []string{long, "b"}, texts(got))
+	require.True(t, consumed)
+}
 
-			if step.expectedEOF != out.EOF {
-				t.Errorf("unexpected EOF")
-			}
+func Test_ScanLines_emptyObject(t *testing.T) {
+	got, consumed := scan(t, "", 0, -1, 4096)
+	require.Empty(t, got)
+	require.True(t, consumed)
+}
+
+func Test_ScanLines_offsetPastEnd(t *testing.T) {
+	got, consumed := scan(t, "aaaaaaaaa\n", 10, -1, 4096)
+	require.Empty(t, got)
+	require.True(t, consumed)
+}
+
+// A bounded range yields exactly the lines inside it, whatever the chunk size.
+// This is the read half of the split: a planner recorded [10, 20) and the
+// activity that works it has to see the same single line.
+func Test_ScanLines_boundedRange(t *testing.T) {
+	body := "aaaaaaaaa\nbbbbbbbbb\nccccccccc\n"
+	for _, chunk := range []int{1, 3, 7, 4096} {
+		t.Run(fmt.Sprintf("chunk=%d", chunk), func(t *testing.T) {
+			got, consumed := scan(t, body, 10, 20, chunk)
+			require.Equal(t, []string{"bbbbbbbbb"}, texts(got))
+			require.True(t, consumed)
 		})
 	}
 }
 
-// Test_chunk_batchFullAtEOF is a regression test. A read that reaches the end
-// of the object while the batch fills part-way through the buffer must not
-// report EOF: callers treat EOF as "this object is done", advance to the next
-// one, and would abandon the lines still sitting unscanned in that buffer.
-func Test_chunk_batchFullAtEOF(t *testing.T) {
-	// ChunkSize is larger than the sample, so every ReadAt here comes back with
-	// io.EOF alongside its bytes.
-	r := bytes.NewReader([]byte("aa\nbb\ncc\ndd\n"))
-
-	sequence := []struct {
-		offset            int64
-		expectedOffsets   [][]int64
-		expectedBytesRead int64
-		expectedEOF       bool
-	}{
-		// The batch fills at byte 6 of 12, so there is more to read even though
-		// the read itself hit the end of the object.
-		{
-			offset:            0,
-			expectedOffsets:   [][]int64{{0, 3}, {3, 3}},
-			expectedBytesRead: 6,
-		},
-		// Here the batch fills on the object's final byte, which does exhaust it.
-		{
-			offset:            6,
-			expectedOffsets:   [][]int64{{6, 3}, {9, 3}},
-			expectedBytesRead: 12,
-			expectedEOF:       true,
-		},
-	}
-
-	var seen [][]int64
-	for ix, step := range sequence {
-		t.Run(fmt.Sprintf("step %d", ix), func(t *testing.T) {
-			cfg := chunkCfg{
-				Offset:    step.offset,
-				BatchSize: 2,
-				ChunkSize: 64,
-			}
-			out, err := chunk(cfg, r)
-			if err != nil {
-				t.Fatalf("error: %s", err.Error())
-			}
-
-			if !reflect.DeepEqual(step.expectedOffsets, out.Offsets) {
-				t.Errorf("expected offsets %v, got offsets %v", step.expectedOffsets, out.Offsets)
-			}
-
-			if step.expectedBytesRead != out.BytesRead {
-				t.Errorf("expected %d bytes read, saw %d", step.expectedBytesRead, out.BytesRead)
-			}
-
-			if step.expectedEOF != out.EOF {
-				t.Errorf("expected EOF %v, got %v", step.expectedEOF, out.EOF)
-			}
-
-			seen = append(seen, out.Offsets...)
+// Stopping early is how a planner says "I have enough work", so it has to be
+// distinguishable from running out of object -- callers treat the latter as
+// EOF and move on.
+func Test_ScanLines_stoppingEarlyIsNotConsumed(t *testing.T) {
+	var got []string
+	consumed, err := ScanLines(bytes.NewReader([]byte("a\nb\n")), 0, -1, 4096,
+		func(s string, _ int64) bool {
+			got = append(got, s)
+			return false
 		})
-	}
-
-	// The point of the fix: walking to EOF yields every line, not just the
-	// first batch.
-	if len(seen) != 4 {
-		t.Errorf("expected 4 lines across the walk, got %d: %v", len(seen), seen)
-	}
+	require.NoError(t, err)
+	require.False(t, consumed)
+	require.Equal(t, []string{"a"}, got)
 }
 
-// Test_chunk_eofUnderBatchSize covers the ordinary end-of-object case, where
-// the object runs out before the batch fills.
-func Test_chunk_eofUnderBatchSize(t *testing.T) {
-	r := bytes.NewReader([]byte("aa\nbb\n"))
-
-	cfg := chunkCfg{
-		Offset:    0,
-		BatchSize: 10,
-		ChunkSize: 4,
-	}
-	out, err := chunk(cfg, r)
-	if err != nil {
-		t.Fatalf("error: %s", err.Error())
-	}
-
-	expectedOffsets := [][]int64{{0, 3}, {3, 3}}
-	if !reflect.DeepEqual(expectedOffsets, out.Offsets) {
-		t.Errorf("expected offsets %v, got offsets %v", expectedOffsets, out.Offsets)
-	}
-
-	if out.BytesRead != 6 {
-		t.Errorf("expected 6 bytes read, saw %d", out.BytesRead)
-	}
-
-	if !out.EOF {
-		t.Error("expected EOF")
-	}
+func Test_ScanLines_rejectsBadChunkSize(t *testing.T) {
+	_, err := ScanLines(bytes.NewReader(nil), 0, -1, 0, func(string, int64) bool { return true })
+	require.Error(t, err)
 }

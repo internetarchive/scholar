@@ -7,17 +7,79 @@
 [sentry]
 dsn = "https://b917e17fa01e2aee8a07bcc6a933a5d0@sentry.archive.org/75"
 
-[harvesting]
-batch_size = 10000
-chunk_size = 102400
-
 [daily]
-# lines_per_can bounds how many ndjson lines a single DailyCrawlWorkflow run
-# processes before handing off to a fresh run via ContinueAsNew. This keeps any
-# one run's Temporal history well under the ~10k-event / 50MB limits. Each
-# ProcessLine is roughly 3-5 history events, so ~2000 lines keeps a run under
-# ~10k events. Defaults to 2000 if unset or <= 0.
-lines_per_can = 2000
+# The daily crawl: scrape one day out of one upstream metadata API into an
+# ndjson in S3, then turn each of its records into a fatcat release and, where
+# it is worth it, a crawled PDF and a search document.
+#
+# Work is dispatched in batches: the ndjson is cut into byte ranges and one
+# Temporal activity works a whole range with a pool of its own. That is why
+# most of the numbers below are about batches rather than lines -- Temporal
+# sees a handful of history events per batch instead of per line, which is what
+# keeps a day of crossref off the Temporal database.
+#
+# The task queues are per-upstream and live in that upstream's own section
+# below ([crossref], [pubmed], ...).
+#
+# concurrency is how many releases the run works at once, across all of its
+# batches. It is the main throttle and can be retuned on a running crawl with
+# `trawler daily set-concurrency --upstream U --day D --concurrency N`. A
+# retune reaches the batches dispatched after it, not the ones already running,
+# so it takes a batch to take effect.
+concurrency = 8
+# max_concurrency clamps both the start flag and the retune signal, so a typo
+# cannot point a thousand parallel crawls at SPN.
+max_concurrency = 64
+# worker_activity_slots caps concurrent *batches* on a single worker -- not
+# lines. What a worker puts on SPN and GROBID is this times a batch's
+# parallelism, so keep it small and let concurrency do the tuning.
+worker_activity_slots = 2
+# batch_size is how many ndjson lines one activity handles. Bigger batches mean
+# less Temporal traffic and more work redone when a worker dies mid-batch;
+# redone lines are cheap, since every step checks whether its output is already
+# there and a re-crawl inside the CDX freshness window is a lookup rather than
+# a capture.
+batch_size = 200
+# batches_in_flight is how many batches the run keeps going at once. It is what
+# spreads a run across worker hosts, so it wants to be at least the number of
+# workers on the queue. concurrency is divided between them.
+batches_in_flight = 4
+# batches_per_plan is how many batches one planning activity cuts per call. It
+# bounds how much of the ndjson a single planning read walks.
+batches_per_plan = 32
+# chunk_size is how many bytes one S3 range read pulls while walking the
+# ndjson. Upstream records are kilobytes each, so this wants to be comfortably
+# larger than a single record.
+chunk_size = 102400
+# lines_per_can bounds how many lines one workflow run dispatches before
+# handing off via ContinueAsNew, keeping any single run's history well under
+# Temporal's ~10k-event / 50MB limits. At batch_size 200 this is ~100 batches,
+# or a few thousand history events, per run. Defaults to 20000 if unset or <= 0.
+#
+# NB this used to be per *activity* rather than per batch, when one line was
+# one activity; 2000 was the right number then and is far too eager now.
+lines_per_can = 20000
+# line_attempts is how many times a single line is retried inside the batch
+# before it is abandoned. Abandoned lines are counted and logged; they never
+# fail the run.
+line_attempts = 3
+# max_consecutive_errors aborts the run when this many lines in a row exhaust
+# their retries. Individual bad records are expected and never fail the run,
+# but a long unbroken streak means something systemic (fatcat down, ES refusing
+# writes) and is not worth burning a whole day against. The streak is counted
+# within a batch, so keep batch_size comfortably above it; a batch in which
+# every line failed aborts the run regardless of its size.
+max_consecutive_errors = 50
+# max_hops bounds how many redirects/link-follows a single crawl will chase.
+max_hops = 8
+# blocklist_reload_interval is how stale crawling.url_blocklist and
+# crawling.doi_prefix_blocklist may get inside a running batch. A batch lasts
+# hours, so it re-reads them on this interval rather than once when it starts.
+blocklist_reload_interval = "60s"
+# log_dir is where the per-line outcome TSV is written, on whichever worker
+# host ran the batch. One file per day, named for the workflow id. Leave empty
+# to disable the log.
+log_dir = "./data/daily-logs"
 
 [periodic]
 task_queue = "periodic_ingest"

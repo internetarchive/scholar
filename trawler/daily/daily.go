@@ -1,37 +1,85 @@
+// Package daily turns one day of an upstream metadata API into fatcat records,
+// crawled PDFs and search documents.
+//
+// The entry workflow is DailyCrawlWorkflow. A run scrapes one day out of one
+// upstream (crossref, arxiv, doaj, datacite, pubmed) into an ndjson object in
+// S3, then works that object's lines in batches: each line becomes a release,
+// and a release worth having is crawled through Save Page Now, run through
+// GROBID and indexed.
+//
+// The work is organised in batches rather than one ndjson line per activity. A
+// run plans the object into byte ranges (plan.go) and hands each range to one
+// activity that works it with a pool of its own (batch.go). Temporal therefore
+// sees a few events per few hundred lines instead of a few per line, which is
+// what keeps a day of crossref from costing more in workflow history than it
+// does in crawling. It is also what lets more than one release be in flight at
+// once without needing a worker activity slot each. What Temporal still
+// guarantees is the part that matters: a batch whose worker dies comes back,
+// and its heartbeat checkpoint says where to resume.
 package daily
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
-	"net/http"
-	"os/exec"
-	"strings"
 	"time"
 
-	"git.archive.org/webgroup/scholar/trawler/arxiv"
-	cdx "git.archive.org/webgroup/scholar/trawler/cdx/cdxclient"
 	"git.archive.org/webgroup/scholar/trawler/counts"
-	"git.archive.org/webgroup/scholar/trawler/crawling"
-	"git.archive.org/webgroup/scholar/trawler/crossref"
-	"git.archive.org/webgroup/scholar/trawler/datacite"
-	"git.archive.org/webgroup/scholar/trawler/doaj"
-	"git.archive.org/webgroup/scholar/trawler/fatcat2"
-	"git.archive.org/webgroup/scholar/trawler/harvesting"
-	"git.archive.org/webgroup/scholar/trawler/indexing"
-	"git.archive.org/webgroup/scholar/trawler/pdf"
-	"git.archive.org/webgroup/scholar/trawler/pubmed"
-	"git.archive.org/webgroup/scholar/trawler/spn/spnclient"
-	"github.com/google/uuid"
 	"github.com/spf13/viper"
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
+// SetConcurrencySignal retunes how many releases are crawled at once without
+// restarting the workflow. A day of crossref lasts long enough that "back off,
+// SPN is unhappy" needs to be answerable while it is in flight.
+const SetConcurrencySignal = "set-concurrency"
+
+const (
+	defaultConcurrency          = 8
+	defaultMaxConcurrency       = 64
+	defaultLinesPerCAN          = 20000
+	defaultBatchSize            = 200
+	defaultBatchesInFlight      = 4
+	defaultBatchesPerPlan       = 32
+	defaultChunkSize            = 102400
+	defaultMaxConsecutiveErrors = 50
+	defaultLineAttempts         = 3
+	defaultMaxHops              = 8
+)
+
+// DailyCounts is the running tally for a day's crawl: what the upstream
+// processors hand back, plus the two numbers a batched run needs and a
+// per-line activity never did.
+//
+// Lines and Errored are here rather than in counts.Counts because they are
+// facts about how the run walked the file, not about what was found in it --
+// the upstream packages have no way to fill them in and no reason to.
+type DailyCounts struct {
+	counts.Counts
+	// Lines is how many ndjson lines reached a verdict.
+	Lines int
+	// Errored is how many lines exhausted their retries and were abandoned so
+	// the run could continue.
+	Errored int
+}
+
+// Add merges two tallies. It is used to fold each batch result into the
+// workflow's running total, including across ContinueAsNew.
+//
+// It never mutates either operand, which is what lets a batch snapshot its
+// running counts into a heartbeat and keep counting.
+func (c DailyCounts) Add(o DailyCounts) DailyCounts {
+	return DailyCounts{
+		Counts:  c.Counts.Add(o.Counts),
+		Lines:   c.Lines + o.Lines,
+		Errored: c.Errored + o.Errored,
+	}
+}
+
+// DailyCrawlWorkflowInput drives the workflow. Callers starting a fresh day set
+// Upstream (and optionally Day, SourceOverride and Concurrency); every other
+// field is either populated from config on the first run or carried across
+// ContinueAsNew.
 type DailyCrawlWorkflowInput struct {
 	// Day value in format 2006-01-02
 	Day string
@@ -40,6 +88,9 @@ type DailyCrawlWorkflowInput struct {
 	SourceOverride string
 	// Upstream is which API we're scraping
 	Upstream string
+	// Concurrency is how many releases the run crawls at once, across all of
+	// its batches. Zero means "use the configured default".
+	Concurrency int
 
 	// The fields below carry state across ContinueAsNew. Callers starting a
 	// fresh day leave them at their zero values; the workflow populates them and
@@ -54,40 +105,97 @@ type DailyCrawlWorkflowInput struct {
 	// run (it embeds the RunID, which changes on every ContinueAsNew) and carried
 	// forward so a day's records all share one source string.
 	Source string
-	// Offset is the byte position in the .ndjson to resume reading from.
+	// Offset is the byte position in the .ndjson to resume reading from. It only
+	// ever sits on a batch boundary.
 	Offset int64
 	// Counts accumulates results across every run in the ContinueAsNew chain so
 	// the final run returns the day's grand total.
-	Counts counts.Counts
+	Counts DailyCounts
 
-	// LinesPerCAN, BatchSize, ChunkSize, and the task queue names are
-	// viper-sourced settings captured once on the first run (see the SideEffect
-	// below) and threaded across ContinueAsNew so they stay fixed for the whole
-	// chain. We snapshot them rather than reading viper in the workflow body on
-	// every run because viper reads aren't deterministic across replay: a config
-	// change in Ansible would otherwise desync a running workflow's history -- or
-	// silently shift its behavior between runs. A zero BatchSize means we haven't
-	// captured yet. ExternalTaskQueue is only used by the first-run scrape but is
-	// snapshotted with the rest for the same determinism reason.
-	LinesPerCAN       int
-	BatchSize         int
-	ChunkSize         int
-	InternalTaskQueue string
-	ExternalTaskQueue string
+	// The fields below are viper-sourced settings snapshotted once on the first
+	// run (see the SideEffect in the workflow) and threaded across
+	// ContinueAsNew, so a config change under a running chain cannot desync its
+	// replay. We snapshot rather than read viper in the workflow body on every
+	// run because viper reads aren't deterministic across replay: a config
+	// change in Ansible would otherwise desync a running workflow's history --
+	// or silently shift its behavior between runs.
+	//
+	// A zero BatchesPerPlan means we haven't captured yet. BatchesPerPlan is the
+	// sentinel rather than BatchSize because BatchSize existed before this
+	// workflow moved to batches, and meant something else then: lines per S3
+	// read. A run handed on by a pre-batch worker carries a non-zero one. Keying
+	// off a field only this version sets means such a handoff re-reads config
+	// and carries on from its byte offset, instead of planning with the batch
+	// settings all zero.
+	//
+	// ExternalTaskQueue is only used by the first-run scrape but is snapshotted
+	// with the rest for the same determinism reason.
+	MaxConcurrency       int
+	LinesPerCAN          int
+	BatchSize            int
+	BatchesInFlight      int
+	BatchesPerPlan       int
+	ChunkSize            int
+	MaxConsecutiveErrors int
+	LineAttempts         int
+	InternalTaskQueue    string
+	ExternalTaskQueue    string
 }
 
 // dailyConfig is the snapshot of viper-sourced settings the workflow captures
 // via SideEffect on the first run of a ContinueAsNew chain.
 type dailyConfig struct {
-	LinesPerCAN       int
-	BatchSize         int
-	ChunkSize         int
-	InternalTaskQueue string
-	ExternalTaskQueue string
+	Concurrency          int
+	MaxConcurrency       int
+	LinesPerCAN          int
+	BatchSize            int
+	BatchesInFlight      int
+	BatchesPerPlan       int
+	ChunkSize            int
+	MaxConsecutiveErrors int
+	LineAttempts         int
+	InternalTaskQueue    string
+	ExternalTaskQueue    string
 }
 
-func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (counts.Counts, error) {
+func nonZero(v, fallback int) int {
+	if v <= 0 {
+		return fallback
+	}
+	return v
+}
+
+// splitConcurrency turns the run's release concurrency -- the number operators
+// actually think in, and the one the retune signal carries -- into how many
+// batch activities to keep in flight and how many lines each of them works at
+// once.
+//
+// Spreading the run over several batches is what puts it on more than one
+// worker host, so we prefer to use the whole allowance of batches and divide
+// the lines between them. Below one line per batch there is nothing to divide,
+// and the batch count comes down instead.
+func splitConcurrency(concurrency, batchesInFlight int) (batches, parallelism int) {
+	concurrency = max(concurrency, 1)
+	batches = min(max(batchesInFlight, 1), concurrency)
+	parallelism = (concurrency + batches - 1) / batches
+	return batches, parallelism
+}
+
+// DailyCrawlWorkflow scrapes one day out of one upstream and walks the result
+// in batches, working each batch of ndjson lines in one activity.
+//
+// Per-line failures never fail the run: a day of crossref will always contain
+// records fatcat chokes on and PDFs GROBID will not answer for, and one of them
+// must not strand the rest of the day. They are counted and logged inside the
+// batch. Only a sustained run of errors -- which means something systemic like
+// fatcat being down, not a bad record -- or a batch that cannot run at all
+// aborts the workflow.
+func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (DailyCounts, error) {
 	l := workflow.GetLogger(ctx)
+
+	if in.Upstream == "" {
+		return in.Counts, errors.New("daily: Upstream is required")
+	}
 
 	var err error
 
@@ -103,36 +211,49 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 	} else {
 		day, err = time.Parse("2006-01-02", in.Day)
 		if err != nil {
-			return counts.Counts{}, err
+			return in.Counts, err
 		}
 	}
 
-	// Snapshot config once, on the first run, and thread it across
-	// ContinueAsNew so it's fixed for the whole chain. SideEffect records the
-	// read in history, so replays return the recorded values instead of
-	// re-reading viper -- which is what keeps an in-flight chain deterministic
-	// even when the deployed config changes underneath it.
-	if in.BatchSize == 0 {
+	// Snapshot config once, on the first run of the chain. SideEffect records
+	// the read in history so replays reuse the recorded values rather than
+	// re-reading viper, which is what keeps an in-flight chain deterministic
+	// when the deployed config changes underneath it.
+	if in.BatchesPerPlan == 0 {
 		var cfg dailyConfig
-		if err := workflow.SideEffect(ctx, func(workflow.Context) interface{} {
+		if err := workflow.SideEffect(ctx, func(workflow.Context) any {
 			return dailyConfig{
-				LinesPerCAN:       viper.GetInt("daily.lines_per_can"),
-				BatchSize:         viper.GetInt("harvesting.batch_size"),
-				ChunkSize:         viper.GetInt("harvesting.chunk_size"),
-				InternalTaskQueue: viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
-				ExternalTaskQueue: viper.GetString(fmt.Sprintf("%s.external_task_queue", in.Upstream)),
+				Concurrency:          viper.GetInt("daily.concurrency"),
+				MaxConcurrency:       viper.GetInt("daily.max_concurrency"),
+				LinesPerCAN:          viper.GetInt("daily.lines_per_can"),
+				BatchSize:            viper.GetInt("daily.batch_size"),
+				BatchesInFlight:      viper.GetInt("daily.batches_in_flight"),
+				BatchesPerPlan:       viper.GetInt("daily.batches_per_plan"),
+				ChunkSize:            viper.GetInt("daily.chunk_size"),
+				MaxConsecutiveErrors: viper.GetInt("daily.max_consecutive_errors"),
+				LineAttempts:         viper.GetInt("daily.line_attempts"),
+				InternalTaskQueue:    viper.GetString(fmt.Sprintf("%s.internal_task_queue", in.Upstream)),
+				ExternalTaskQueue:    viper.GetString(fmt.Sprintf("%s.external_task_queue", in.Upstream)),
 			}
 		}).Get(&cfg); err != nil {
 			return in.Counts, err
 		}
-		if cfg.LinesPerCAN <= 0 {
-			cfg.LinesPerCAN = 2000
+		in.MaxConcurrency = nonZero(cfg.MaxConcurrency, defaultMaxConcurrency)
+		in.LinesPerCAN = nonZero(cfg.LinesPerCAN, defaultLinesPerCAN)
+		in.BatchSize = nonZero(cfg.BatchSize, defaultBatchSize)
+		in.BatchesInFlight = nonZero(cfg.BatchesInFlight, defaultBatchesInFlight)
+		in.BatchesPerPlan = nonZero(cfg.BatchesPerPlan, defaultBatchesPerPlan)
+		in.ChunkSize = nonZero(cfg.ChunkSize, defaultChunkSize)
+		in.MaxConsecutiveErrors = nonZero(cfg.MaxConsecutiveErrors, defaultMaxConsecutiveErrors)
+		in.LineAttempts = nonZero(cfg.LineAttempts, defaultLineAttempts)
+		if in.Concurrency <= 0 {
+			in.Concurrency = nonZero(cfg.Concurrency, defaultConcurrency)
 		}
-		in.LinesPerCAN = cfg.LinesPerCAN
-		in.BatchSize = cfg.BatchSize
-		in.ChunkSize = cfg.ChunkSize
 		in.InternalTaskQueue = cfg.InternalTaskQueue
 		in.ExternalTaskQueue = cfg.ExternalTaskQueue
+	}
+	if in.Concurrency > in.MaxConcurrency {
+		in.Concurrency = in.MaxConcurrency
 	}
 
 	// First run of the ContinueAsNew chain only: pin the source label and scrape
@@ -176,488 +297,191 @@ func DailyCrawlWorkflow(ctx workflow.Context, in DailyCrawlWorkflowInput) (count
 		l.Info(fmt.Sprintf("scholkit %s s3key: %s", in.Upstream, in.S3Key))
 	}
 
-	// Process the harvested data serially, resuming at in.Offset. We call
-	// ProcessLine once per line and ContinueAsNew periodically so no single run
-	// accumulates enough history to approach Temporal's limits. Only the byte
-	// offset and running totals cross the ContinueAsNew boundary -- never the
-	// (potentially tens-of-MB) offset list.
-
-	findCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 8 * 60 * 60 * time.Second,
+	planCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Minute,
 		TaskQueue:           in.InternalTaskQueue,
-	})
-	procCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout:    4 * time.Hour,
-		ScheduleToCloseTimeout: 8 * time.Hour,
-		HeartbeatTimeout:       2 * time.Minute,
-		TaskQueue:              in.InternalTaskQueue,
 		RetryPolicy: &temporal.RetryPolicy{
-			BackoffCoefficient: 1.5,
-			InitialInterval:    30 * time.Second,
-			MaximumInterval:    90 * time.Second,
+			InitialInterval:    5 * time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    2 * time.Minute,
+			MaximumAttempts:    5,
 		},
 	})
 
-	linesPerCAN := in.LinesPerCAN
+	// A batch is hours of work in one activity, so the heartbeat -- not the
+	// StartToClose budget -- is what says whether it is alive. StartToClose is
+	// only a backstop against a batch that keeps heartbeating and never
+	// finishes.
+	//
+	// The attempt budget is generous because a retry is cheap: it resumes from
+	// the checkpoint rather than redoing the batch. Most of what lands here is a
+	// worker restart, and a run must survive several of those without giving up
+	// on a batch.
+	crawlCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 8 * time.Hour,
+		HeartbeatTimeout:    20 * time.Minute,
+		TaskQueue:           in.InternalTaskQueue,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    30 * time.Second,
+			BackoffCoefficient: 1.5,
+			MaximumInterval:    5 * time.Minute,
+			MaximumAttempts:    10,
+		},
+	})
 
-	findInput := harvesting.FindLineBatchInput{
-		S3Key:     in.S3Key,
-		Offset:    in.Offset,
-		BatchSize: in.BatchSize,
-		ChunkSize: in.ChunkSize,
+	sigCh := workflow.GetSignalChannel(ctx, SetConcurrencySignal)
+
+	sel := workflow.NewSelector(ctx)
+	inFlight := 0
+
+	// failure is the first reason we have to stop the run. It is set from the
+	// selector callback and read by the dispatch loop, which is why it is not
+	// simply returned.
+	var failure error
+
+	// dispatch starts a batch and registers its completion handler. Results are
+	// folded in as they land, in whatever order they land; the selector callback
+	// is the only place Counts is mutated.
+	dispatch := func(ref BatchRef, parallelism int) {
+		f := workflow.ExecuteActivity(crawlCtx, CrawlBatchActivity, CrawlBatchInput{
+			S3Key:                in.S3Key,
+			Batch:                ref,
+			Source:               in.Source,
+			Upstream:             in.Upstream,
+			ChunkSize:            in.ChunkSize,
+			Parallelism:          parallelism,
+			LineAttempts:         in.LineAttempts,
+			MaxConsecutiveErrors: in.MaxConsecutiveErrors,
+		})
+		inFlight++
+		sel.AddFuture(f, func(f workflow.Future) {
+			inFlight--
+			var res CrawlBatchOutput
+			if err := f.Get(ctx, &res); err != nil {
+				// A batch only fails for something systemic -- an unreadable
+				// ndjson, an unwritable log, a batch stopped before it finished.
+				// A record that will not process is counted inside the batch and
+				// never reaches here, so unlike a single line this is not
+				// something to absorb and carry on from.
+				if failure == nil {
+					failure = fmt.Errorf("daily: batch of %d lines at offset %d failed: %w",
+						ref.LineCount, ref.Offset, err)
+				}
+				l.Error("batch failed", "offset", ref.Offset, "err", err)
+				return
+			}
+			in.Counts = in.Counts.Add(res.Counts)
+			if res.Aborted && failure == nil {
+				failure = fmt.Errorf("daily: batch at offset %d aborted: %s (resume at offset %d)",
+					ref.Offset, res.AbortReason, res.NextOffset)
+			}
+		})
 	}
-	lin := harvesting.ProcessLineInput{
-		S3Key:    in.S3Key,
-		Source:   in.Source,
-		Upstream: in.Upstream,
+
+	drain := func() {
+		for inFlight > 0 {
+			sel.Select(ctx)
+		}
+	}
+
+	// quiesce waits for the in-flight batches so the offset we hand on is fully
+	// accounted for. A run that is already failing skips the wait: the records
+	// for everything those batches finished are written either way, and grinding
+	// hundreds more releases against whatever just broke helps nobody.
+	quiesce := func() error {
+		if failure == nil {
+			drain()
+		}
+		return failure
 	}
 
 	var linesThisRun int
-	for {
-		var findOutput harvesting.FindLineBatchOutput
-		if err := workflow.ExecuteActivity(findCtx, harvesting.FindLineBatch, findInput).Get(findCtx, &findOutput); err != nil {
+	stop := false
+
+	for !stop {
+		var plan PlanBatchesOutput
+		if err := workflow.ExecuteActivity(planCtx, PlanBatchesActivity, PlanBatchesInput{
+			S3Key:      in.S3Key,
+			Offset:     in.Offset,
+			BatchSize:  in.BatchSize,
+			MaxBatches: in.BatchesPerPlan,
+			ChunkSize:  in.ChunkSize,
+		}).Get(planCtx, &plan); err != nil {
 			return in.Counts, err
 		}
 
-		for _, offset := range findOutput.Offsets {
-			lin.LineStart = offset[0]
-			lin.Length = offset[1]
-
-			var c counts.Counts
-			if err := workflow.ExecuteActivity(procCtx, ProcessLine, lin).Get(procCtx, &c); err != nil {
-				return in.Counts, err
+		for _, ref := range plan.Batches {
+			// Apply any pending retune before deciding whether the window is
+			// full. ReceiveAsync keeps this deterministic without a coroutine.
+			var want int
+			for sigCh.ReceiveAsync(&want) {
+				if want > 0 && want <= in.MaxConcurrency {
+					l.Info("concurrency retuned", "from", in.Concurrency, "to", want)
+					in.Concurrency = want
+				} else {
+					l.Warn("ignoring out-of-range concurrency signal",
+						"want", want, "max", in.MaxConcurrency)
+				}
 			}
-			in.Counts = in.Counts.Add(c)
-			linesThisRun++
 
-			// Advance the resume point to just past the line we finished.
-			// offset[0]+offset[1] is the byte after this line's trailing newline
-			// (see harvesting.chunk), so a mid-batch ContinueAsNew neither
-			// re-processes nor skips a line.
-			in.Offset = offset[0] + offset[1]
-			findInput.Offset = in.Offset
+			// A retune reaches the batches dispatched after it, not the ones
+			// already running: a batch's parallelism is fixed when it starts. So
+			// the knob takes a batch to bite rather than a line, which is the
+			// price of not paying Temporal per line.
+			batches, parallelism := splitConcurrency(in.Concurrency, in.BatchesInFlight)
 
-			// Hand off to a fresh run to keep history bounded once we've
-			// processed enough lines (or the server suggests it). Carry only
-			// the byte offset and accumulated counts. This check lives inside
-			// the per-line loop on purpose: a batch_size larger than linesPerCAN
-			// would otherwise force the entire batch through ProcessLine before
-			// the first CAN check, bloating a single run's history.
-			if linesThisRun >= linesPerCAN || workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
-				l.Info(fmt.Sprintf("continue-as-new for source %q at offset %d (%d lines this run)",
-					in.Source, in.Offset, linesThisRun))
-				return in.Counts, workflow.NewContinueAsNewError(ctx, DailyCrawlWorkflow, in)
+			for inFlight >= batches {
+				sel.Select(ctx)
+			}
+			if failure != nil {
+				stop = true
+				break
+			}
+
+			dispatch(ref, parallelism)
+			linesThisRun += ref.LineCount
+			// Resume just past the batch we last dispatched. Everything
+			// dispatched is drained before ContinueAsNew below, so this neither
+			// re-processes nor skips.
+			in.Offset = ref.End
+
+			if linesThisRun >= in.LinesPerCAN || workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
+				stop = true
+				break
 			}
 		}
 
-		in.Offset = findOutput.BytesRead
-		findInput.Offset = findOutput.BytesRead
+		if stop {
+			break
+		}
 
-		if findOutput.EOF {
-			l.Info(fmt.Sprintf("day complete for source %q: %#v", in.Source, in.Counts))
+		// A planning call that yields no batches and does not advance would
+		// spin forever. That should be impossible, but this loop is the one
+		// place a bad read could hang a run indefinitely rather than fail it.
+		if len(plan.Batches) == 0 && !plan.EOF && plan.NextOffset == in.Offset {
+			if err := quiesce(); err != nil {
+				return in.Counts, err
+			}
+			return in.Counts, fmt.Errorf(
+				"daily: planning %s made no progress at offset %d", in.S3Key, in.Offset)
+		}
+
+		in.Offset = plan.NextOffset
+
+		if plan.EOF {
+			if err := quiesce(); err != nil {
+				return in.Counts, err
+			}
+			l.Info("day complete", "source", in.Source, "s3key", in.S3Key, "counts", in.Counts)
 			return in.Counts, nil
 		}
 	}
-}
 
-func ProcessLine(ctx context.Context, in harvesting.ProcessLineInput) (counts.Counts, error) {
-	activity.RecordHeartbeat(ctx, "started")
-	out := counts.Counts{}
-	l := activity.GetLogger(ctx)
-
-	lineb, err := harvesting.GetLine(ctx, in.S3Key, in.LineStart, in.Length)
-	if err != nil {
-		return out, fmt.Errorf("failed to read ndjson line from s3: %w", err)
-	}
-	activity.RecordHeartbeat(ctx, "got-line")
-
-	// TODO use an input/output pointer arg for release
-
-	var processLine func(context.Context, *http.Client, string, []byte) (counts.Counts, *fatcat2.Release, error)
-	switch in.Upstream {
-	case "arxiv":
-		processLine = arxiv.ProcessLine
-	case "crossref":
-		processLine = crossref.ProcessLine
-	case "datacite":
-		processLine = datacite.ProcessLine
-	case "doaj":
-		processLine = doaj.ProcessLine
-	case "pubmed":
-		processLine = pubmed.ProcessLine
-	default:
-		panic("unknown upstream: " + in.Upstream)
+	if err := quiesce(); err != nil {
+		return in.Counts, err
 	}
 
-	client := &http.Client{}
-	var release *fatcat2.Release
-
-	activity.RecordHeartbeat(ctx, "pre-process-line")
-	out, release, err = processLine(ctx, client, in.Source, lineb)
-	if err != nil {
-		return out, fmt.Errorf("%s processing failed: %w", in.Upstream, err)
-	}
-	activity.RecordHeartbeat(ctx, "post-process-line")
-
-	if release == nil {
-		return out, nil
-	}
-
-	doiPrefixBlocklist := viper.GetStringSlice("crawling.doi_prefix_blocklist")
-	if ok, reason := shouldCrawlRelease(release, doiPrefixBlocklist); !ok {
-		l.Info(fmt.Sprintf("skipping crawl for %q: %s", release.ID, reason))
-		return out, nil
-	}
-
-	urls := release.FulltextURLs()
-
-	// TODO this check would only ever apply to releases that we already have
-	// files for (see the is_preserved property) so I'm punting on it because it
-	// doesn't make much sense. I think it's for processing a fatcat changelog in
-	// a world where humans are updating things.
-	/*
-		  if (
-		    es.get("publisher_type") == "big5"
-		    and es.get("is_preserved")
-		    and not (es["is_oa"] or in_acceptlist)
-		):
-		    return False
-	*/
-
-	// TODO these two checks seem to apply for datacite and arxiv, respectively. Punting on them for now:
-	/*
-	 # figshare
-	 if doi and (doi.startswith("10.6084/") or doi.startswith("10.25384/")):
-	     # don't crawl "most recent version" (aka "group") DOIs
-	     if not release.version:
-	         return False
-
-	 # zenodo
-	 if doi and doi.startswith("10.5281/"):
-	     # if this is a "grouping" DOI of multiple "version" DOIs, do not crawl (will crawl the versioned DOIs)
-	     if release.extra and release.extra.get("relations"):
-	         for rel in release.extra["relations"]:
-	             if rel.get("relationType") == "HasVersion" and rel.get(
-	                 "relatedIdentifier", ""
-	             ).startswith("10.5281/"):
-	                 return False
-	*/
-
-	existingFiles, err := fatcat2.ReleaseFiles(client, release.ID)
-	if err != nil {
-		return out, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
-	}
-	if len(existingFiles) > 0 {
-		l.Info(fmt.Sprintf("skipping crawl for %q, already has %d files", release.ID, len(existingFiles)))
-		return out, nil
-	}
-
-	out.Releases.CrawlWanted++
-
-	spnClient, err := spnclient.NewDefaultClient(spnclient.SPNConfig{
-		AccessKey: viper.GetString("spn.access_key"),
-		SecretKey: viper.GetString("spn.secret_key"),
-		Endpoint:  viper.GetString("spn.endpoint"),
-		Debug:     true,
-	})
-	if err != nil {
-		return out, fmt.Errorf("spn client creation failed: %w", err)
-	}
-
-	cdxClient := cdx.NewClient(cdx.Config{
-		Auth:      viper.GetString("cdx.auth"),
-		Endpoint:  viper.GetString("cdx.endpoint"),
-		UserAgent: viper.GetString("cdx.user_agent"),
-		Retries:   viper.GetInt("cdx.retries"),
-		Backoff:   viper.GetDuration("cdx.backoff"),
-		// A retrying CDX query is silent for long enough to outlast this
-		// activity's heartbeat timeout; without this the server times the
-		// activity out and cancels its context mid-crawl.
-		OnRetry: func(int) { activity.RecordHeartbeat(ctx, "cdx-retry") },
-		Debug:   true,
-	})
-
-	var res crawling.CrawlResult
-
-	for _, u := range urls {
-		activity.RecordHeartbeat(ctx, "top-of-crawl-loop")
-		crawler := crawling.PDFCrawler{
-			SPNClient:       spnClient,
-			CDXClient:       cdxClient,
-			MaxHops:         8,
-			UserAgent:       viper.GetString("crawling.user_agent"),
-			WaybackEndpoint: viper.GetString("wayback.replay_endpoint"),
-			SimpleGets:      viper.GetStringSlice("crawling.simple_get_list"),
-			Blocklist:       viper.GetStringSlice("crawling.url_blocklist"),
-			Logger:          slog.Default(),
-			Heartbeater: func(msg string) {
-				activity.RecordHeartbeat(ctx, msg)
-			},
-		}
-
-		res, err = crawler.Crawl(ctx, u)
-		if err != nil {
-			l.Info(fmt.Sprintf("crawl failed for %q, %q: %s", release.ID, u, err))
-			continue
-		}
-		if res.Success {
-			break
-		}
-	}
-
-	if err != nil || !res.Success {
-		return out, nil
-	}
-
-	mimetype, _, _ := strings.Cut(res.Mimetype, ";")
-
-	fid, err := uuid.NewV7()
-	if err != nil {
-		return out, fmt.Errorf("uuid creation failed: %w", err)
-	}
-
-	file := fatcat2.File{
-		ID:       fid,
-		Releases: []fatcat2.Release{*release},
-		Mimetype: mimetype,
-		Source:   release.Source,
-		URLs: []fatcat2.FileURL{
-			{
-				Rel:    "wayback",
-				URL:    res.SnapshotUrl,
-				FileID: fid,
-			},
-		},
-	}
-
-	pdfBs, err := io.ReadAll(res.Content)
-	res.Content.Close()
-	if err != nil {
-		return out, fmt.Errorf("could not read pdf bytes: %w", err)
-	}
-
-	if err = file.SetMetadata(pdfBs); err != nil {
-		return out, err
-	}
-
-	// TODO check if file exists. This can happen if we're re-running this
-	// workflow. NB--in that case, we've pulled all of the stuff from a previous
-	// crawl from CDX and don't need to worry about wasting SPN time assuming
-	// stuff is fresh enough which reminds me if we ever want to care about cdx
-	// freshness...
-
-	fileID, err := fatcat2.LookupSha256(client, file.Sha256)
-	if err != nil {
-		return out, fmt.Errorf("sha256 lookup failed: %w", err)
-	}
-
-	activity.RecordHeartbeat(ctx, "file-lookup")
-
-	// TODO we could verify that the existing file is attached to the release ID
-	// we're working with...
-
-	if fileID == nil {
-		fileID, err = fatcat2.CreateFile(client, &file)
-		if err != nil {
-			return out, fmt.Errorf("file creation failed: %w", err)
-		}
-		out.Releases.Acquired++
-	}
-
-	activity.RecordHeartbeat(ctx, "file-created")
-
-	fileInES, err := indexing.ElasticDocExists(client,
-		viper.GetString("indexing.fatcat_file_ix"), "sha1", file.Sha1)
-	if err != nil {
-		return out, fmt.Errorf("fatcat_file existence check failed: %w", err)
-	}
-	if !fileInES {
-		fileDoc := indexing.PrepareFatcatFileDoc(file)
-		bs, err := json.Marshal(fileDoc)
-		if err != nil {
-			return out, fmt.Errorf("failed to marshal file ES doc: %w", err)
-		}
-		err = indexing.DoElasticIndex(client,
-			viper.GetString("indexing.fatcat_file_ix"), fileDoc.LegacyIdent, bs)
-		if err != nil {
-			return out, fmt.Errorf("failed to index file: %w", err)
-		}
-	}
-
-	activity.RecordHeartbeat(ctx, "file-indexed")
-
-	fulltextInES, err := indexing.ElasticDocExists(client,
-		viper.GetString("indexing.fulltext_ix"), "fulltext.file_sha1", file.Sha1)
-	if err != nil {
-		return out, fmt.Errorf("scholar_fulltext existence check failed: %w", err)
-	}
-	if fulltextInES {
-		return out, nil
-	}
-
-	pdfProcessor, err := pdf.NewProcessor(func(msg string) {
-		activity.RecordHeartbeat(ctx, msg)
-	})
-	if err != nil {
-		return out, fmt.Errorf("pdf processor init failed: %w", err)
-	}
-
-	activity.RecordHeartbeat(ctx, "pre-pdf-process")
-	pdfContent, err := pdfProcessor.Process(ctx, pdfBs, file.Sha1)
-	if err != nil {
-		return out, fmt.Errorf("pdf processing failed: %w", err)
-	}
-	if len(pdfContent.GrobidXML) == 0 {
-		l.Warn("grobid could not parse pdf")
-		out.Pdfs.Failed++
-		return out, nil
-	}
-	activity.RecordHeartbeat(ctx, "post-pdf-process")
-
-	var container *fatcat2.Container
-	if release.ContainerID != nil {
-		c, err := fatcat2.GetContainer(client, *release.ContainerID)
-		if err != nil {
-			return out, fmt.Errorf("could not fetch container: %w", err)
-		}
-		container = &c
-	}
-	activity.RecordHeartbeat(ctx, "container-fetched")
-
-	slog.Info("preparing full text es doc", "rid", release.ID, "xmlLen", len(pdfContent.GrobidXML), "pdfTextLen", len(pdfContent.PdfText))
-
-	esDoc := indexing.PrepareFulltextDoc(indexing.FulltextTransformCtx{
-		HttpClient: client,
-		Release:    *release,
-		File:       &file,
-		PdfText:    pdfContent.PdfText,
-		GrobidXML:  pdfContent.GrobidXML,
-		Container:  container,
-	})
-
-	ftbs, err := json.Marshal(esDoc)
-	if err != nil {
-		return out, fmt.Errorf("marshaling fulltext doc failed: %w", err)
-	}
-
-	slog.Info("doing index", "rid", release.ID, "docKey", esDoc.Key, "ftLen", len(esDoc.Fulltext.Body))
-
-	err = indexing.DoElasticIndex(client,
-		viper.GetString("indexing.fulltext_ix"), esDoc.Key, ftbs)
-	if err != nil {
-		return out, fmt.Errorf("indexing fulltext failed: %w", err)
-	}
-	activity.RecordHeartbeat(ctx, "fulltext-indexed")
-
-	out.Releases.Ingested++
-
-	return out, nil
-}
-
-// shouldCrawlRelease returns false with a reason string when we should skip
-// attempting to crawl a release's fulltext. It encapsulates the pure
-// decision logic so it can be unit tested independently of ProcessLine's I/O.
-func shouldCrawlRelease(release *fatcat2.Release, doiPrefixBlocklist []string) (bool, string) {
-	if !release.IsPaperlike() {
-		return false, "not-paperlike"
-	}
-
-	if len(release.ExternalIDs) == 0 {
-		return false, "no-extids"
-	}
-
-	doi := release.DOI()
-	if doi != "" {
-		for _, prefix := range doiPrefixBlocklist {
-			if strings.HasPrefix(doi, prefix) {
-				return false, fmt.Sprintf("doi-prefix-blocked:%s", prefix)
-			}
-		}
-	}
-
-	if len(release.FulltextURLs()) == 0 {
-		return false, "no-fulltext-urls"
-	}
-
-	return true, ""
-}
-
-type scholkitScrapeInput struct {
-	// Day value in format 2006-01-02
-	Day string
-	// Upstream is which API we're scraping
-	Upstream string
-}
-
-type scholkitScrapeOutput struct {
-	// S3Key points to a large .ndjson file of metadata from an upstream source
-	S3Key string
-}
-
-func ScholkitScrapeActivity(ctx context.Context, in scholkitScrapeInput) (scholkitScrapeOutput, error) {
-	out := scholkitScrapeOutput{}
-	l := activity.GetLogger(ctx)
-
-	s3bucket := viper.GetString(fmt.Sprintf("%s.scholkit_s3_bucket", in.Upstream))
-
-	var syncStart time.Time
-	var syncEnd time.Time
-	var err error
-	if in.Day != "" {
-		syncStart, err = time.Parse("2006-01-02", in.Day)
-		if err != nil {
-			return out, err
-		}
-		syncEnd = syncStart.AddDate(0, 0, 1)
-	} else {
-		syncEnd = time.Now()
-		syncStart = syncEnd.AddDate(0, 0, -1)
-	}
-
-	s3Prefix := in.Upstream + "/" + syncEnd.Format("2006")
-
-	skPath := viper.GetString("scholkit.path")
-	// TODO verify binary path?
-
-	scholkitArgs := []string{
-		"-s", in.Upstream,
-		"-d", viper.GetString("scholkit.data_dir"),
-		"-s3-upload",
-		"-s3-endpoint", viper.GetString("s3.endpoint"),
-		"-s3-access-key", viper.GetString("s3.access_id"),
-		"-s3-secret-key", viper.GetString("s3.secret_key"),
-		"-s3-bucket", s3bucket,
-		"-s3-prefix", s3Prefix,
-		"-sync-start", syncStart.Format("2006-01-02"),
-		"-sync-end", syncEnd.Format("2006-01-02"),
-	}
-
-	if in.Upstream == "crossref" {
-		scholkitArgs = append(scholkitArgs, "-crossref-api-email", "scholar@archive.org")
-		scholkitArgs = append(scholkitArgs, "-crossref-user-agent", "ia-scholar-trawler")
-	}
-
-	l.Info(fmt.Sprintf("sk cmd: %s %s", skPath, scholkitArgs))
-	cmd := exec.Command(skPath, scholkitArgs...)
-	bs, err := cmd.Output()
-	var ee *exec.ExitError
-	if err != nil {
-		if errors.As(err, &ee) {
-			l.Error("************* scholkit stderr start ****************")
-			l.Error(string(ee.Stderr))
-			l.Error("************* scholkit stderr end ******************")
-		}
-		return out, fmt.Errorf("sk failed: %w", err)
-	}
-
-	s3key := strings.TrimSpace(string(bs))
-
-	if s3key == "" {
-		return out, errors.New("empty s3 key from scholkit")
-	}
-
-	l.Info(fmt.Sprintf("scholkit %s data to s3 key %q", in.Upstream, s3key))
-
-	out.S3Key = s3key
-	return out, nil
+	l.Info("continue-as-new",
+		"source", in.Source, "s3key", in.S3Key, "offset", in.Offset, "lines", linesThisRun)
+	return in.Counts, workflow.NewContinueAsNewError(ctx, DailyCrawlWorkflow, in)
 }

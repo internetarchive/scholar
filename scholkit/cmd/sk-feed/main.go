@@ -294,7 +294,7 @@ func main() {
 				Rows:                1000,
 				UserAgent:           config.CrossrefUserAgent,
 				AcceptableMissRatio: 0.1,
-				MaxRetries:          3,
+				MaxRetries:          *maxRetries,
 				MaxRecords:          config.SyncLimit,
 			}
 			dstDir := path.Join(config.FeedDir, "crossref")

@@ -2,6 +2,7 @@ package feeds
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,12 +12,16 @@ import (
 	"path"
 	"time"
 
+	"github.com/internetarchive/scholar/scholkit/atomicfile"
 	"github.com/jinzhu/now"
 	"github.com/klauspost/compress/zstd"
-	"github.com/internetarchive/scholar/scholkit/atomicfile"
 )
 
 var bNewline = []byte("\n")
+
+// crossrefDefaultRetryDelay is the base delay between retries of a failed
+// request; it is multiplied by the attempt number.
+const crossrefDefaultRetryDelay = 5 * time.Second
 
 // CrossrefHarvester fetches data from crossref API and by default will write
 // it to files on disk.
@@ -28,8 +33,17 @@ type CrossrefHarvester struct {
 	Rows                int
 	UserAgent           string
 	MaxRetries          int
-	AcceptableMissRatio float64 // recommended: 0.1
-	MaxRecords          int     // 0 means unlimited
+	RetryDelay          time.Duration // base delay between retries, scaled by attempt
+	AcceptableMissRatio float64       // recommended: 0.1
+	MaxRecords          int           // 0 means unlimited
+}
+
+// retryDelay returns the base delay between retries.
+func (c *CrossrefHarvester) retryDelay() time.Duration {
+	if c.RetryDelay > 0 {
+		return c.RetryDelay
+	}
+	return crossrefDefaultRetryDelay
 }
 
 // Doer abstracts https://pkg.go.dev/net/http#Client.Do.
@@ -55,6 +69,33 @@ type WorksResponse struct {
 	MessageType    string `json:"message-type"`
 	MessageVersion string `json:"message-version"`
 	Status         string `json:"status"`
+}
+
+// crossrefHTTPError is a non-2xx status from the API, kept as a type so the
+// retry loop can tell transient failures from permanent ones.
+type crossrefHTTPError struct {
+	Code int
+	Link string
+}
+
+func (e *crossrefHTTPError) Error() string {
+	return fmt.Sprintf("crossref: HTTP %d while fetching %s", e.Code, e.Link)
+}
+
+// isRetryable reports whether a failed fetch is worth repeating. Decode
+// failures are assumed transient, e.g. a truncated response. Of the HTTP
+// errors, 404 is the interesting one: the API intermittently returns it for a
+// deep paging cursor that is perfectly valid, and the same request succeeds
+// moments later. The other transient codes are normally handled by the client
+// (cf. pester), but may surface here depending on the client in use.
+func isRetryable(err error) bool {
+	var herr *crossrefHTTPError
+	if errors.As(err, &herr) {
+		return herr.Code == http.StatusNotFound ||
+			herr.Code == http.StatusTooManyRequests ||
+			herr.Code >= 500
+	}
+	return true
 }
 
 // IsLast returns true, if there are no more records to fetch.
@@ -123,6 +164,29 @@ func (c *CrossrefHarvester) logSeenRatio(seen int, wr *WorksResponse) {
 		wr.Status, wr.Message.TotalResults, seen, pct, wr.Message.NextCursor)
 }
 
+// fetchWorks issues a single request and decodes the response. Retries are up
+// to the caller.
+func (c *CrossrefHarvester) fetchWorks(link string) (*WorksResponse, error) {
+	req, err := http.NewRequest("GET", link, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Add("User-Agent", c.UserAgent)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, &crossrefHTTPError{Code: resp.StatusCode, Link: link}
+	}
+	var wr WorksResponse
+	if err := json.NewDecoder(resp.Body).Decode(&wr); err != nil {
+		return nil, fmt.Errorf("crossref: decode failed with %v", err)
+	}
+	return &wr, nil
+}
+
 // WriteSlice writes a slice of data from the API into a writer.
 func (c *CrossrefHarvester) WriteSlice(w io.Writer, from, until time.Time) error {
 	filter := fmt.Sprintf("from-%s-date:%s,until-%s-date:%s",
@@ -130,38 +194,30 @@ func (c *CrossrefHarvester) WriteSlice(w io.Writer, from, until time.Time) error
 		from.Format("2006-01-02"),
 		c.ApiFilter,
 		until.Format("2006-01-02"))
-	vs := url.Values{}
-	vs.Add("filter", filter)
-	vs.Add("cursor", "*")
-	vs.Add("rows", fmt.Sprintf("%d", c.Rows))
-	c.addOptionalEmail(vs)
-	var seen int
-	var i int // for retries
+	var (
+		seen   int
+		i      int   // for retries
+		cursor = "*" // deep paging position, only carries a position, not the query
+	)
 	for {
+		// The cursor is a bare Solr cursorMark; the query itself is not
+		// encoded in it and has to be resent with every request.
+		vs := url.Values{}
+		vs.Add("filter", filter)
+		vs.Add("rows", fmt.Sprintf("%d", c.Rows))
+		vs.Add("cursor", cursor)
+		c.addOptionalEmail(vs)
 		link := fmt.Sprintf("%s?%s", c.ApiEndpoint, vs.Encode())
 		log.Printf("crossref: attempting to fetch: %s", link)
-		req, err := http.NewRequest("GET", link, nil)
+		wr, err := c.fetchWorks(link)
 		if err != nil {
-			return err
-		}
-		req.Header.Add("User-Agent", c.UserAgent)
-		resp, err := c.Client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode >= 400 {
-			return fmt.Errorf("crossref: HTTP %d while fetching %s", resp.StatusCode, link)
-		}
-		var wr WorksResponse
-		if err := json.NewDecoder(resp.Body).Decode(&wr); err != nil {
-			if i < c.MaxRetries {
+			if isRetryable(err) && i < c.MaxRetries {
 				i++
-				log.Printf("crossref: decode failed with %v, retrying [%d/%d]", err, i, c.MaxRetries)
+				log.Printf("%v, retrying [%d/%d]", err, i, c.MaxRetries)
+				time.Sleep(time.Duration(i) * c.retryDelay())
 				continue
-			} else {
-				return fmt.Errorf("crossref: decode failed with %v", err)
 			}
+			return err
 		}
 		if wr.Status != "ok" {
 			return fmt.Errorf("crossref failed with status: %s", wr.Status)
@@ -173,7 +229,7 @@ func (c *CrossrefHarvester) WriteSlice(w io.Writer, from, until time.Time) error
 			}
 		}
 		seen += len(wr.Message.Items)
-		c.logSeenRatio(seen, &wr)
+		c.logSeenRatio(seen, wr)
 		if c.MaxRecords > 0 && seen >= c.MaxRecords {
 			log.Printf("crossref: reached sync limit %d, stopping", c.MaxRecords)
 			return nil
@@ -182,13 +238,10 @@ func (c *CrossrefHarvester) WriteSlice(w io.Writer, from, until time.Time) error
 			log.Printf("crossref slice done: seen=%d, total=%d", seen, wr.Message.TotalResults)
 			return nil
 		}
-		vs = url.Values{}
-		cursor := wr.Message.NextCursor
+		cursor = wr.Message.NextCursor
 		if cursor == "" {
 			return nil
 		}
-		vs.Add("cursor", cursor)
-		c.addOptionalEmail(vs)
 		// status: ok, total: 55818, seen: 47818 (85.67%)
 		// We had repeated requests, with a seemingly new cursor, but no new
 		// messages and seen < total; we assume, we have got all we could and

@@ -200,7 +200,7 @@ func processLine(ctx context.Context, d lineDeps, jsonLine string) (DailyCounts,
 		ID:       fid,
 		Releases: []fatcat2.Release{*release},
 		Mimetype: mimetype,
-		Source:   release.Source,
+		Source:   d.Source,
 		URLs: []fatcat2.FileURL{
 			{
 				Rel:    "wayback",

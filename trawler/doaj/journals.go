@@ -218,54 +218,22 @@ func journalToContainer(row journalRow, issns journalISSNs, source string) fatca
 	}
 }
 
-// containerLookup is one fatcat2 container lookup: an ISSN column and a value.
-type containerLookup struct {
-	field string
-	value string
-}
-
-// containerLookups is the order findContainer asks fatcat in. Every ISSN the
-// row has is tried against every ISSN column, because nothing guarantees which
-// column an existing container filed it under: legacy containers often carry
-// only an ISSN-L, and an ISSN-L is itself one of the journal's ISSNs.
-//
-// ISSN-L lookups go first because that is how nearly every existing container
-// is found, so a row DOAJ has had for years costs one request.
-func containerLookups(issns journalISSNs) []containerLookup {
-	values := []string{}
-	for _, v := range append(append([]string{}, issns.LinkingISSNs...), issns.ISSNP, issns.ISSNE) {
-		if v != "" && !slices.Contains(values, v) {
-			values = append(values, v)
-		}
-	}
-
-	out := []containerLookup{}
-	for _, field := range []string{"issnl", "issnp", "issne"} {
-		for _, v := range values {
-			out = append(out, containerLookup{field, v})
-		}
-	}
-	return out
-}
-
 // findContainer returns the ID of a fatcat2 container sharing any ISSN with
-// the row, if there is one.
+// the row, if there is one. Every ISSN the row has is tried against every ISSN
+// column, because nothing guarantees which column an existing container filed
+// it under: legacy containers often carry only an ISSN-L, and an ISSN-L is
+// itself one of the journal's ISSNs.
+//
+// The ISSN-L goes first, and is looked up as an ISSN-L first, because that is
+// how nearly every existing container is found: a row DOAJ has had for years
+// costs one request.
 func findContainer(client *http.Client, issns journalISSNs) (*uuid.UUID, error) {
-	lookups := map[string]func(*http.Client, string) (*uuid.UUID, error){
-		"issnl": fatcat2.LookupIssnl,
-		"issnp": fatcat2.LookupIssnp,
-		"issne": fatcat2.LookupIssne,
+	candidates := append(append([]string{}, issns.LinkingISSNs...), issns.ISSNP, issns.ISSNE)
+	id, err := fatcat2.LookupContainerByISSNs(client, candidates...)
+	if err != nil {
+		return nil, fmt.Errorf("container lookup failed: %w", err)
 	}
-	for _, l := range containerLookups(issns) {
-		id, err := lookups[l.field](client, l.value)
-		if err != nil {
-			return nil, fmt.Errorf("container %s lookup for %q failed: %w", l.field, l.value, err)
-		}
-		if id != nil {
-			return id, nil
-		}
-	}
-	return nil, nil
+	return id, nil
 }
 
 // journalOutcome is what happened to a single row.

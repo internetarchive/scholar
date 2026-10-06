@@ -595,6 +595,18 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		// None of the ISSNs are in our ISSN-L table. The journal may still be in
+		// fatcat without an ISSN-L -- one too new for the table, created from
+		// DOAJ's journal list -- so look for it by the ISSNs themselves.
+		raw := make([]string, 0, len(xrefdoc.ISSN))
+		for _, i := range xrefdoc.ISSN {
+			raw = append(raw, issn.Normalize(i))
+		}
+		containerID, err = fatcat2.LookupContainerByISSNs(client, raw...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if containerID == nil {

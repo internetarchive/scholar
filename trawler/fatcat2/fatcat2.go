@@ -971,6 +971,42 @@ func LookupIssnp(c *http.Client, issnp string) (*uuid.UUID, error) {
 	return lookup(c, "container", "issnp", issnp)
 }
 
+// LookupContainerByISSNs returns the ID of a fatcat2 Container carrying any of
+// the given ISSNs as its ISSN-L, print ISSN or electronic ISSN, if any. Empty
+// and repeated ISSNs are passed over, so callers can hand it whatever they
+// have. ISSNs are matched exactly; pass them normalized (see issn.Normalize).
+//
+// It is the fallback for an ISSN our ISSN-L table does not know, which is
+// what a journal too new for the table looks like. Such containers (created
+// from DOAJ's journal list, say) have no ISSN-L, so LookupIssnl cannot find
+// them.
+//
+// Each ISSN costs up to three requests, one per column. fc2's container lookup
+// can also match any column in one go (id_type=issn), but its API does not
+// expose that yet.
+func LookupContainerByISSNs(c *http.Client, issns ...string) (*uuid.UUID, error) {
+	lookups := []func(*http.Client, string) (*uuid.UUID, error){
+		LookupIssnl, LookupIssnp, LookupIssne,
+	}
+	seen := map[string]bool{}
+	for _, i := range issns {
+		if i == "" || seen[i] {
+			continue
+		}
+		seen[i] = true
+		for _, lookup := range lookups {
+			id, err := lookup(c, i)
+			if err != nil {
+				return nil, err
+			}
+			if id != nil {
+				return id, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
 // LookupDoaj returns the ID of a fatcat2 Release with the given DOAJ article ID, if any.
 func LookupDoaj(c *http.Client, doajID string) (*uuid.UUID, error) {
 	return lookup(c, "release", "doaj", doajID)

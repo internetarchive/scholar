@@ -906,12 +906,26 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 			}
 
 			release.ContainerID = containerID
-		} else if container.Title != "" {
-			// ISSNL not found but we have a title: store as container_name
-			if _, ok := release.Extra["container_name"]; !ok {
-				release.Extra["container_name"] = container.Title
+		} else {
+			// Not in our ISSN-L table. The journal may still be in fatcat without
+			// an ISSN-L -- one too new for the table, created from DOAJ's journal
+			// list -- so look for it by the ISSN itself.
+			containerID, err := fatcat2.LookupContainerByISSNs(client, issn.Normalize(rawISSN))
+			if err != nil {
+				return nil, fmt.Errorf("issn lookup failed: %w", err)
 			}
-			cs.Containers.Skipped++
+
+			if containerID != nil {
+				release.ContainerID = containerID
+				cs.Containers.Ignored++
+			} else if container.Title != "" {
+				// No container and no ISSNL to make one with, but we have a
+				// title: store as container_name
+				if _, ok := release.Extra["container_name"]; !ok {
+					release.Extra["container_name"] = container.Title
+				}
+				cs.Containers.Skipped++
+			}
 		}
 	} else if containerType == "" && container.Title != "" {
 		// Container type not recognized (e.g. DataRepository): stash name only

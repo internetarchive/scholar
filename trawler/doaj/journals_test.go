@@ -112,20 +112,6 @@ func Test_journalSkipReason(t *testing.T) {
 	require.Equal(t, "empty-title", journalSkipReason(journalRow{Title: "  "}, journalISSNs{ISSNE: "3105-4242"}))
 }
 
-func Test_containerLookups(t *testing.T) {
-	got := containerLookups(journalISSNs{
-		ISSNL: "0854-3844", ISSNP: "0854-3844", ISSNE: "2355-7826",
-		LinkingISSNs: []string{"0854-3844", "2355-7826"},
-	})
-	// ISSN-L first, since that is how nearly every existing container is found;
-	// each distinct ISSN once per column.
-	require.Equal(t, []containerLookup{
-		{"issnl", "0854-3844"}, {"issnl", "2355-7826"},
-		{"issnp", "0854-3844"}, {"issnp", "2355-7826"},
-		{"issne", "0854-3844"}, {"issne", "2355-7826"},
-	}, got)
-}
-
 func Test_journalToContainer(t *testing.T) {
 	row := journalRow{
 		Title:     "  Nihon   Shouni Jinzoubyou Gakkai zasshi ",
@@ -222,9 +208,8 @@ func Test_importJournal_FindsExistingByAnyISSN(t *testing.T) {
 	require.Nil(t, c)
 	require.Empty(t, f.created)
 	require.Equal(t, []string{
-		"issnl=0915-2245", "issnl=1881-3933",
-		"issnp=0915-2245", "issnp=1881-3933",
-		"issne=0915-2245", "issne=1881-3933",
+		"issnl=0915-2245", "issnp=0915-2245", "issne=0915-2245",
+		"issnl=1881-3933", "issnp=1881-3933", "issne=1881-3933",
 	}, f.lookups)
 }
 

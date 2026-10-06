@@ -512,6 +512,19 @@ func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Relea
 		if err != nil {
 			return nil, fmt.Errorf("container issnl lookup failed: %w", err)
 		}
+	} else {
+		// Not in our ISSN-L table. The journal may still be in fatcat without an
+		// ISSN-L -- one too new for the table, created from DOAJ's journal list
+		// -- so look for it by the ISSNs themselves.
+		var journalISSN string
+		if art.Journal.ISSN != nil {
+			journalISSN = art.Journal.ISSN.Value
+		}
+		containerID, err = fatcat2.LookupContainerByISSNs(client,
+			issn.Normalize(mc.MedlineJournalInfo.ISSNLinking), issn.Normalize(journalISSN))
+		if err != nil {
+			return nil, fmt.Errorf("container issn lookup failed: %w", err)
+		}
 	}
 
 	if containerID == nil && containerTitle != "" && issnl != "" {

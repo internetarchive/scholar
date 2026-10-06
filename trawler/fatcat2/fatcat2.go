@@ -399,14 +399,20 @@ func CreateContainer(client *http.Client, c *Container) (*uuid.UUID, error) {
 		}
 	}
 
-	legacy, err := lookupLegacyContainer(client, c.ISSNL)
-	if err != nil {
-		return nil, fmt.Errorf("legacy lookup failed: %w", err)
-	}
+	// fc1 only knows containers by ISSN-L, and a container we are creating
+	// without one (a journal too new for the ISSN-L table) cannot have a legacy
+	// counterpart to adopt. Asking anyway is worse than wasted: fc1 500s on
+	// issnl values it does not like.
+	if c.ISSNL != "" {
+		legacy, err := lookupLegacyContainer(client, c.ISSNL)
+		if err != nil {
+			return nil, fmt.Errorf("legacy lookup failed: %w", err)
+		}
 
-	if legacy != nil {
-		c.ID = legacy.Ident
-		c.LegacyRevID = &legacy.Revision
+		if legacy != nil {
+			c.ID = legacy.Ident
+			c.LegacyRevID = &legacy.Revision
+		}
 	}
 
 	fc2url := viper.GetString("fatcat2.endpoint")
@@ -953,6 +959,16 @@ func LookupOrcid(c *http.Client, orcid string) (*uuid.UUID, error) {
 // LookupIssnl returns the ID of a fatcat2 Container with the given ISSNL, if any.
 func LookupIssnl(c *http.Client, issnl string) (*uuid.UUID, error) {
 	return lookup(c, "container", "issnl", issnl)
+}
+
+// LookupIssne returns the ID of a fatcat2 Container with the given electronic ISSN, if any.
+func LookupIssne(c *http.Client, issne string) (*uuid.UUID, error) {
+	return lookup(c, "container", "issne", issne)
+}
+
+// LookupIssnp returns the ID of a fatcat2 Container with the given print ISSN, if any.
+func LookupIssnp(c *http.Client, issnp string) (*uuid.UUID, error) {
+	return lookup(c, "container", "issnp", issnp)
 }
 
 // LookupDoaj returns the ID of a fatcat2 Release with the given DOAJ article ID, if any.

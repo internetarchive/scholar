@@ -182,6 +182,22 @@ external_task_queue = "pubmed_crawl_external"
 every = "86400s"
 scholkit_s3_bucket = "scholkit"
 
+[doaj_journals]
+# The daily import of DOAJ's journal list: fetch https://doaj.org/csv and create
+# a fatcat container for each journal fatcat does not already have.
+internal_task_queue = "doaj_journals_internal"
+external_task_queue = "doaj_journals_external"
+csv_url = "https://doaj.org/csv"
+# s3_bucket is where each day's CSV is kept (under doaj/journals/YYYY/).
+s3_bucket = "scholkit"
+# schedule_hour is the hour (UTC) the scheduled import starts.
+schedule_hour = 6
+# max_consecutive_errors fails the import when this many rows in a row cannot
+# be imported. A single bad row is passed over and retried tomorrow; a streak
+# means fatcat or ES is down. The import is retried from the start of the
+# streak.
+max_consecutive_errors = 25
+
 [fatcat1]
 endpoint = "https://scholar.archive.org/_fc/v0"
 

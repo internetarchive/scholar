@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 CONFIG = Path.home() / ".config" / "trawler" / "config.toml"
-ISSNL_TABLE = Path(__file__).resolve().parent.parent / "trawler" / "issn" / "2025.issn2issnl.tsv"
+ISSNL_TABLE = Path(__file__).resolve().parent / "20261008.issn2issnl.tsv"
 DOAJ_CSV_URL = "https://doaj.org/csv"
 # doaj.org refuses urllib's default User-Agent; this is the one trawler sends.
 USER_AGENT = "ia-scholar-trawler (scholar@archive.org)"

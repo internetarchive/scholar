@@ -8,14 +8,14 @@ import (
 	"strings"
 )
 
-//go:embed 2025.issn2issnl.tsv
+//go:embed 2026.issn2issnl.tsv
 var ff embed.FS
 
 var issn2issnl map[string]string
 
 func init() {
 	issn2issnl = map[string]string{}
-	f, err := ff.Open("2025.issn2issnl.tsv")
+	f, err := ff.Open("2026.issn2issnl.tsv")
 	if err != nil {
 		panic(err)
 	}

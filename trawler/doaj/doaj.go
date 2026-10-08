@@ -268,8 +268,58 @@ func doajToFc(rec *doajRecord, source string) *fatcat2.Release {
 	return release
 }
 
-// createRelease creates the release in fatcat2 and indexes it to Elasticsearch.
-func createRelease(client *http.Client, release fatcat2.Release) (*fatcat2.Release, error) {
+// linkContainer points release at the fatcat2 container for rec's journal,
+// creating the container if fatcat has none. DOAJ article records carry the
+// same journal title and ISSNs as DOAJ's journal list, so a container made here
+// is the one the journal importer would have made; it is found the same way,
+// by any of the journal's ISSNs in any column.
+//
+// A journal with no valid ISSN cannot be found or created; its title is kept
+// as container_name instead.
+func linkContainer(client *http.Client, cs *counts.Counts, release *fatcat2.Release, rec *doajRecord) error {
+	row := journalRow{
+		Title:     rec.JournalTitle,
+		PISSN:     rec.ISSN,
+		EISSN:     rec.EISSN,
+		Publisher: rec.Publisher,
+	}
+	issns := resolveISSNs(row)
+
+	if journalSkipReason(row, issns) != "" {
+		if name := cleanName(rec.JournalTitle); name != "" {
+			release.Extra["container_name"] = name
+		}
+		cs.Containers.Skipped++
+		return nil
+	}
+
+	containerID, err := findContainer(client, issns)
+	if err != nil {
+		return err
+	}
+	if containerID != nil {
+		release.ContainerID = containerID
+		cs.Containers.Ignored++
+		return nil
+	}
+
+	c := journalToContainer(row, issns, release.Source)
+	if err := createContainer(client, &c); err != nil {
+		return err
+	}
+	release.ContainerID = &c.ID
+	cs.Containers.Added++
+
+	return nil
+}
+
+// createRelease links the release to its container, creates it in fatcat2 and
+// indexes it to Elasticsearch.
+func createRelease(client *http.Client, cs *counts.Counts, release fatcat2.Release, rec *doajRecord) (*fatcat2.Release, error) {
+	if err := linkContainer(client, cs, &release, rec); err != nil {
+		return nil, err
+	}
+
 	id, err := fatcat2.CreateRelease(client, release)
 	if err != nil {
 		return nil, fmt.Errorf("release creation failed: %w", err)
@@ -342,7 +392,7 @@ func ProcessLine(ctx context.Context, client *http.Client, source string, lineb 
 		release = &r
 		out.Releases.Ignored++
 	} else {
-		release, err = createRelease(client, *release)
+		release, err = createRelease(client, &out, *release, &rec)
 		if err != nil {
 			return out, release, fmt.Errorf("could not create release for doaj %q: %w", id, err)
 		}

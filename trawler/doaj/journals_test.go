@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
+	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
@@ -139,6 +140,16 @@ func Test_journalToContainer(t *testing.T) {
 		"urls":         []string{"http://www.jspn.jp/"},
 		"country_name": "Japan",
 	}, c.Extra)
+	require.True(t, indexing.PrepareFatcatContainerDoc(c).InDOAJ)
+}
+
+// A row with no DOAJ id or added date still gets extra.doaj, which is what
+// marks the container in_doaj.
+func Test_journalToContainer_AlwaysInDOAJ(t *testing.T) {
+	c := journalToContainer(journalRow{Title: "A Journal"}, journalISSNs{ISSNE: "3105-4242"}, "src")
+
+	require.Equal(t, map[string]any{"doaj": map[string]any{}}, c.Extra)
+	require.True(t, indexing.PrepareFatcatContainerDoc(c).InDOAJ)
 }
 
 // fakeFatcat stands in for fatcat2 (container lookup and create), fatcat1

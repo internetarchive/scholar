@@ -140,12 +140,12 @@ type FatcatContainerDocV1 struct {
 	IaSimCollection string    `json:"ia_sim_collection,omitempty"`
 	IsOA            bool      `json:"is_oa"`
 	IsLongtailOA    bool      `json:"is_longtail_oa"`
+	InDOAJ          bool      `json:"in_doaj"`
 
 	// TODO
 
 	// TODO post-xref-poc
 	// keepers
-	// in_doaj
 	// in_road
 	// any_kbart
 	// any_jstor

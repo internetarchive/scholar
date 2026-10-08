@@ -255,6 +255,10 @@ func PrepareFatcatContainerDoc(container fc2.Container) FatcatContainerDocV1 {
 		out.Issns = append(out.Issns, out.Issnp)
 	}
 
+	// Containers known to DOAJ carry an extra.doaj entry: the ones we create
+	// from DOAJ's journal list always do, as do legacy fatcat containers.
+	_, out.InDOAJ = container.Extra["doaj"]
+
 	/*
 		  TODO post-xref-poc handle anything in container.extra which for xref is unused
 			Languages         []string  `json:"languages"`

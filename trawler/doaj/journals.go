@@ -186,9 +186,10 @@ func doajJournalID(tocURL string) string {
 }
 
 // journalToContainer builds the container we would create for a row.
+//
+// extra.doaj is always set, even when the row has nothing to put in it: its
+// presence is what marks the container in_doaj when indexed.
 func journalToContainer(row journalRow, issns journalISSNs, source string) fatcat2.Container {
-	extra := map[string]any{}
-
 	doajExtra := map[string]any{}
 	if id := doajJournalID(row.DOAJURL); id != "" {
 		doajExtra["id"] = id
@@ -196,9 +197,7 @@ func journalToContainer(row journalRow, issns journalISSNs, source string) fatca
 	if row.AddedOn != "" {
 		doajExtra["added_on"] = row.AddedOn
 	}
-	if len(doajExtra) > 0 {
-		extra["doaj"] = doajExtra
-	}
+	extra := map[string]any{"doaj": doajExtra}
 	if row.URL != "" {
 		extra["urls"] = []string{row.URL}
 	}
@@ -263,22 +262,31 @@ func importJournal(client *http.Client, row journalRow, source string) (journalO
 	}
 
 	c := journalToContainer(row, issns, source)
-	if _, err := fatcat2.CreateContainer(client, &c); err != nil {
-		return "", nil, fmt.Errorf("container creation failed for %q: %w", c.Name, err)
+	if err := createContainer(client, &c); err != nil {
+		return "", nil, err
+	}
+
+	return journalAdded, &c, nil
+}
+
+// createContainer creates c in fatcat2 and indexes it to Elasticsearch.
+func createContainer(client *http.Client, c *fatcat2.Container) error {
+	if _, err := fatcat2.CreateContainer(client, c); err != nil {
+		return fmt.Errorf("container creation failed for %q: %w", c.Name, err)
 	}
 
 	// NB as in the article importers, a failure here is not revisited: the next
 	// run finds the container in fatcat and leaves it alone.
-	doc := indexing.PrepareFatcatContainerDoc(c)
+	doc := indexing.PrepareFatcatContainerDoc(*c)
 	bs, err := json.Marshal(doc)
 	if err != nil {
-		return "", nil, fmt.Errorf("could not marshal container doc: %w", err)
+		return fmt.Errorf("could not marshal container doc: %w", err)
 	}
 	err = indexing.DoElasticIndex(client,
 		viper.GetString("indexing.fatcat_container_ix"), doc.LegacyIdent, bs)
 	if err != nil {
-		return "", nil, fmt.Errorf("could not index container %q: %w", c.ID, err)
+		return fmt.Errorf("could not index container %q: %w", c.ID, err)
 	}
 
-	return journalAdded, &c, nil
+	return nil
 }

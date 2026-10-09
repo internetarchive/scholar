@@ -86,13 +86,7 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 		case "doi":
 			out.DOI = eid.Value
 			out.DOIPrefix = doiPrefix(eid.Value)
-			if release.Extra != nil {
-				if _, ok := release.Extra["crossref"]; ok {
-					// TODO post-xref-poc other registrars
-					// TODO is there even evidence that this is useful
-					out.DOIRegistrar = "crossref"
-				}
-			}
+			out.DOIRegistrar = doiRegistrar(release.Extra)
 		case "pmid":
 			out.PMID = eid.Value
 		case "pmcid":
@@ -431,13 +425,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 		case "doi":
 			out.Biblio.DOI = eid.Value
 			out.Biblio.DOIPrefix = doiPrefix(eid.Value)
-			if release.Extra != nil {
-				if _, ok := release.Extra["crossref"]; ok {
-					// TODO post-xref-poc other registrars
-					// TODO is there even evidence that this is useful
-					out.Biblio.DOIRegistrar = "crossref"
-				}
-			}
+			out.Biblio.DOIRegistrar = doiRegistrar(release.Extra)
 		case "pmid":
 			out.Biblio.PMID = eid.Value
 		case "pmcid":
@@ -750,4 +738,17 @@ func aToSmallInt(s string) int {
 func doiPrefix(d string) string {
 	out, _, _ := strings.Cut(d, "/")
 	return out
+}
+
+// doiRegistrar names the agency that registered a release's DOI, going by the
+// registrar metadata its importer stashed in extra: the crossref and datacite
+// importers each write their own key. jalc is never written by trawler, but
+// legacy releases carry it and the legacy index recorded it.
+func doiRegistrar(extra map[string]any) string {
+	for _, r := range []string{"crossref", "datacite", "jalc"} {
+		if _, ok := extra[r]; ok {
+			return r
+		}
+	}
+	return ""
 }

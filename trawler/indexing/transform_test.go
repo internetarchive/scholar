@@ -26,3 +26,25 @@ func Test_PrepareFatcatContainerDoc_InDOAJ(t *testing.T) {
 		})
 	}
 }
+
+func Test_doiRegistrar(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra map[string]any
+		want  string
+	}{
+		{"crossref", map[string]any{"crossref": map[string]any{"type": "journal-article"}}, "crossref"},
+		{"datacite", map[string]any{"datacite": map[string]any{"resourceTypeGeneral": "Dataset"}}, "datacite"},
+		// The datacite importer writes extra.datacite even when it has nothing
+		// to put in it.
+		{"empty datacite", map[string]any{"datacite": map[string]any{}}, "datacite"},
+		{"legacy jalc", map[string]any{"jalc": map[string]any{}}, "jalc"},
+		{"no registrar", map[string]any{"container_name": "A Journal"}, ""},
+		{"nil extra", nil, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, doiRegistrar(c.extra))
+		})
+	}
+}

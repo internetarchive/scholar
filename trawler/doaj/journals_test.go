@@ -14,19 +14,32 @@ import (
 
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
+	"git.archive.org/webgroup/scholar/trawler/issn"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/log"
 )
 
+// newISSN stands in for a journal too new for the ISSN-L table: a well-formed
+// ISSN the table does not know. It is drawn from a block (98xx) no ISSN has
+// been assigned from, so table updates should not catch up with it;
+// Test_newISSN_NotInTable says so if one does.
+const newISSN = "9876-5434"
+
 const journalCSVHeader = "\ufeffJournal title,Journal URL,URL in DOAJ,Alternative title," +
 	"Journal ISSN (print version),Journal EISSN (online version),Publisher,Country of publisher,Added on Date\n"
+
+func Test_newISSN_NotInTable(t *testing.T) {
+	require.Equal(t, newISSN, issn.Normalize(newISSN))
+	require.Equal(t, "", issn.ISSN2ISSNL(newISSN),
+		"the ISSN-L table now knows newISSN; pick another unassigned one")
+}
 
 func Test_parseJournalCSV(t *testing.T) {
 	in := journalCSVHeader +
 		`Nihon Shouni Jinzoubyou Gakkai zasshi,http://www.jspn.jp/,https://doaj.org/toc/4beb218f47f444b99031dac003e8e6c4,"Japanese Journal of Pediatric Nephrology",0915-2245,1881-3933,"The Japanese Society, for Pediatric Nephrology",Japan,2022-07-08T09:33:44Z` + "\n" +
-		`Forensic Insights,,https://doaj.org/toc/abc,,,3105-4242,Someone,India,2026-09-01T00:00:00Z` + "\n"
+		`Forensic Insights,,https://doaj.org/toc/abc,,,` + newISSN + `,Someone,India,2026-09-01T00:00:00Z` + "\n"
 
 	rows, err := parseJournalCSV(strings.NewReader(in))
 	require.NoError(t, err)
@@ -43,7 +56,7 @@ func Test_parseJournalCSV(t *testing.T) {
 		AddedOn:   "2022-07-08T09:33:44Z",
 	}, rows[0])
 	require.Equal(t, "", rows[1].PISSN)
-	require.Equal(t, "3105-4242", rows[1].EISSN)
+	require.Equal(t, newISSN, rows[1].EISSN)
 }
 
 // Columns are found by name, so DOAJ reordering or adding them is harmless.
@@ -86,8 +99,8 @@ func Test_resolveISSNs(t *testing.T) {
 		},
 		{
 			name: "too new for the ISSN-L table: no ISSN-L is invented",
-			row:  journalRow{EISSN: "3105-4242"},
-			want: journalISSNs{ISSNE: "3105-4242"},
+			row:  journalRow{EISSN: newISSN},
+			want: journalISSNs{ISSNE: newISSN},
 		},
 		{
 			name: "unhyphenated and lowercase input is normalized",
@@ -108,9 +121,9 @@ func Test_resolveISSNs(t *testing.T) {
 }
 
 func Test_journalSkipReason(t *testing.T) {
-	require.Equal(t, "", journalSkipReason(journalRow{Title: "A"}, journalISSNs{ISSNE: "3105-4242"}))
+	require.Equal(t, "", journalSkipReason(journalRow{Title: "A"}, journalISSNs{ISSNE: newISSN}))
 	require.Equal(t, "no-valid-issn", journalSkipReason(journalRow{Title: "A"}, journalISSNs{}))
-	require.Equal(t, "empty-title", journalSkipReason(journalRow{Title: "  "}, journalISSNs{ISSNE: "3105-4242"}))
+	require.Equal(t, "empty-title", journalSkipReason(journalRow{Title: "  "}, journalISSNs{ISSNE: newISSN}))
 }
 
 func Test_journalToContainer(t *testing.T) {
@@ -146,7 +159,7 @@ func Test_journalToContainer(t *testing.T) {
 // A row with no DOAJ id or added date still gets extra.doaj, which is what
 // marks the container in_doaj.
 func Test_journalToContainer_AlwaysInDOAJ(t *testing.T) {
-	c := journalToContainer(journalRow{Title: "A Journal"}, journalISSNs{ISSNE: "3105-4242"}, "src")
+	c := journalToContainer(journalRow{Title: "A Journal"}, journalISSNs{ISSNE: newISSN}, "src")
 
 	require.Equal(t, map[string]any{"doaj": map[string]any{}}, c.Extra)
 	require.True(t, indexing.PrepareFatcatContainerDoc(c).InDOAJ)
@@ -256,13 +269,13 @@ func Test_importJournal_CreatesNewWithoutISSNL(t *testing.T) {
 	f := setupFakeFatcat(t, map[string]uuid.UUID{})
 
 	outcome, c, err := importJournal(http.DefaultClient,
-		journalRow{Title: "Forensic Insights", EISSN: "3105-4242"}, "src")
+		journalRow{Title: "Forensic Insights", EISSN: newISSN}, "src")
 	require.NoError(t, err)
 	require.Equal(t, journalAdded, outcome)
 	require.Equal(t, "", c.ISSNL)
 	require.Len(t, f.created, 1)
 	require.Equal(t, "", f.created[0].ISSNL)
-	require.Equal(t, "3105-4242", f.created[0].ISSNE)
+	require.Equal(t, newISSN, f.created[0].ISSNE)
 	require.Equal(t, 0, f.legacy)
 }
 

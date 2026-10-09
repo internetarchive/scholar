@@ -504,12 +504,12 @@ func Test_linkContainer_FindsExisting(t *testing.T) {
 	id := uuid.New()
 	// A container without an ISSN-L, as the journal importer makes for a
 	// journal too new for the ISSN-L table.
-	f := setupFakeFatcat(t, map[string]uuid.UUID{"issne=3105-4242": id})
+	f := setupFakeFatcat(t, map[string]uuid.UUID{"issne=" + newISSN: id})
 	cs := counts.Counts{}
 	release := newLinkRelease()
 
 	err := linkContainer(http.DefaultClient, &cs, release,
-		&doajRecord{JournalTitle: "Forensic Insights", EISSN: "3105-4242"})
+		&doajRecord{JournalTitle: "Forensic Insights", EISSN: newISSN})
 	require.NoError(t, err)
 	require.Equal(t, &id, release.ContainerID)
 	require.Empty(t, f.created)

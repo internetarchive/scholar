@@ -1,3 +1,5 @@
+import os
+
 from .base import *
 
 DEBUG = True
@@ -12,7 +14,8 @@ DATABASES = {
         'USER': 'fatcat',
         'PASSWORD': 'fatcat',
         'NAME': 'fatcat',
-        'HOST': 'fatcat-postgres-17',
+        'HOST': os.environ.get('DJANGO_POSTGRESQL_HOST', 'fatcat-postgres-17'),
+        'PORT': os.environ.get('DJANGO_POSTGRESQL_PORT', '5432'),
         'DISABLE_SERVER_SIDE_CURSORS': True,
     }
 }

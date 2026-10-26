@@ -912,8 +912,26 @@ def search(request: HttpRequest) -> HttpResponse:
     }, status=status_code)
 
 
+def _removed_if_hidden(request: HttpRequest, work_ident: str) -> HttpResponse | None:
+    """A 410 page if the work is hidden in the catalog, else None.
+
+    The pages here are served from the fulltext index, which a takedown
+    clears, but a reindex could put a hidden work back; the DB is the
+    authority on whether it is hidden.
+    """
+    try:
+        work_uuid = fcid2uuid(work_ident)
+    except ValueError:
+        return None
+    if work_svc.is_hidden(work_uuid):
+        return render(request, "ftsearch/removed.html", status=410)
+    return None
+
+
 def work(request: HttpRequest, work_uuid: str) -> HttpResponse:
     work_ident = uuid2fcid(uuid.UUID(str(work_uuid)))
+    if removed := _removed_if_hidden(request, work_ident):
+        return removed
     data = es.client().search(
         index=settings.ES_INDEX,
         body={
@@ -1022,6 +1040,9 @@ def access_redirect_wayback(request: HttpRequest, work_ident: str, url: str) -> 
         safe=":/%#?=@[]!$&'()*+,;",
     )
 
+    if removed := _removed_if_hidden(request, work_ident):
+        return removed
+
     source = _get_es_doc(work_ident)
     if not source:
         return _access_redirect_fallback(
@@ -1059,6 +1080,9 @@ def access_redirect_ia_file(request: HttpRequest, work_ident: str, item: str, fi
         raw_file_path = file_path
     original_path = urllib.parse.quote(raw_file_path)
     access_url = f"https://archive.org/download/{item}/{original_path}"
+
+    if removed := _removed_if_hidden(request, work_ident):
+        return removed
 
     source = _get_es_doc(work_ident)
     if not source:

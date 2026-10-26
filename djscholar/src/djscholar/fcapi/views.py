@@ -10,11 +10,12 @@ from django.http import HttpResponse, HttpResponseRedirect, Http404
 from ninja.pagination import paginate
 from django.shortcuts import get_object_or_404
 from ninja import NinjaAPI, Query, Schema, ModelSchema
+from ninja.errors import HttpError
 from ninja.orm import create_schema
 from ninja_apikey.security import APIKeyAuth
 
 import djscholar.fcapi.models as m
-from djscholar.fcapi.services import EntityNotFound
+from djscholar.fcapi.services import EntityHidden, EntityNotFound
 from djscholar.fcapi.services import containers as container_svc
 from djscholar.fcapi.services import creators as creator_svc
 from djscholar.fcapi.services import files as file_svc
@@ -40,7 +41,6 @@ api_auth = APIKeyAuth()  # NB: uses X-API-Key header. use admin to create keys.
 # TODO use response= in all the decorators so the docs work
 
 # post crawl MVP
-# TODO filter hidden things
 # TODO consider generalizing route implementations if it doesn't make
 # signatures too hideous / doesn't break doc generation
 # TODO should support the creation of creators via release creation/update?
@@ -246,6 +246,37 @@ type EntitySchema = ReleaseSchema\
         | WorkSchema | FileSchema | WebcaptureSchema
 
 
+def _show_hidden(request, show_hidden: bool) -> bool:
+    """Whether a GET may return hidden entities. Only an admin (staff) API key
+    may ask for them; anyone else asking gets a 403."""
+    if not show_hidden:
+        return False
+    user = api_auth(request)
+    if not user or not user.is_staff:
+        raise HttpError(HTTPStatus.FORBIDDEN, "show_hidden requires an admin API key")
+    return True
+
+
+def _file_out(f: m.File, show_hidden: bool) -> FileSchema:
+    """FileSchema for f. Its embedded releases leave out hidden ones unless
+    show_hidden."""
+    out = FileSchema.from_orm(f)
+    if not show_hidden:
+        out.releases = [r for r in out.releases if r.hidden_when is None]
+    return out
+
+
+def _entity_data(entity_in: Schema) -> dict:
+    """entity_in as a dict for a wholesale PUT, minus hidden_when and
+    hidden_reason if the request didn't send them. Otherwise any client that
+    doesn't know about hiding would un-hide an entity by updating it."""
+    data = entity_in.dict()
+    for field in ("hidden_when", "hidden_reason"):
+        if field not in entity_in.model_fields_set:
+            data.pop(field)
+    return data
+
+
 @v2api.api_operation(["HEAD", "GET"], "/health")
 def status(request) -> HttpResponse:
     # ensure db connection is ok, return 200
@@ -260,23 +291,28 @@ def status(request) -> HttpResponse:
 
 
 @v2api.get("/container/lookup")
-def lookup_container(request, lookup: Query[ContainerLookup]) -> ContainerSchema:
+def lookup_container(request, lookup: Query[ContainerLookup],
+                     show_hidden: bool = False) -> ContainerSchema:
     """Look up a container using an external ID. If multiple containers match
     the ID, an arbitrary one is returned."""
-    return ContainerSchema.from_orm(container_svc.lookup(lookup.id_type, lookup.id_value))
+    sh = _show_hidden(request, show_hidden)
+    return ContainerSchema.from_orm(container_svc.lookup(lookup.id_type, lookup.id_value, sh))
 
 
 @v2api.get("/container/{ident}")
-def get_container(request, ident: UUID) -> ContainerSchema:
+def get_container(request, ident: UUID, show_hidden: bool = False) -> ContainerSchema:
     """Get a single container by its ID."""
-    return ContainerSchema.from_orm(container_svc.get(ident))
+    return ContainerSchema.from_orm(container_svc.get(ident, _show_hidden(request, show_hidden)))
 
 
 @v2api.get("/container/{ident}/releases", response=list[ReleaseSchema])
 @paginate
-def get_container_releases(request, ident: UUID) -> list[ReleaseSchema]:
+def get_container_releases(request, ident: UUID,
+                           show_hidden: bool = False) -> list[ReleaseSchema]:
     """Get all releases for a given container ID."""
-    return [ReleaseSchema.from_orm(r) for r in container_svc.get_releases(ident)]
+    sh = _show_hidden(request, show_hidden)
+    container_svc.get(ident, sh)
+    return [ReleaseSchema.from_orm(r) for r in container_svc.get_releases(ident, sh)]
 
 
 @v2api.post("/container", auth=api_auth)
@@ -315,7 +351,7 @@ def update_container(request, container_in: ContainerSchema) -> HttpResponse:
         entity = m.Container(**container_in.dict())
     else:
         entity = es[0]
-        for attr, value in container_in.dict().items():
+        for attr, value in _entity_data(container_in).items():
             setattr(entity, attr, value)
 
     entity.save()
@@ -335,12 +371,14 @@ def delete_container(request, ident: UUID) -> ContainerSchema:
 
 
 @v2api.get("/release/lookup")
-def lookup_release(request, lookup: Query[ReleaseLookup]) -> ReleaseSchema:
+def lookup_release(request, lookup: Query[ReleaseLookup],
+                   show_hidden: bool = False) -> ReleaseSchema:
     """Look up a release using an external ID. If multiple releases match the
     ID, an arbitrary one is returned."""
+    sh = _show_hidden(request, show_hidden)
     if lookup.id_type == 'doi':
         lookup.id_value = lookup.id_value.lower()
-    return ReleaseSchema.from_orm(release_svc.lookup(lookup.id_type, lookup.id_value))
+    return ReleaseSchema.from_orm(release_svc.lookup(lookup.id_type, lookup.id_value, sh))
 
 
 @v2api.get("/release/lookup/fulltext")
@@ -353,9 +391,9 @@ def fulltext(request, lookup: Query[ReleaseLookup]) -> HttpResponse:
 
 
 @v2api.get("/release/{ident}")
-def get_release(request, ident: UUID) -> ReleaseSchema:
+def get_release(request, ident: UUID, show_hidden: bool = False) -> ReleaseSchema:
     """Get a single release by its ID."""
-    return ReleaseSchema.from_orm(release_svc.get(ident))
+    return ReleaseSchema.from_orm(release_svc.get(ident, _show_hidden(request, show_hidden)))
 
 
 @v2api.post("/release", auth=api_auth)
@@ -393,37 +431,46 @@ def create_release(request, release_in: ReleaseSchema) -> HttpResponse:
 
 
 @v2api.get("/release/{ident}/container")
-def get_release_container(request, ident: UUID) -> ContainerSchema:
+def get_release_container(request, ident: UUID, show_hidden: bool = False) -> ContainerSchema:
     """Get a release's container (ie, journal)"""
-    return ContainerSchema.from_orm(release_svc.get_container(ident))
+    sh = _show_hidden(request, show_hidden)
+    release_svc.get(ident, sh)
+    return ContainerSchema.from_orm(release_svc.get_container(ident, sh))
 
 
 @v2api.get("/release/{ident}/work")
-def get_release_work(request, ident: UUID) -> WorkSchema:
+def get_release_work(request, ident: UUID, show_hidden: bool = False) -> WorkSchema:
     """Get a the work that represents the platonic version of this release."""
-    return WorkSchema.from_orm(release_svc.get_work(ident))
+    return WorkSchema.from_orm(release_svc.get_work(ident, _show_hidden(request, show_hidden)))
 
 
 @v2api.get("/release/{ident}/files", response=list[FileSchema])
 @paginate
-def get_release_files(request, ident: UUID) -> list[FileSchema]:
-    return [FileSchema.from_orm(e) for e in release_svc.get_files(ident)]
+def get_release_files(request, ident: UUID, show_hidden: bool = False) -> list[FileSchema]:
+    sh = _show_hidden(request, show_hidden)
+    release_svc.get(ident, sh)
+    return [_file_out(e, sh) for e in release_svc.get_files(ident, sh)]
 
 
 @v2api.get("/release/{ident}/contribs", response=list[ReleaseContribSchema])
 @paginate
-def get_release_contribs(request, ident: UUID) -> list[ReleaseContribSchema]:
+def get_release_contribs(request, ident: UUID,
+                         show_hidden: bool = False) -> list[ReleaseContribSchema]:
     """Get a list of contributions to a given release; for example, authors.
     Some contributions will feature a creator_id that can be used to select
     richer information about a contribution (eg, orcid); many contributions
     will just be raw names pulled from a paper's author list, however."""
+    release_svc.get(ident, _show_hidden(request, show_hidden))
     return [ReleaseContribSchema.from_orm(rc) for rc in release_svc.get_contribs(ident)]
 
 
 @v2api.get("/release/{ident}/webcaptures", response=list[WebcaptureSchema])
 @paginate
-def get_release_webcaptures(request, ident: UUID) -> list[WebcaptureSchema]:
-    return [WebcaptureSchema.from_orm(wc) for wc in release_svc.get_webcaptures(ident)]
+def get_release_webcaptures(request, ident: UUID,
+                            show_hidden: bool = False) -> list[WebcaptureSchema]:
+    sh = _show_hidden(request, show_hidden)
+    release_svc.get(ident, sh)
+    return [WebcaptureSchema.from_orm(wc) for wc in release_svc.get_webcaptures(ident, sh)]
 
 
 @v2api.delete("/release/{ident}", auth=api_auth)
@@ -448,7 +495,7 @@ def update_release(request, release_in: ReleaseSchema) -> HttpResponse:
     """
     code = HTTPStatus.OK
     es = m.Release.objects.filter(id=release_in.id)
-    data = release_in.dict()
+    data = _entity_data(release_in)
     extids = data.pop("extids")
     contribs = data.pop("contribs")
     abstracts = data.pop("abstracts")
@@ -520,22 +567,25 @@ def bulk_create_releases(request, releases_in: list[ReleaseSchema]) -> HttpRespo
 # Work routes
 
 @v2api.get("/work/lookup")
-def lookup_work(request, lookup: Query[LegacyLookup]) -> WorkSchema:
+def lookup_work(request, lookup: Query[LegacyLookup], show_hidden: bool = False) -> WorkSchema:
     """Lookup a work by metadata other than its UUID"""
-    return WorkSchema.from_orm(work_svc.lookup(lookup.id_type, lookup.id_value))
+    sh = _show_hidden(request, show_hidden)
+    return WorkSchema.from_orm(work_svc.lookup(lookup.id_type, lookup.id_value, sh))
 
 
 @v2api.get("/work/{ident}")
-def get_work(request, ident: UUID) -> WorkSchema:
+def get_work(request, ident: UUID, show_hidden: bool = False) -> WorkSchema:
     """Get a work (collection of releases) by its ID"""
-    return WorkSchema.from_orm(work_svc.get(ident))
+    return WorkSchema.from_orm(work_svc.get(ident, _show_hidden(request, show_hidden)))
 
 
 @v2api.get("/work/{ident}/releases", response=list[ReleaseSchema])
 @paginate
-def get_work_releases(request, ident: UUID) -> list[ReleaseSchema]:
+def get_work_releases(request, ident: UUID, show_hidden: bool = False) -> list[ReleaseSchema]:
     """Get all releases associated with a work's ID"""
-    return [ReleaseSchema.from_orm(r) for r in work_svc.get_releases(ident)]
+    sh = _show_hidden(request, show_hidden)
+    work_svc.get(ident, sh)
+    return [ReleaseSchema.from_orm(r) for r in work_svc.get_releases(ident, sh)]
 
 @v2api.post("/work", auth=api_auth, include_in_schema=False)
 def create_work(request) -> HttpResponse:
@@ -568,7 +618,7 @@ def update_work(request, work_in: WorkSchema) -> HttpResponse:
         entity = m.Work(**work_in.dict())
     else:
         entity = es[0]
-        for attr, value in work_in.dict().items():
+        for attr, value in _entity_data(work_in).items():
             setattr(entity, attr, value)
 
     entity.save()
@@ -579,24 +629,29 @@ def update_work(request, work_in: WorkSchema) -> HttpResponse:
 # Creator routes
 
 @v2api.get("/creator/lookup")
-def lookup_creator(request, lookup: Query[CreatorLookup]) -> CreatorSchema:
+def lookup_creator(request, lookup: Query[CreatorLookup],
+                   show_hidden: bool = False) -> CreatorSchema:
     """Look up a creator using an external ID. If multiple
     creators match the ID, an arbitrary one is returned."""
-    return CreatorSchema.from_orm(creator_svc.lookup(lookup.id_type, lookup.id_value))
+    sh = _show_hidden(request, show_hidden)
+    return CreatorSchema.from_orm(creator_svc.lookup(lookup.id_type, lookup.id_value, sh))
 
 
 @v2api.get("/creator/{ident}/releases", response=list[ReleaseSchema])
 @paginate
-def get_creator_releases(request, ident: UUID) -> list[ReleaseSchema]:
+def get_creator_releases(request, ident: UUID,
+                         show_hidden: bool = False) -> list[ReleaseSchema]:
     """Get all the releases associated with a given creator. Note that for many
     releases, their authors exist only as raw contribs and do not have creator
     records."""
-    return [ReleaseSchema.from_orm(r) for r in creator_svc.get_releases(ident)]
+    sh = _show_hidden(request, show_hidden)
+    creator_svc.get(ident, sh)
+    return [ReleaseSchema.from_orm(r) for r in creator_svc.get_releases(ident, sh)]
 
 
 @v2api.get("/creator/{ident}")
-def get_creator(request, ident: UUID) -> CreatorSchema:
-    return CreatorSchema.from_orm(creator_svc.get(ident))
+def get_creator(request, ident: UUID, show_hidden: bool = False) -> CreatorSchema:
+    return CreatorSchema.from_orm(creator_svc.get(ident, _show_hidden(request, show_hidden)))
 
 
 @v2api.post("/creator", auth=api_auth)
@@ -623,7 +678,7 @@ def update_creator(request, creator_in: CreatorSchema) -> HttpResponse:
         entity = m.Creator(**creator_in.dict())
     else:
         entity = es[0]
-        for attr, value in creator_in.dict().items():
+        for attr, value in _entity_data(creator_in).items():
             setattr(entity, attr, value)
 
     entity.save()
@@ -650,21 +705,25 @@ def delete_creator(request, ident: UUID) -> HttpResponse:
 
 
 @v2api.get("/file/lookup")
-def lookup_file(request, lookup: Query[FileLookup]) -> FileSchema:
+def lookup_file(request, lookup: Query[FileLookup], show_hidden: bool = False) -> FileSchema:
     """Look up a file by checksum."""
-    return FileSchema.from_orm(file_svc.lookup(lookup.id_type, lookup.id_value))
+    sh = _show_hidden(request, show_hidden)
+    return _file_out(file_svc.lookup(lookup.id_type, lookup.id_value, sh), sh)
 
 
 @v2api.get("/file/{ident}/releases", response=list[ReleaseSchema])
 @paginate
-def get_file_releases(request, ident: UUID) -> list[ReleaseSchema]:
+def get_file_releases(request, ident: UUID, show_hidden: bool = False) -> list[ReleaseSchema]:
     """Get all the releases associated with a given file."""
-    return [ReleaseSchema.from_orm(r) for r in file_svc.get_releases(ident)]
+    sh = _show_hidden(request, show_hidden)
+    file_svc.get(ident, sh)
+    return [ReleaseSchema.from_orm(r) for r in file_svc.get_releases(ident, sh)]
 
 
 @v2api.get("/file/{ident}")
-def get_file(request, ident: UUID) -> FileSchema:
-    return FileSchema.from_orm(file_svc.get(ident))
+def get_file(request, ident: UUID, show_hidden: bool = False) -> FileSchema:
+    sh = _show_hidden(request, show_hidden)
+    return _file_out(file_svc.get(ident, sh), sh)
 
 
 @v2api.post("/file", auth=api_auth)
@@ -710,7 +769,7 @@ def update_file(request, file_in: FileSchema) -> HttpResponse:
     code = HTTPStatus.OK
     es = m.File.objects.filter(id=file_in.id)
 
-    data = file_in.dict()
+    data = _entity_data(file_in)
     urls = data.pop("urls")
     releases = data.pop("releases")
 
@@ -765,19 +824,23 @@ def delete_file(request, ident: UUID) -> HttpResponse:
 
 
 @v2api.get("/webcapture/lookup")
-def lookup_webcapture(request, lookup: Query[LegacyLookup]) -> WebcaptureSchema:
+def lookup_webcapture(request, lookup: Query[LegacyLookup],
+                      show_hidden: bool = False) -> WebcaptureSchema:
     """Look up a webcapture by its legacy ID."""
-    return WebcaptureSchema.from_orm(webcapture_svc.lookup(lookup.id_type, lookup.id_value))
+    sh = _show_hidden(request, show_hidden)
+    return WebcaptureSchema.from_orm(webcapture_svc.lookup(lookup.id_type, lookup.id_value, sh))
 
 
 @v2api.get("/webcapture/{ident}/release")
-def get_webcapture_release(request, ident: UUID) -> ReleaseSchema:
-    return ReleaseSchema.from_orm(webcapture_svc.get_release(ident))
+def get_webcapture_release(request, ident: UUID, show_hidden: bool = False) -> ReleaseSchema:
+    sh = _show_hidden(request, show_hidden)
+    return ReleaseSchema.from_orm(webcapture_svc.get_release(ident, sh))
 
 
 @v2api.get("/webcapture/{ident}")
-def get_webcapture(request, ident: UUID) -> WebcaptureSchema:
-    return WebcaptureSchema.from_orm(webcapture_svc.get(ident))
+def get_webcapture(request, ident: UUID, show_hidden: bool = False) -> WebcaptureSchema:
+    sh = _show_hidden(request, show_hidden)
+    return WebcaptureSchema.from_orm(webcapture_svc.get(ident, sh))
 
 
 @v2api.post("/webcapture", auth=api_auth)
@@ -824,7 +887,7 @@ def update_webcapture(request, webcapture_in:WebcaptureSchema) -> HttpResponse:
     code = HTTPStatus.OK
     es = m.Webcapture.objects.filter(id=webcapture_in.id)
 
-    data = webcapture_in.dict()
+    data = _entity_data(webcapture_in)
     urls = data.pop("urls")
     cdx_lines = data.pop("cdx_lines")
 
@@ -898,10 +961,13 @@ def _changelog_view(entity_type: str):
     schema = _CHANGELOG_SCHEMAS[entity_type]
 
     @paginate
-    def handler(request, cq: Query[ChangelogQuery]):
+    def handler(request, cq: Query[ChangelogQuery], show_hidden: bool = False):
+        sh = _show_hidden(request, show_hidden)
         entries = changelog_svc.recent(
-            entity_type, date=cq.start, window=cq.window,
+            entity_type, date=cq.start, window=cq.window, include_hidden=sh,
         )
+        if schema is FileSchema:
+            return [_file_out(e, sh) for e in entries]
         return [schema.from_orm(e) for e in entries]
 
     handler.__name__ = f"{entity_type}_changelog"
@@ -952,6 +1018,14 @@ def not_found(request, exc):
             request,
             {"message": str(exc)},
             status=404)
+
+
+@v2api.exception_handler(EntityHidden)
+def entity_hidden(request, exc):
+    return v2api.create_response(
+            request,
+            {"message": exc.message},
+            status=HTTPStatus.GONE)
 
 
 @v2api.exception_handler(EntityNotFound)

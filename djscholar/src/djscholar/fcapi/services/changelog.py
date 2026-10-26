@@ -6,6 +6,7 @@ from uuid import UUID
 from django.db.models import Prefetch, Q
 
 from djscholar.fcapi import models as m
+from djscholar.fcapi.services import visible
 
 
 ENTITY_MODELS = {
@@ -26,6 +27,7 @@ def recent(
     limit: int = 50,
     offset: int = 0,
     source: str | None = None,
+    include_hidden: bool = False,
 ) -> list[m.Entity]:
     """Return entities updated within a window ending at date+1day, newest first.
 
@@ -41,14 +43,16 @@ def recent(
     end_dt = start_dt + datetime.timedelta(days=1)
     begin_dt = start_dt - window
 
-    qs = model.objects.filter(updated__range=[begin_dt, end_dt]).order_by("-updated")
+    qs = visible(model.objects.filter(updated__range=[begin_dt, end_dt]),
+                 include_hidden).order_by("-updated")
 
     if source:
         qs = qs.filter(source=source)
 
     if model is m.File:
         qs = qs.prefetch_related(
-            Prefetch("releases", queryset=m.Release.objects.only("id", "title"))
+            Prefetch("releases", queryset=visible(
+                m.Release.objects.only("id", "title", "hidden_when"), include_hidden))
         )
 
     return list(qs[offset:offset + limit])
@@ -62,6 +66,7 @@ def recent_page(
     source: str | None = None,
     cursor: tuple[datetime.datetime, UUID] | None = None,
     direction: str = "older",
+    include_hidden: bool = False,
 ) -> tuple[list[m.Entity], bool]:
     """Return (entities, has_more) updated within a window, newest first.
 
@@ -85,12 +90,14 @@ def recent_page(
     end_dt = start_dt + datetime.timedelta(days=1)
     begin_dt = start_dt - window
 
-    qs = model.objects.filter(updated__range=[begin_dt, end_dt])
+    qs = visible(model.objects.filter(updated__range=[begin_dt, end_dt]),
+                 include_hidden)
     if source:
         qs = qs.filter(source=source)
     if model is m.File:
         qs = qs.prefetch_related(
-            Prefetch("releases", queryset=m.Release.objects.only("id", "title"))
+            Prefetch("releases", queryset=visible(
+                m.Release.objects.only("id", "title", "hidden_when"), include_hidden))
         )
 
     if direction == "newer" and cursor is not None:

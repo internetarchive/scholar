@@ -40,6 +40,14 @@ def _render(request: HttpRequest, template_name: str,
     return HttpResponse(html, status=status)
 
 
+def _visible_or_none(entity):
+    """entity, or None if it's hidden. For related entities reached through a
+    foreign key, which bypass the service layer's hidden checks."""
+    if entity is None or entity.hidden_when is not None:
+        return None
+    return entity
+
+
 # some stubs remain but it's stuff we decided to not ship as part of the
 # fatcat2 launch
 # def _stub(request: HttpRequest, **kwargs) -> HttpResponse:
@@ -324,7 +332,7 @@ def release_view(request: HttpRequest, ident: str) -> HttpResponse:
     abstracts = list(release_svc.get_abstracts(release_uuid))
     files = list(release_svc.get_files(release_uuid))
     webcaptures = list(release_svc.get_webcaptures(release_uuid))
-    container = release.container
+    container = _visible_or_none(release.container)
 
     preservation = _release_preservation(files, extids)
 
@@ -756,7 +764,7 @@ def fileset_view(request: HttpRequest, ident: str) -> HttpResponse:
     except ValueError:
         return HttpResponse(f"bad id: {ident}", status=400)
 
-    release = fileset.release
+    release = _visible_or_none(fileset.release)
     manifest = list(fileset_svc.get_files(fs_uuid))
     urls = list(fileset_svc.get_urls(fs_uuid))
 
@@ -810,7 +818,7 @@ def webcapture_view(request: HttpRequest, ident: str) -> HttpResponse:
     except ValueError:
         return HttpResponse(f"bad id: {ident}", status=400)
 
-    release = webcapture.release
+    release = _visible_or_none(webcapture.release)
     archive_urls = list(webcapture.urls.all())
     cdx_lines = list(webcapture.cdx_lines.all())
 
@@ -949,7 +957,7 @@ def _release_csl_data(ident: str):
     release = release_svc.get(release_uuid)
     contribs = release_svc.get_contribs(release_uuid)
     extids = release_svc.get_extids(release_uuid)
-    container = release.container
+    container = _visible_or_none(release.container)
     return release, contribs, extids, container
 
 

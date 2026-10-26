@@ -32,7 +32,8 @@ Dry-run by default: reads everything from fatcat2, counts the matching ES
 docs, and prints what it would do. Pass --apply to write.
 
 Endpoints and the fatcat2 API key come from ~/.config/trawler/config,
-the same file trawler uses. The fatcat_ref index isn't in that file; it is
+the same file trawler uses. The key's user must be staff in fatcat2, since
+reads ask for show_hidden. The fatcat_ref index isn't in that file; it is
 indexing.fatcat_ref_ix if present, else "fatcat_ref".
 
 The PUT routes replace an entity wholesale, so a release's extids, contribs,
@@ -98,7 +99,11 @@ class Fatcat2:
         self.key = key
 
     def get(self, path: str) -> dict:
-        status, body = http("GET", f"{self.endpoint}{path}")
+        # show_hidden so a re-run, or a partly hidden work, can still read
+        # what's already hidden. It needs an admin (staff) API key.
+        sep = "&" if "?" in path else "?"
+        status, body = http("GET", f"{self.endpoint}{path}{sep}show_hidden=true",
+                            headers={"X-API-Key": self.key})
         if status != 200:
             raise SystemExit(f"GET {path} -> {status}: {body[:300]}")
         return json.loads(body)

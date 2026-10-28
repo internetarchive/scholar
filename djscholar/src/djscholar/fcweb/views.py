@@ -540,8 +540,6 @@ def container_view(request: HttpRequest, ident: str) -> HttpResponse:
         or extra.get("szczepanski", {}).get("as_of")
         or (extra.get("default_license") or "").startswith("CC-")
     )
-    if extra.get("sherpa_romeo", {}).get("color") == "white":
-        is_oa = False
 
     return _render(request, "fcweb/container_view.html", {
         "container": container,

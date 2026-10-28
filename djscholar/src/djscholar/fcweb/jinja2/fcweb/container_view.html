@@ -191,7 +191,7 @@
         {% if container.issnl %}
           <a href="https://portal.issn.org/resource/issn/{{ container.issnl }}">ISSN Portal</a><br>
           <a href="https://keepers.issn.org/?q=api/search&search[]=MUST=allissn={{ container.issnl }}&search[]=MUST_EXIST=keepers">The Keepers Registry</a> (preservation)<br>
-          <a href="http://www.sherpa.ac.uk/romeo/issn/{{ container.issnl }}/">SHERPA/RoMEO</a> (access policies)<br>
+          <a href="https://openpolicyfinder.jisc.ac.uk/search?q={{ container.issnl }}">Open Policy Finder</a> (access policies)<br>
         {% endif %}
         {% if not container.wikidata_qid %}
           <a href="https://www.wikidata.org/w/index.php?search={{ container.name|urlencode }}">wikidata.org</a><br>

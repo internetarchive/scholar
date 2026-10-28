@@ -402,7 +402,7 @@
           <a href="http://www.worldcat.org/search?qt=worldcat_org_art&q={{ release.title|urlencode }}">Worldcat</a><br>
         {% endif %}
         {% if container and container.issnl %}
-          <a href="http://www.sherpa.ac.uk/romeo/issn/{{ container.issnl }}/">SHERPA/RoMEO</a> (journal policies)<br>
+          <a href="https://openpolicyfinder.jisc.ac.uk/search?q={{ container.issnl }}">Open Policy Finder</a> (journal policies)<br>
         {% endif %}
         <a href="https://www.wikidata.org/w/index.php?search={{ release.title|urlencode }}">wikidata.org</a><br>
         <a href="https://core.ac.uk/search?q={{ release.title|urlencode }}">CORE.ac.uk</a><br>

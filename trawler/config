@@ -198,6 +198,22 @@ schedule_hour = 6
 # streak.
 max_consecutive_errors = 25
 
+[openalex_sources]
+# The import of OpenAlex's sources: fetch one day's updated_date partition of
+# s3://openalex/data/jsonl/sources/ and create a fatcat container for each
+# journal fatcat does not already have. Run by hand with
+# `trawler openalex-sources one-off --date YYYY-MM-DD`; there is no schedule.
+internal_task_queue = "openalex_sources_internal"
+external_task_queue = "openalex_sources_external"
+# snapshot_url is the public HTTPS endpoint of OpenAlex's snapshot bucket.
+snapshot_url = "https://openalex.s3.amazonaws.com"
+# s3_bucket is where each fetched day is kept (under openalex/sources/YYYY/).
+s3_bucket = "scholkit"
+# max_consecutive_errors fails the import when this many records in a row
+# cannot be imported. A single bad record is passed over; a streak means fatcat
+# or ES is down. The import is retried from the start of the streak.
+max_consecutive_errors = 25
+
 [fatcat1]
 endpoint = "https://scholar.archive.org/_fc/v0"
 

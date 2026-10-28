@@ -10,20 +10,14 @@ package doaj
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"slices"
 	"strings"
 
-	"git.archive.org/webgroup/scholar/trawler/cleaning"
+	"git.archive.org/webgroup/scholar/trawler/containers"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
-	"git.archive.org/webgroup/scholar/trawler/indexing"
 	"git.archive.org/webgroup/scholar/trawler/issn"
-	"github.com/google/uuid"
-	"github.com/spf13/viper"
 )
 
 // The CSV's columns are found by header name rather than position. DOAJ adds
@@ -138,28 +132,11 @@ func resolveISSNs(row journalRow) journalISSNs {
 		ISSNP: issn.Normalize(row.PISSN),
 		ISSNE: issn.Normalize(row.EISSN),
 	}
-	for _, i := range []string{out.ISSNP, out.ISSNE} {
-		if i == "" {
-			continue
-		}
-		l := issn.ISSN2ISSNL(i)
-		if l == "" {
-			continue
-		}
-		if out.ISSNL == "" {
-			out.ISSNL = l
-		}
-		if !slices.Contains(out.LinkingISSNs, l) {
-			out.LinkingISSNs = append(out.LinkingISSNs, l)
-		}
+	out.LinkingISSNs = issn.LinkingISSNs(out.ISSNP, out.ISSNE)
+	if len(out.LinkingISSNs) > 0 {
+		out.ISSNL = out.LinkingISSNs[0]
 	}
 	return out
-}
-
-// cleanName tidies a journal or publisher name for fatcat. CleanString fixes
-// punctuation but leaves whitespace alone, and DOAJ names carry stray runs of it.
-func cleanName(s string) string {
-	return cleaning.CleanString(strings.Join(strings.Fields(s), " "))
 }
 
 // journalSkipReason returns why a row cannot become a container, or empty
@@ -168,7 +145,7 @@ func journalSkipReason(row journalRow, issns journalISSNs) string {
 	if issns.ISSNP == "" && issns.ISSNE == "" {
 		return "no-valid-issn"
 	}
-	if cleanName(row.Title) == "" {
+	if containers.CleanName(row.Title) == "" {
 		return "empty-title"
 	}
 	return ""
@@ -206,9 +183,9 @@ func journalToContainer(row journalRow, issns journalISSNs, source string) fatca
 	}
 
 	return fatcat2.Container{
-		Name:      cleanName(row.Title),
+		Name:      containers.CleanName(row.Title),
 		Type:      "journal",
-		Publisher: cleanName(row.Publisher),
+		Publisher: containers.CleanName(row.Publisher),
 		ISSNL:     issns.ISSNL,
 		ISSNP:     issns.ISSNP,
 		ISSNE:     issns.ISSNE,
@@ -217,76 +194,17 @@ func journalToContainer(row journalRow, issns journalISSNs, source string) fatca
 	}
 }
 
-// findContainer returns the ID of a fatcat2 container sharing any ISSN with
-// the row, if there is one. Every ISSN the row has is tried against every ISSN
-// column, because nothing guarantees which column an existing container filed
-// it under: legacy containers often carry only an ISSN-L, and an ISSN-L is
-// itself one of the journal's ISSNs.
-//
-// The ISSN-L goes first, and is looked up as an ISSN-L first, because that is
-// how nearly every existing container is found: a row DOAJ has had for years
-// costs one request.
-func findContainer(client *http.Client, issns journalISSNs) (*uuid.UUID, error) {
-	candidates := append(append([]string{}, issns.LinkingISSNs...), issns.ISSNP, issns.ISSNE)
-	id, err := fatcat2.LookupContainerByISSNs(client, candidates...)
-	if err != nil {
-		return nil, fmt.Errorf("container lookup failed: %w", err)
-	}
-	return id, nil
-}
-
-// journalOutcome is what happened to a single row.
-type journalOutcome string
-
-const (
-	journalAdded   journalOutcome = "added"
-	journalIgnored journalOutcome = "ignored"
-	journalSkipped journalOutcome = "skipped"
-)
-
-// importJournal makes sure fatcat has a container for one DOAJ journal row,
-// creating and indexing one if it does not. It is idempotent, which is what
-// makes re-running a day, or resuming an import part way, safe.
-func importJournal(client *http.Client, row journalRow, source string) (journalOutcome, *fatcat2.Container, error) {
+// ToContainer implements containers.Row. Lookup is by every ISSN the row has,
+// ISSN-Ls first.
+func (row journalRow) ToContainer(source string) (fatcat2.Container, []string, string) {
 	issns := resolveISSNs(row)
 	if reason := journalSkipReason(row, issns); reason != "" {
-		return journalSkipped, nil, nil
+		return fatcat2.Container{}, nil, reason
 	}
-
-	existing, err := findContainer(client, issns)
-	if err != nil {
-		return "", nil, err
-	}
-	if existing != nil {
-		return journalIgnored, nil, nil
-	}
-
-	c := journalToContainer(row, issns, source)
-	if err := createContainer(client, &c); err != nil {
-		return "", nil, err
-	}
-
-	return journalAdded, &c, nil
+	lookup := append(append([]string{}, issns.LinkingISSNs...), issns.ISSNP, issns.ISSNE)
+	return journalToContainer(row, issns, source), lookup, ""
 }
 
-// createContainer creates c in fatcat2 and indexes it to Elasticsearch.
-func createContainer(client *http.Client, c *fatcat2.Container) error {
-	if _, err := fatcat2.CreateContainer(client, c); err != nil {
-		return fmt.Errorf("container creation failed for %q: %w", c.Name, err)
-	}
-
-	// NB as in the article importers, a failure here is not revisited: the next
-	// run finds the container in fatcat and leaves it alone.
-	doc := indexing.PrepareFatcatContainerDoc(*c)
-	bs, err := json.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("could not marshal container doc: %w", err)
-	}
-	err = indexing.DoElasticIndex(client,
-		viper.GetString("indexing.fatcat_container_ix"), doc.LegacyIdent, bs)
-	if err != nil {
-		return fmt.Errorf("could not index container %q: %w", c.ID, err)
-	}
-
-	return nil
+func (row journalRow) LogValues() []any {
+	return []any{"title", row.Title}
 }

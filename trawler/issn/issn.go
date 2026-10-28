@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -41,6 +42,21 @@ func ISSN2ISSNL(i string) string {
 		return ""
 	}
 	return v
+}
+
+// LinkingISSNs returns every distinct ISSN-L that issns map to, in the order
+// first seen. Empty ISSNs, and ISSNs too new for the table, contribute nothing:
+// an ISSN-L is never guessed. Pass ISSNs normalized (see Normalize).
+func LinkingISSNs(issns ...string) []string {
+	var out []string
+	for _, i := range issns {
+		l := ISSN2ISSNL(i)
+		if l == "" || slices.Contains(out, l) {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
 }
 
 // Normalize returns i in canonical NNNN-NNNC form, or empty string if it is not

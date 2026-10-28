@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
+	"git.archive.org/webgroup/scholar/trawler/containers"
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
@@ -283,17 +284,17 @@ func linkContainer(client *http.Client, cs *counts.Counts, release *fatcat2.Rele
 		EISSN:     rec.EISSN,
 		Publisher: rec.Publisher,
 	}
-	issns := resolveISSNs(row)
+	c, lookup, skip := row.ToContainer(release.Source)
 
-	if journalSkipReason(row, issns) != "" {
-		if name := cleanName(rec.JournalTitle); name != "" {
+	if skip != "" {
+		if name := containers.CleanName(rec.JournalTitle); name != "" {
 			release.Extra["container_name"] = name
 		}
 		cs.Containers.Skipped++
 		return nil
 	}
 
-	containerID, err := findContainer(client, issns)
+	containerID, err := containers.Find(client, lookup)
 	if err != nil {
 		return err
 	}
@@ -303,8 +304,7 @@ func linkContainer(client *http.Client, cs *counts.Counts, release *fatcat2.Rele
 		return nil
 	}
 
-	c := journalToContainer(row, issns, release.Source)
-	if err := createContainer(client, &c); err != nil {
+	if err := containers.CreateAndIndex(client, &c); err != nil {
 		return err
 	}
 	release.ContainerID = &c.ID

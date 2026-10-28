@@ -153,6 +153,32 @@ func DrainAndClose(resp *http.Response) {
 	resp.Body.Close()
 }
 
+// GetBody fetches url and returns the whole body. Anything but a 200 is an
+// error. It is for upstream files small enough to hold in memory (journal
+// lists, manifests, a day of an upstream's records), not for PDFs.
+func GetBody(ctx context.Context, client *http.Client, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not build request for %s: %w", url, err)
+	}
+	req.Header.Set("User-Agent", "ia-scholar-trawler (scholar@archive.org)")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s failed: %w", url, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		DrainAndClose(resp)
+		return nil, fmt.Errorf("GET %s returned %d", url, resp.StatusCode)
+	}
+	defer resp.Body.Close()
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("could not read %s: %w", url, err)
+	}
+	return bs, nil
+}
+
 // Transport is the connection pool shared by every client in this package.
 //
 // It deliberately leaves MaxConnsPerHost unset. That setting looks like a

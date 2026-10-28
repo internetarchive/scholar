@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
+	"git.archive.org/webgroup/scholar/trawler/containers/containerstest"
 	"git.archive.org/webgroup/scholar/trawler/counts"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"github.com/google/uuid"
@@ -504,29 +505,29 @@ func Test_linkContainer_FindsExisting(t *testing.T) {
 	id := uuid.New()
 	// A container without an ISSN-L, as the journal importer makes for a
 	// journal too new for the ISSN-L table.
-	f := setupFakeFatcat(t, map[string]uuid.UUID{"issne=" + newISSN: id})
+	f := containerstest.SetupFatcat(t, map[string]uuid.UUID{"issne=" + containerstest.NewISSN: id})
 	cs := counts.Counts{}
 	release := newLinkRelease()
 
 	err := linkContainer(http.DefaultClient, &cs, release,
-		&doajRecord{JournalTitle: "Forensic Insights", EISSN: newISSN})
+		&doajRecord{JournalTitle: "Forensic Insights", EISSN: containerstest.NewISSN})
 	require.NoError(t, err)
 	require.Equal(t, &id, release.ContainerID)
-	require.Empty(t, f.created)
+	require.Empty(t, f.Created)
 	require.Equal(t, 1, cs.Containers.Ignored)
 	require.NotContains(t, release.Extra, "container_name")
 }
 
 func Test_linkContainer_CreatesNew(t *testing.T) {
-	f := setupFakeFatcat(t, map[string]uuid.UUID{})
+	f := containerstest.SetupFatcat(t, map[string]uuid.UUID{})
 	cs := counts.Counts{}
 	release := newLinkRelease()
 
 	err := linkContainer(http.DefaultClient, &cs, release,
 		&doajRecord{JournalTitle: "A  Journal", Publisher: "Pub", ISSN: "09152245", EISSN: "1881-3933"})
 	require.NoError(t, err)
-	require.Len(t, f.created, 1)
-	c := f.created[0]
+	require.Len(t, f.Created, 1)
+	c := f.Created[0]
 	require.NotNil(t, release.ContainerID)
 	require.Equal(t, c.ID, *release.ContainerID)
 	require.Equal(t, "A Journal", c.Name)
@@ -534,14 +535,14 @@ func Test_linkContainer_CreatesNew(t *testing.T) {
 	require.Equal(t, "0915-2245", c.ISSNP)
 	require.Equal(t, "1881-3933", c.ISSNE)
 	require.Equal(t, "src", c.Source)
-	require.Equal(t, 1, f.indexed)
+	require.Equal(t, 1, f.Indexed)
 	require.Equal(t, 1, cs.Containers.Added)
 }
 
 // With no valid ISSN there is nothing to find or create a container by, so
 // the journal title is kept as container_name.
 func Test_linkContainer_NoISSN(t *testing.T) {
-	f := setupFakeFatcat(t, map[string]uuid.UUID{})
+	f := containerstest.SetupFatcat(t, map[string]uuid.UUID{})
 	cs := counts.Counts{}
 	release := newLinkRelease()
 
@@ -549,8 +550,8 @@ func Test_linkContainer_NoISSN(t *testing.T) {
 		&doajRecord{JournalTitle: "A Journal", ISSN: "bogus"})
 	require.NoError(t, err)
 	require.Nil(t, release.ContainerID)
-	require.Empty(t, f.lookups)
-	require.Empty(t, f.created)
+	require.Empty(t, f.Lookups)
+	require.Empty(t, f.Created)
 	require.Equal(t, "A Journal", release.Extra["container_name"])
 	require.Equal(t, 1, cs.Containers.Skipped)
 }

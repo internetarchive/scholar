@@ -103,7 +103,7 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 		//OAIID   string `json:"oai_id,omitempty"`
 	}
 
-	out.InDOAJ = out.DoajID != ""
+	out.InDOAJ = out.DoajID != "" || containerInDOAJ(container)
 	out.InJSTOR = out.JstorID != ""
 
 	// TODO post-xref-poc
@@ -168,33 +168,7 @@ func PrepareFatcatReleaseDoc(client *http.Client, release fc2.Release) (FatcatRe
 
 	out.FirstPage, _, _ = strings.Cut(release.Pages, "-")
 
-	license := strings.ToLower(release.LicenseSlug)
-	// TODO if this index sticks around this logic should be consolidated with
-	// whats in generateTags
-	if strings.HasPrefix(license, "cc-") {
-		out.IsOA = true
-	} else if strings.HasPrefix(license, "arxiv-") {
-		out.IsOA = true
-	} else if container != nil && container.Extra != nil {
-		if dl, ok := container.Extra["default_license"]; ok {
-			if strings.HasPrefix(strings.ToLower(dl.(string)), "cc-") {
-				out.IsOA = true
-			}
-		}
-	} else if _, ok := extra["crossref"]; ok {
-		if len(files) > 0 {
-			// we found this release via xref and found a file for it; that implies OA
-			// TODO this logic is questionable but ok for now
-			out.IsOA = true
-		}
-	} else if eoa, ok := extra["is_oa"]; ok {
-		out.IsOA = eoa.(bool)
-	} else if loa, ok := extra["longtail_oa"]; ok && loa.(bool) {
-		out.IsOA = true
-		out.IsLongtailOA = true
-	} else if out.InDOAJ {
-		out.IsOA = true
-	}
+	out.IsOA, out.IsLongtailOA = releaseOA(release, container, len(files) > 0)
 
 	if out.InIA || out.InKBART || out.InJSTOR || out.PMCID != "" || out.ArxivID != "" {
 		out.IsPreserved = true
@@ -249,9 +223,7 @@ func PrepareFatcatContainerDoc(container fc2.Container) FatcatContainerDocV1 {
 		out.Issns = append(out.Issns, out.Issnp)
 	}
 
-	// Containers known to DOAJ carry an extra.doaj entry: the ones we create
-	// from DOAJ's journal list always do, as do legacy fatcat containers.
-	_, out.InDOAJ = container.Extra["doaj"]
+	out.InDOAJ = containerInDOAJ(&container)
 
 	/*
 		  TODO post-xref-poc handle anything in container.extra which for xref is unused
@@ -262,6 +234,83 @@ func PrepareFatcatContainerDoc(container fc2.Container) FatcatContainerDocV1 {
 			IsLongtailOA      bool      `json:"is_longtail_oa"`
 	*/
 	return out
+}
+
+func containerInDOAJ(c *fc2.Container) bool {
+	if c == nil {
+		return false
+	}
+	_, ok := c.Extra["doaj"]
+	return ok
+}
+
+// releaseOA decides is_oa and is_longtail_oa for a release's fatcat index doc.
+func releaseOA(release fc2.Release, container *fc2.Container, hasFiles bool) (isOA, isLongtailOA bool) {
+	isOA, isLongtailOA = containerOA(container)
+	if isOALicense(release.LicenseSlug) {
+		isOA = true
+	}
+	for _, eid := range release.ExternalIDs {
+		if eid.Type == "doaj" && eid.Value != "" {
+			isOA = true
+		}
+	}
+	if b, ok := release.Extra["is_oa"].(bool); ok && b {
+		isOA = true
+	}
+	if b, ok := release.Extra["longtail_oa"].(bool); ok && b {
+		isOA = true
+		isLongtailOA = true
+	}
+	if _, ok := release.Extra["crossref"]; ok && hasFiles {
+		// we found this release via xref and found a file for it; that implies OA
+		// TODO this logic is questionable but ok for now
+		isOA = true
+	}
+
+	return isOA, isLongtailOA
+}
+
+func containerOA(c *fc2.Container) (isOA, isLongtailOA bool) {
+	if c == nil {
+		return false, false
+	}
+	if containerInDOAJ(c) {
+		isOA = true
+	}
+	// legacy containers from chocula's ROAD and szczepanski directories
+	if _, ok := c.Extra["road"]; ok {
+		isOA = true
+	}
+	if _, ok := c.Extra["szczepanski"]; ok {
+		// szczepanski's list includes OA journals at big publishers that also
+		// publish non-OA journals; don't trust it for those
+		if pt, _ := c.Extra["publisher_type"].(string); pt != "big5" {
+			isOA = true
+		}
+	}
+	if dl, ok := c.Extra["default_license"].(string); ok && isOALicense(dl) {
+		isOA = true
+	}
+	// chocula exported DOAJ's license under extra.doaj rather than top level
+	if doaj, ok := c.Extra["doaj"].(map[string]any); ok {
+		if dl, ok := doaj["default_license"].(string); ok && isOALicense(dl) {
+			isOA = true
+		}
+	}
+	if ia, ok := c.Extra["ia"].(map[string]any); ok {
+		if b, ok := ia["longtail_oa"].(bool); ok && b {
+			isOA = true
+			isLongtailOA = true
+		}
+	}
+
+	return isOA, isLongtailOA
+}
+
+func isOALicense(slug string) bool {
+	slug = strings.ToLower(slug)
+	return strings.HasPrefix(slug, "cc-") || strings.HasPrefix(slug, "arxiv-")
 }
 
 func PrepareFatcatFileDoc(file fc2.File) FatcatFileDocV1 {
@@ -653,7 +702,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 
 func generateTags(biblio ScholarBiblioV1, container *fc2.Container) []string {
 	tags := map[string]bool{}
-	if strings.HasPrefix(strings.ToLower(biblio.LicenseSlug), "cc-") {
+	if isOALicense(biblio.LicenseSlug) {
 		tags["oa"] = true
 	}
 
@@ -661,30 +710,18 @@ func generateTags(biblio ScholarBiblioV1, container *fc2.Container) []string {
 		tags["jstor"] = true
 	}
 
+	isOA, isLongtailOA := containerOA(container)
+	if isOA {
+		tags["oa"] = true
+	}
+	if isLongtailOA {
+		tags["longtail"] = true
+	}
+
 	if container != nil && container.Extra != nil {
-		if _, ok := container.Extra["doaj"]; ok {
-			tags["doaj"] = true
-			tags["oa"] = true
-		}
-		if _, ok := container.Extra["road"]; ok {
-			tags["road"] = true
-			tags["oa"] = true
-		}
-		if _, ok := container.Extra["szczepanski"]; ok {
-			tags["szczepanski"] = true
-			if biblio.PublisherType != "big5" {
-				tags["oa"] = true
-			}
-		}
-		if ia, ok := container.Extra["ia"]; ok {
-			if _, ok := ia.(map[string]any)["longtail_oa"]; ok {
-				tags["longtail"] = true
-				tags["oa"] = true
-			}
-		}
-		if dl, ok := container.Extra["default_license"]; ok {
-			if strings.HasPrefix(strings.ToLower(dl.(string)), "cc-") {
-				tags["oa"] = true
+		for _, k := range []string{"doaj", "road", "szczepanski"} {
+			if _, ok := container.Extra[k]; ok {
+				tags[k] = true
 			}
 		}
 		if p, ok := container.Extra["platform"]; ok {

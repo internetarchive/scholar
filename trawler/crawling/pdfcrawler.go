@@ -671,6 +671,7 @@ func (c PDFCrawler) spnToCdx(ctx context.Context, u string, simpleGet bool) (*cd
 		SkipFirstArchive:   true,
 		DelayForJavascript: !simpleGet,
 		JavascriptTimeout:  30,
+		UserAgent:          "Mozilla/5.0 (compatible; archive.org_bot +http://www.archive.org/details/archive.org_bot)",
 		// NB this will usually not come up since we're (ideally) crawling new
 		// stuff every day. however, when debugging these workflows, we send a lot
 		// of repeated things to SPN. thus, a not archived within setting which

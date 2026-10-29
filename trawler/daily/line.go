@@ -171,7 +171,20 @@ func processLine(ctx context.Context, d lineDeps, jsonLine string) (DailyCounts,
 	if err != nil {
 		return out, oc, fmt.Errorf("failed to check files for release %q: %w", release.ID, err)
 	}
-	if len(existingFiles) > 0 {
+	var foundArchive bool
+	for _, f := range existingFiles {
+		for _, u := range f.URLs {
+			if u.Rel == "webarchive" || strings.Contains(u.URL, "archive.org") {
+				foundArchive = true
+				break
+			}
+		}
+		if foundArchive {
+			break
+		}
+	}
+
+	if foundArchive {
 		d.Log.Info(fmt.Sprintf("skipping crawl for %q, already has %d files", release.ID, len(existingFiles)))
 		return skip(fmt.Sprintf("release already has %d files", len(existingFiles)))
 	}

@@ -3,5 +3,6 @@ go 1.26.0
 use ./trawler
 use ./scholkit
 use ./blobproc
+use ./sitemap
 use ./pubmed2json
 use ./kbart

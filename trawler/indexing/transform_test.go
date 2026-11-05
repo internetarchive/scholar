@@ -82,6 +82,8 @@ func Test_releaseOA(t *testing.T) {
 		{"container doaj.default_license", fc2.Release{}, &fc2.Container{Extra: map[string]any{"doaj": map[string]any{"default_license": "CC-BY"}}}, false, true, false},
 		{"container non-oa default_license", fc2.Release{}, &fc2.Container{Extra: map[string]any{"default_license": "all-rights-reserved"}}, false, false, false},
 		{"container ia longtail_oa", fc2.Release{}, &fc2.Container{Extra: map[string]any{"ia": map[string]any{"longtail_oa": true}}}, false, true, true},
+		{"container ezb oa", fc2.Release{}, &fc2.Container{Extra: map[string]any{"ezb": map[string]any{"oa": true}}}, false, true, false},
+		{"container ezb free but not oa", fc2.Release{}, &fc2.Container{Extra: map[string]any{"ezb": map[string]any{"price_type": "free", "diamond": true}}}, false, false, false},
 		{"container with unrelated extra", fc2.Release{}, legacy, false, false, false},
 	}
 	for _, c := range cases {

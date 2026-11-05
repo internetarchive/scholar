@@ -298,6 +298,13 @@ func containerOA(c *fc2.Container) (isOA, isLongtailOA bool) {
 			isOA = true
 		}
 	}
+	// EZB labels open access journals explicitly. Its "free of charge" price
+	// type is much broader (free to read, no reuse rights) and is not used.
+	if ezb, ok := c.Extra["ezb"].(map[string]any); ok {
+		if b, ok := ezb["oa"].(bool); ok && b {
+			isOA = true
+		}
+	}
 	if ia, ok := c.Extra["ia"].(map[string]any); ok {
 		if b, ok := ia["longtail_oa"].(bool); ok && b {
 			isOA = true

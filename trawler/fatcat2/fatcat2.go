@@ -772,6 +772,77 @@ func GetContainer(c *http.Client, id uuid.UUID) (Container, error) {
 	return out, nil
 }
 
+// GetContainerDoc fetches a container as fc2 serves it, every field intact.
+//
+// It is the half of a read-modify-write that Container cannot do: fc2's PUT
+// replaces the whole entity and takes an omitted field as null, so a container
+// round-tripped through Container would lose the fields Container does not
+// carry (wikidata_qid) and fail on the ones it must not null (created).
+func GetContainerDoc(c *http.Client, id uuid.UUID) (map[string]any, error) {
+	fc2url := viper.GetString("fatcat2.endpoint")
+	req, err := http.NewRequest("GET", fc2url+"/container/"+id.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fc2 /container/%s failed: %w", id.String(), err)
+	}
+	defer resp.Body.Close()
+
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("could not read container '%s': %w", id.String(), err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("fc2 /container/%s returned %d: %s", id.String(), resp.StatusCode, bs)
+	}
+
+	out := map[string]any{}
+	if err := json.Unmarshal(bs, &out); err != nil {
+		return nil, fmt.Errorf("could not unmarshal container '%s': %w", id.String(), err)
+	}
+
+	return out, nil
+}
+
+// PutContainerDoc replaces an existing container with doc, which should be a
+// GetContainerDoc result with changes made to it.
+func PutContainerDoc(client *http.Client, doc map[string]any) error {
+	fc2url := viper.GetString("fatcat2.endpoint")
+	fc2key := viper.GetString("fatcat2.key")
+
+	bs, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("could not marshal container %v: %w", doc["id"], err)
+	}
+
+	req, err := http.NewRequest("PUT", fc2url+"/container", bytes.NewBuffer(bs))
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("X-API-Key", fc2key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("container PUT failed for %v: %w", doc["id"], err)
+	}
+	defer resp.Body.Close()
+
+	// 201 would mean fc2 had no such container and created one. That is not
+	// what an update means to do, but nothing is lost by it either.
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code for container %v PUT: %d; body '%s'",
+			doc["id"], resp.StatusCode, b)
+	}
+
+	return nil
+}
+
 // GetCreator looks up a creator via its ID
 func GetCreator(c *http.Client, id uuid.UUID) (Creator, error) {
 	out := Creator{}

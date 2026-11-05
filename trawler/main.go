@@ -7,6 +7,7 @@ import (
 
 	"git.archive.org/webgroup/scholar/trawler/cmd/dailycmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/doajcmd"
+	"git.archive.org/webgroup/scholar/trawler/cmd/ezbcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/fccmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/indexcmd"
 	"git.archive.org/webgroup/scholar/trawler/cmd/openalexcmd"
@@ -76,6 +77,7 @@ func init() {
 	rootCmd.AddCommand(scrapecmd.Cmd)
 	rootCmd.AddCommand(doajcmd.Cmd)
 	rootCmd.AddCommand(openalexcmd.Cmd)
+	rootCmd.AddCommand(ezbcmd.Cmd)
 }
 
 func initConfig() {

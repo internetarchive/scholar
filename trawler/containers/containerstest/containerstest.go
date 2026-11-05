@@ -3,6 +3,7 @@ package containerstest
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,8 +22,8 @@ import (
 // Test_NewISSN_NotInTable says so if one does.
 const NewISSN = "9876-5434"
 
-// Fatcat stands in for fatcat2 (container lookup and create), fatcat1 (legacy
-// lookup) and ES (indexing).
+// Fatcat stands in for fatcat2 (container lookup, create, get and replace),
+// fatcat1 (legacy lookup) and ES (indexing).
 type Fatcat struct {
 	mu sync.Mutex
 	// existing maps "field=value" to a container ID.
@@ -31,6 +32,11 @@ type Fatcat struct {
 	Lookups []string
 	// Created is every container created.
 	Created []fatcat2.Container
+	// Docs is what a GET of an existing container returns, by ID. A PUT
+	// replaces the entry.
+	Docs map[uuid.UUID]map[string]any
+	// Put is every container replaced by a PUT, as sent.
+	Put []map[string]any
 	// Indexed is how many documents were sent to ES.
 	Indexed int
 	// Legacy is how many fatcat1 lookups were made.
@@ -57,6 +63,23 @@ func (f *Fatcat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(bs, &c)
 		f.Created = append(f.Created, c)
 		w.WriteHeader(201)
+	case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/fc2/container/"):
+		id, err := uuid.Parse(strings.TrimPrefix(r.URL.Path, "/fc2/container/"))
+		doc, ok := f.Docs[id]
+		if err != nil || !ok {
+			w.WriteHeader(404)
+			return
+		}
+		json.NewEncoder(w).Encode(doc)
+	case r.Method == "PUT" && r.URL.Path == "/fc2/container":
+		doc := map[string]any{}
+		bs, _ := io.ReadAll(r.Body)
+		json.Unmarshal(bs, &doc)
+		f.Put = append(f.Put, doc)
+		if id, err := uuid.Parse(fmt.Sprint(doc["id"])); err == nil {
+			f.Docs[id] = doc
+		}
+		w.WriteHeader(200)
 	case strings.HasPrefix(r.URL.Path, "/fc1/"):
 		f.Legacy++
 		w.WriteHeader(404)
@@ -72,7 +95,7 @@ func (f *Fatcat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // fatcat and ES endpoints at it. existing maps "field=value" (e.g.
 // "issnl=0915-2245") to the containers fatcat already has.
 func SetupFatcat(t *testing.T, existing map[string]uuid.UUID) *Fatcat {
-	f := &Fatcat{existing: existing}
+	f := &Fatcat{existing: existing, Docs: map[uuid.UUID]map[string]any{}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	viper.Set("fatcat2.endpoint", srv.URL+"/fc2")

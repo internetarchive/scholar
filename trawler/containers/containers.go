@@ -6,9 +6,13 @@
 // The importers are create-only. A row whose journal fatcat already has is
 // left alone; existing containers may have been curated, and no one upstream
 // is the authority for most of them.
+//
+// Bringing existing containers up to date from an upstream worth trusting for
+// some part of them (EZB) is a separate, deliberate step: see UpdateExisting.
 package containers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +22,7 @@ import (
 	"git.archive.org/webgroup/scholar/trawler/cleaning"
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
+	"git.archive.org/webgroup/scholar/trawler/issn"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 	"go.temporal.io/sdk/activity"
@@ -39,6 +44,11 @@ func CreateAndIndex(client *http.Client, c *fatcat2.Container) error {
 
 	// NB as in the article importers, a failure here is not revisited: the next
 	// run finds the container in fatcat and leaves it alone.
+	return index(client, c)
+}
+
+// index sends c to the container index in Elasticsearch.
+func index(client *http.Client, c *fatcat2.Container) error {
 	doc := indexing.PrepareFatcatContainerDoc(*c)
 	bs, err := json.Marshal(doc)
 	if err != nil {
@@ -158,6 +168,143 @@ func Ensure(client *http.Client, row Row, source string) (Outcome, *fatcat2.Cont
 	}
 
 	return Added, &c, nil
+}
+
+// UpdateOutcome is what UpdateExisting did with a row.
+type UpdateOutcome string
+
+const (
+	// Updated is a strongly matched container the row changed.
+	Updated UpdateOutcome = "updated"
+	// Unchanged is a strongly matched container the row had nothing to add to.
+	Unchanged UpdateOutcome = "unchanged"
+	// NotFound is a row fatcat has no container for. Nothing is created.
+	NotFound UpdateOutcome = "not-found"
+	// Conflicted is a container found by ISSN but not trusted to be the row's
+	// journal, and left alone; see StrongMatch.
+	Conflicted UpdateOutcome = "conflicted"
+	// Unusable is a row with nothing to look a container up by.
+	Unusable UpdateOutcome = "unusable"
+)
+
+// Updater is an upstream record that may bring fatcat's existing container for
+// its journal up to date.
+type Updater interface {
+	// Lookup returns every ISSN to find the row's container by, ISSN-Ls first
+	// (see Find). A non-empty skip reason means the row cannot be matched to a
+	// container, and the ISSNs are meaningless.
+	Lookup() (issns []string, skip string)
+	// Update applies the row to doc, an existing container as fatcat2 serves it
+	// (see fatcat2.GetContainerDoc). It is only called on a strong match.
+	//
+	// It should touch only what the upstream speaks for -- its own key in extra,
+	// and fields the container has no value for -- and must be idempotent: a
+	// second application of the same row changes nothing. UpdateExisting writes
+	// only when doc differs afterwards, so that is what keeps a re-run from
+	// rewriting every container it matches.
+	Update(doc map[string]any)
+	// LogValues identifies the row in a log line, as key/value pairs.
+	LogValues() []any
+}
+
+// StrongMatch reports whether doc, a container found by one of issns, can be
+// trusted to be the journal issns describe: every ISSN it carries is one of
+// issns, or belongs to the ISSN-L group of one of them.
+//
+// A lookup by ISSN finds a container that shares any one ISSN with the row.
+// That is enough for an importer to decline to create a duplicate, but not to
+// write to it: legacy containers merged across title changes, and upstreams
+// fold a journal's earlier titles into one record, so a shared ISSN can join
+// two journals.
+func StrongMatch(doc map[string]any, issns []string) bool {
+	group := map[string]bool{}
+	for _, i := range issns {
+		if i != "" {
+			group[i] = true
+		}
+	}
+
+	shared := false
+	for _, k := range []string{"issnl", "issnp", "issne"} {
+		raw, _ := doc[k].(string)
+		if raw == "" {
+			continue
+		}
+		i := issn.Normalize(raw)
+		if i == "" {
+			// An ISSN we cannot even read is not one we can vouch for.
+			return false
+		}
+		if !group[i] && !group[issn.ISSN2ISSNL(i)] {
+			return false
+		}
+		shared = true
+	}
+	return shared
+}
+
+// UpdateExisting brings fatcat's container for row up to date with it, if
+// fatcat has one and it strongly matches, writing it back to fatcat2 and
+// re-indexing it. It never creates a container. With dryRun it decides the
+// outcome but writes nothing.
+//
+// On Updated it returns the container as updated.
+func UpdateExisting(client *http.Client, row Updater, dryRun bool) (UpdateOutcome, *fatcat2.Container, error) {
+	lookup, skip := row.Lookup()
+	if skip != "" {
+		return Unusable, nil, nil
+	}
+
+	existing, err := Find(client, lookup)
+	if err != nil {
+		return "", nil, err
+	}
+	if existing == nil {
+		return NotFound, nil, nil
+	}
+
+	doc, err := fatcat2.GetContainerDoc(client, *existing)
+	if err != nil {
+		return "", nil, err
+	}
+	if !StrongMatch(doc, lookup) {
+		return Conflicted, nil, nil
+	}
+
+	// Compared as JSON, which sorts map keys and spells a number the same
+	// whether it arrived as a float64 or Update put in an int.
+	before, err := json.Marshal(doc)
+	if err != nil {
+		return "", nil, fmt.Errorf("could not marshal container %s: %w", existing, err)
+	}
+	row.Update(doc)
+	after, err := json.Marshal(doc)
+	if err != nil {
+		return "", nil, fmt.Errorf("could not marshal updated container %s: %w", existing, err)
+	}
+	if bytes.Equal(before, after) {
+		return Unchanged, nil, nil
+	}
+
+	var updated fatcat2.Container
+	if err := json.Unmarshal(after, &updated); err != nil {
+		return "", nil, fmt.Errorf("could not read back updated container %s: %w", existing, err)
+	}
+	if dryRun {
+		return Updated, &updated, nil
+	}
+
+	if err := fatcat2.PutContainerDoc(client, doc); err != nil {
+		return "", nil, err
+	}
+	// Without this, the container's search doc keeps its old publisher and
+	// ISSNs. A failed index is not revisited by a re-run, which finds the
+	// container already current and does not write it again.
+	if err := index(client, &updated); err != nil {
+		return "", nil, err
+	}
+
+	return Updated, &updated, nil
 }
 
 // ImportRows makes sure fatcat has a container for each of rows from

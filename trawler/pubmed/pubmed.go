@@ -434,7 +434,7 @@ func pubmedToFc(client *http.Client, article pubmed2json.PubmedArticle, source s
 				}
 			}
 
-			contrib.Position = position
+			contrib.Position = new(position)
 			position++
 			release.Contribs = append(release.Contribs, contrib)
 		}

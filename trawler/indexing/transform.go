@@ -501,7 +501,7 @@ func PrepareFulltextDoc(ictx FulltextTransformCtx) ScholarDocV1 {
 			out.Biblio.ContribNames = append(out.Biblio.ContribNames, name)
 		}
 
-		if contrib.Position > 0 {
+		if contrib.Position != nil && *contrib.Position > 0 {
 			out.Biblio.ContribCount++
 		}
 	}

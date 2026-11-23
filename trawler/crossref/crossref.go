@@ -512,7 +512,7 @@ func xrefToFc(client *http.Client, xrefdoc crossrefDoc) (*fatcat2.Release, error
 		if err != nil {
 			return release, err
 		}
-		contrib.Position = i
+		contrib.Position = new(i)
 		contrib.Role = "author"
 		release.Contribs = append(release.Contribs, contrib)
 	}

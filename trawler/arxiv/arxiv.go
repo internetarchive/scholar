@@ -139,7 +139,7 @@ func contribs(authors []arxivAuthor) []fatcat2.ReleaseContrib {
 	for i, a := range authors {
 		c := fatcat2.ReleaseContrib{
 			Role:     "author",
-			Position: i,
+			Position: new(i),
 			Extra:    map[string]any{},
 		}
 		c.Surname = a.KeyName

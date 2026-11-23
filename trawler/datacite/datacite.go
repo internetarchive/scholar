@@ -408,7 +408,7 @@ func parseContribs(creators []dataciteCreator, role string) []fatcat2.ReleaseCon
 				continue
 			}
 			out = append(out, fatcat2.ReleaseContrib{
-				Position: idx,
+				Position: new(idx),
 				Role:     role,
 				Extra:    map[string]any{"organization": name},
 			})
@@ -466,7 +466,7 @@ func parseContribs(creators []dataciteCreator, role string) []fatcat2.ReleaseCon
 		}
 
 		rc := fatcat2.ReleaseContrib{
-			Position:       idx,
+			Position:       new(idx),
 			RawName:        name,
 			GivenName:      given,
 			Surname:        surname,

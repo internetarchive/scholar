@@ -1,0 +1,416 @@
+{
+    "work_id": "c86ef0d3-4ea5-4c7a-9a27-f95a28dfcb74",
+    "container_id": "6f73152e-275e-4f31-ba25-e455c8b08eda",
+    "extids": [
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "id_type": "doi",
+            "id_value": "10.1186/1471-2105-11-1"
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "id_type": "pmid",
+            "id_value": "20043860"
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "id_type": "pmcid",
+            "id_value": "PMC2837025"
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "id_type": "wikidata_qid",
+            "id_value": "Q30493620"
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "id_type": "core_id",
+            "id_value": "115926930"
+        }
+    ],
+    "contribs": [
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "creator_id": null,
+            "raw_name": "Shuangge Ma",
+            "given_name": null,
+            "surname": null,
+            "role": "author",
+            "raw_affiliation": null,
+            "position": 0,
+            "extra": {
+                "seq": "first"
+            }
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "creator_id": null,
+            "raw_name": "Michael R Kosorok",
+            "given_name": null,
+            "surname": null,
+            "role": "author",
+            "raw_affiliation": null,
+            "position": 1,
+            "extra": null
+        }
+    ],
+    "abstracts": [],
+    "citations": [
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "bdc0938b-c66a-4e50-a186-81f4b2d44d5f",
+            "position": 0
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "2094ef9a-d932-4a54-85ad-252e7d42a9cd",
+            "position": 1
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "d8302ef0-d8e9-4121-bfa8-0d784a22d758",
+            "position": 2
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "a6503a03-b517-43b3-9124-65348e1941ad",
+            "position": 3
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "fa20c984-2df5-48f8-94ec-565139e9e0f6",
+            "position": 4
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "324390ff-ecc4-4d20-a2a6-7fd880354cb1",
+            "position": 5
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "eb260d2f-e8a6-470c-9a00-fe17935e247b",
+            "position": 6
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "1a2f3233-1859-4291-93e7-d03e7f0b0cd3",
+            "position": 7
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "e90b2a78-9685-4880-aac5-46ec956b7504",
+            "position": 8
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "46ef535f-f527-47f6-954b-7245482b5545",
+            "position": 9
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "0ae4f12a-9fbc-4363-a2ce-ab51da9e40d6",
+            "position": 10
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "8e3b4978-4997-41ca-b857-8d7bd76b5c9e",
+            "position": 11
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "8951400f-e972-48ba-a543-0ad22e935b9d",
+            "position": 12
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "6278afab-a903-459c-8bd7-f7f659a7bb67",
+            "position": 13
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "767c954c-c4d1-4a06-839e-430dc254755a",
+            "position": 14
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "7e78ca34-ba79-48ff-9394-de1f78d565eb",
+            "position": 15
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "fea12ae3-6bd9-4c09-b112-0b58e76bcdab",
+            "position": 16
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "18291419-3f7a-46ff-a8ed-d354db59c2bc",
+            "position": 17
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "62510a5d-94cf-4b36-aab5-aee4e85d3c0c",
+            "position": 18
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "6d5ed85f-5d4c-4772-81e4-c63a561d4add",
+            "position": 19
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "d6e68ac1-d527-4dbd-a149-33a0c762b20b",
+            "position": 20
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "7a9118ff-9eb4-4bb8-97b9-2fcbe2a85971",
+            "position": 21
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "6c7f0cf4-6971-4117-86b2-649b4dd025cc",
+            "position": 22
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "de8c2669-0476-46da-a4bd-95c597f72a4d",
+            "position": 23
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "f74da2cb-9b33-4d33-8b6a-1ea70eae6799",
+            "position": 24
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "6debe27a-40d2-4c99-ab20-8caa89fd7a7c",
+            "position": 25
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "a0d220f8-7b87-4c80-a99c-447e828fa27d",
+            "position": 26
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "a8ca134d-7e73-4281-87fc-3992625a74a8",
+            "position": 27
+        },
+        {
+            "release_id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+            "target_release_id": "54e9913b-a62a-4ce3-b40b-7c809da1fd2b",
+            "position": 28
+        }
+    ],
+    "id": "b67029da-0196-4c1e-b9ae-6112c18a1696",
+    "created": "2025-05-23T17:30:19.120Z",
+    "updated": "2025-05-23T17:30:19.120Z",
+    "extra": {
+        "pubmed": {
+            "pub_types": [
+                "Journal Article"
+            ]
+        },
+        "crossref": {
+            "type": "journal-article",
+            "alternative-id": [
+                "1471-2105-11-1"
+            ]
+        }
+    },
+    "source": "legacy_import",
+    "hidden_reason": null,
+    "hidden_when": null,
+    "title": "Detection of gene pathways with predictive power for breast cancer prognosis",
+    "original_title": null,
+    "subtitle": null,
+    "release_type": "article-journal",
+    "release_stage": "published",
+    "release_date": null,
+    "release_year": 2010,
+    "volume": "11",
+    "issue": null,
+    "pages": null,
+    "number": null,
+    "version": null,
+    "publisher": "Springer Nature",
+    "language": "en",
+    "license_slug": null,
+    "withdrawn_status": null,
+    "refs": [
+        {
+            "extra": {
+                "pmid": "16199517",
+                "unstructured": "Proc Natl Acad Sci U S A. 2005 Oct 25;102(43):15545-50"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "16636340",
+                "unstructured": "J Clin Oncol. 2006 May 20;24(15):2261-7"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "16369572",
+                "unstructured": "Nat Rev Genet. 2006 Jan;7(1):55-65"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "18039137",
+                "unstructured": "Annu Rev Pathol. 2008;3:67-97"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "19118496",
+                "unstructured": "BMC Bioinformatics. 2009;10:1"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "15598354",
+                "unstructured": "BMC Genomics. 2004;5(1):94"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "19477432",
+                "unstructured": "Cancer Cell. 2009 Jun 2;15(6):539-50"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "18202032",
+                "unstructured": "Brief Bioinform. 2008 May;9(3):189-97"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "11507038",
+                "unstructured": "Cancer Res. 2001 Aug 15;61(16):5979-84"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "11823860",
+                "unstructured": "Nature. 2002 Jan 31;415(6871):530-6"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "17221153",
+                "unstructured": "Breast Cancer Res Treat. 2007 Nov;106(1):39-47"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "17922140",
+                "unstructured": "J Cancer Res Clin Oncol. 2008 May;134(5):551-9"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "12917485",
+                "unstructured": "Proc Natl Acad Sci U S A. 2003 Sep 2;100(18):10393-8"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "19223452",
+                "unstructured": "Bioinformatics. 2009 Apr 1;25(7):882-9"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "14693814",
+                "unstructured": "Bioinformatics. 2004 Jan 1;20(1):93-9"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "19329653",
+                "unstructured": "Mol Cell Proteomics. 2009 Jun;8(6):1278-94"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "16977583",
+                "unstructured": "Histol Histopathol. 2006 Dec;21(12):1321-9"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "18604872",
+                "unstructured": "J Pathol. 2008 Sep;216(1):93-102"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "18562478",
+                "unstructured": "Brief Bioinform. 2008 Sep;9(5):392-403"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "12498389",
+                "unstructured": "Clin Exp Metastasis. 2002;19(7):603-8"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "12747878",
+                "unstructured": "Lancet. 2003 May 10;361(9369):1590-6"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "16478745",
+                "unstructured": "J Natl Cancer Inst. 2006 Feb 15;98(4):262-72"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "12490681",
+                "unstructured": "N Engl J Med. 2002 Dec 19;347(25):1999-2009"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "19192285",
+                "unstructured": "BMC Bioinformatics. 2009;10:47"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "20057914",
+                "unstructured": "Stat Interface. 2009 Jan 1;2(1):1-11"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "17079448",
+                "unstructured": "Cancer Res. 2006 Nov 1;66(21):10292-301"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "11553815",
+                "unstructured": "Proc Natl Acad Sci U S A. 2001 Sep 11;98(19):10869-74"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "15950303",
+                "unstructured": "Trends Biotechnol. 2005 Aug;23(8):429-35"
+            }
+        },
+        {
+            "extra": {
+                "pmid": "12509396",
+                "unstructured": "J Natl Cancer Inst. 2003 Jan 1;95(1):14-8"
+            }
+        }
+    ]
+}

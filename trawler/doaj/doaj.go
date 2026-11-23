@@ -145,7 +145,7 @@ func contribs(authors []doajAuthor) []fatcat2.ReleaseContrib {
 		}
 		c := fatcat2.ReleaseContrib{
 			Role:     "author",
-			Position: i,
+			Position: new(i),
 			Extra:    map[string]any{},
 		}
 		c.RawName = a.Name

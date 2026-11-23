@@ -119,7 +119,7 @@ func grobidToRelease(client *http.Client, source string, gdoc *tei.GrobidDocumen
 			RawName:        author.FullName,
 			GivenName:      author.GivenName,
 			Surname:        author.Surname,
-			Position:       i,
+			Position:       new(i),
 			Role:           "author",
 			RawAffiliation: rawAffiliation,
 		}

@@ -256,7 +256,7 @@ func TestArxivToFc(t *testing.T) {
 	assert.Equal(t, "Smith", release.Contribs[0].Surname)
 	assert.Equal(t, "John", release.Contribs[0].GivenName)
 	assert.Equal(t, "author", release.Contribs[0].Role)
-	assert.Equal(t, 0, release.Contribs[0].Position)
+	assert.Equal(t, new(0), release.Contribs[0].Position)
 	assert.Equal(t, "MIT", release.Contribs[1].RawAffiliation)
 
 	// Extra

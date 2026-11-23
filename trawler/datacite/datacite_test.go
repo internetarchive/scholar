@@ -684,8 +684,8 @@ func TestParseContribs(t *testing.T) {
 		if got[0].Role != "author" {
 			t.Errorf("Role: got %q", got[0].Role)
 		}
-		if got[0].Position != 0 {
-			t.Errorf("Position: got %d", got[0].Position)
+		if got[0].Position == nil || *got[0].Position != 0 {
+			t.Errorf("Position: got %v", got[0].Position)
 		}
 	})
 
@@ -777,8 +777,8 @@ func TestParseContribs(t *testing.T) {
 			t.Fatalf("expected 3 contribs, got %d", len(got))
 		}
 		for i, c := range got {
-			if c.Position != i {
-				t.Errorf("contrib %d: Position=%d, want %d", i, c.Position, i)
+			if c.Position == nil || *c.Position != i {
+				t.Errorf("contrib %d: Position=%v, want %d", i, c.Position, i)
 			}
 		}
 	})

@@ -47,24 +47,39 @@ func (c Container) GetSource() string {
 	return c.Source
 }
 
+// Nullable string columns below are tagged omitempty: fc2 reads an absent
+// field as NULL, so an empty Go string goes back to the server as NULL rather
+// than overwriting a NULL with "". See roundtrip_test.go.
+
 type Abstract struct {
 	ReleaseID *uuid.UUID `json:"release_id"`
 	Content   string     `json:"content"`
 	SHA1      string     `json:"sha1"`
-	Language  string     `json:"language"`
-	MIMEType  string     `json:"mimetype"`
+	Language  string     `json:"language,omitempty"`
+	MIMEType  string     `json:"mimetype,omitempty"`
 }
 
 type ReleaseContrib struct {
-	CreatorID      *uuid.UUID     `json:"creator_id"`
-	ReleaseID      *uuid.UUID     `json:"release_id"`
-	Position       int            `json:"position"`
-	RawName        string         `json:"raw_name"`
-	GivenName      string         `json:"given_name"`
-	Surname        string         `json:"surname"`
-	RawAffiliation string         `json:"raw_affiliation"`
-	Role           string         `json:"role"`
+	CreatorID *uuid.UUID `json:"creator_id"`
+	ReleaseID *uuid.UUID `json:"release_id"`
+	// Position is a pointer because NULL and 0 are both common and distinct:
+	// many contribs carried over from legacy fatcat have no position.
+	Position       *int           `json:"position"`
+	RawName        string         `json:"raw_name,omitempty"`
+	GivenName      string         `json:"given_name,omitempty"`
+	Surname        string         `json:"surname,omitempty"`
+	RawAffiliation string         `json:"raw_affiliation,omitempty"`
+	Role           string         `json:"role,omitempty"`
 	Extra          map[string]any `json:"extra"`
+}
+
+// ReleaseCitation is a parsed reference from one release to another (fc2's
+// `citations`, stored in the release_ref table). It is distinct from
+// Release.Refs, which is the raw reference blob.
+type ReleaseCitation struct {
+	ReleaseID       *uuid.UUID `json:"release_id"`
+	TargetReleaseID uuid.UUID  `json:"target_release_id"`
+	Position        int        `json:"position"`
 }
 
 type ExternalID struct {
@@ -102,24 +117,26 @@ func (rd ReleaseDate) Format(s string) string {
 }
 
 type Release struct {
-	ID              uuid.UUID      `json:"id,omitzero"`
-	WorkID          *uuid.UUID     `json:"work_id"`
-	Title           string         `json:"title,omitempty"`
-	OriginalTitle   string         `json:"original_title,omitempty"`
-	Subtitle        string         `json:"subtitle,omitempty"`
-	Type            string         `json:"release_type,omitempty"`
-	Stage           string         `json:"release_stage,omitempty"`
-	ReleaseDate     *ReleaseDate   `json:"release_date"`
-	ReleaseYear     int            `json:"release_year,omitempty"`
-	Source          string         `json:"source,omitempty"`
-	Volume          string         `json:"volume,omitempty"`
-	Issue           string         `json:"issue,omitempty"`
-	Pages           string         `json:"pages,omitempty"`
-	Publisher       string         `json:"publisher,omitempty"`
-	Language        string         `json:"language,omitempty"`
-	LegacyRevID     *uuid.UUID     `json:"legacy_rev_id"`
-	LicenseSlug     string         `json:"license_slug,omitempty"`
-	Extra           map[string]any `json:"extra,omitempty"`
+	ID            uuid.UUID    `json:"id,omitzero"`
+	WorkID        *uuid.UUID   `json:"work_id"`
+	Title         string       `json:"title,omitempty"`
+	OriginalTitle string       `json:"original_title,omitempty"`
+	Subtitle      string       `json:"subtitle,omitempty"`
+	Type          string       `json:"release_type,omitempty"`
+	Stage         string       `json:"release_stage,omitempty"`
+	ReleaseDate   *ReleaseDate `json:"release_date"`
+	ReleaseYear   int          `json:"release_year,omitempty"`
+	Source        string       `json:"source,omitempty"`
+	Volume        string       `json:"volume,omitempty"`
+	Issue         string       `json:"issue,omitempty"`
+	Pages         string       `json:"pages,omitempty"`
+	Publisher     string       `json:"publisher,omitempty"`
+	Language      string       `json:"language,omitempty"`
+	LegacyRevID   *uuid.UUID   `json:"legacy_rev_id"`
+	LicenseSlug   string       `json:"license_slug,omitempty"`
+	// not omitempty: fc2 reads an absent extra as NULL, which would turn an
+	// empty {} into NULL on a round trip.
+	Extra           map[string]any `json:"extra"`
 	WithdrawnStatus string         `json:"withdrawn_status,omitempty"`
 	Number          string         `json:"number,omitempty"`
 	Version         string         `json:"version,omitempty"`
@@ -131,6 +148,10 @@ type Release struct {
 	ContainerID *uuid.UUID       `json:"container_id"`
 	ExternalIDs []ExternalID     `json:"extids,omitempty"`
 	Contribs    []ReleaseContrib `json:"contribs,omitempty"`
+	// Citations must be carried even by code that never looks at them: a PUT
+	// replaces the release wholesale and fc2 reads an absent list as empty, so
+	// dropping this field from a GET-modify-PUT deletes the citations.
+	Citations []ReleaseCitation `json:"citations,omitempty"`
 
 	// TODO understand when the structured ReleaseRefs are added in the old system
 }
@@ -293,6 +314,8 @@ type File struct {
 	Md5         string     `json:"md5"`
 	Mimetype    string     `json:"mimetype"`
 	LegacyRevID *uuid.UUID `json:"legacy_rev_id"`
+	// fc2 reads an absent extra as NULL, so a GET-modify-PUT must carry it.
+	Extra map[string]any `json:"extra"`
 }
 
 func (f File) GetSource() string {

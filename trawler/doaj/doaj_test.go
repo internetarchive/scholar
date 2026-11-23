@@ -266,8 +266,8 @@ func Test_contribs(t *testing.T) {
 		if len(got) != 2 {
 			t.Fatalf("expected 2 contribs, got %d", len(got))
 		}
-		if got[0].Position != 1 || got[1].Position != 2 {
-			t.Errorf("unexpected positions: %d, %d", got[0].Position, got[1].Position)
+		if got[0].Position == nil || *got[0].Position != 1 || got[1].Position == nil || *got[1].Position != 2 {
+			t.Errorf("unexpected positions: %v, %v", got[0].Position, got[1].Position)
 		}
 	})
 

@@ -167,7 +167,7 @@ func Run(ctx context.Context, cfg Config) error {
 		if err != nil {
 			return fmt.Errorf("could not build pdf processor: %w", err)
 		}
-		ix := esIndexer{http: httpclient.Shared(), fetch: fetcher, processor: processor}
+		ix := esIndexer{http: httpclient.Shared(), fetch: fetcher, processor: processor, busyBackoff: defaultBusyBackoff}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

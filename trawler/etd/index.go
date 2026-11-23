@@ -3,9 +3,11 @@ package etd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"git.archive.org/webgroup/scholar/trawler/fatcat2"
 	"git.archive.org/webgroup/scholar/trawler/indexing"
@@ -22,10 +24,39 @@ type Indexer interface {
 	Index(ctx context.Context, job IndexJob) (string, error)
 }
 
+// pdfProcessor is the part of pdf.Processor the indexer uses.
+type pdfProcessor interface {
+	Process(ctx context.Context, pdfBs []byte, sha1 string) (pdf.Content, error)
+}
+
 type esIndexer struct {
 	http      *http.Client
 	fetch     Fetcher
-	processor *pdf.Processor
+	processor pdfProcessor
+	// busyBackoff is the wait before each retry of a GROBID 503; its length
+	// is the number of retries. See processWhenFree.
+	busyBackoff []time.Duration
+}
+
+// defaultBusyBackoff spans about four minutes, a few long theses' worth of
+// GROBID time, before a busy GROBID counts against the job.
+var defaultBusyBackoff = []time.Duration{15 * time.Second, 30 * time.Second, 60 * time.Second, 120 * time.Second}
+
+// processWhenFree runs the PDF through GROBID, waiting out 503s. GROBID
+// answers 503 when every one of its processing slots is taken, which with the
+// index pool sized to GROBID's capacity is ordinary contention rather than a
+// failure, so it is retried here instead of spending one of the job's attempts.
+func (x esIndexer) processWhenFree(ctx context.Context, bs []byte) (pdf.Content, error) {
+	for i := 0; ; i++ {
+		content, err := x.processor.Process(ctx, bs, "")
+		var busy *pdf.GrobidUnexpectedError
+		if !errors.As(err, &busy) || busy.StatusCode != http.StatusServiceUnavailable || i >= len(x.busyBackoff) {
+			return content, err
+		}
+		if err := sleepCtx(ctx, x.busyBackoff[i]); err != nil {
+			return content, err
+		}
+	}
 }
 
 func (x esIndexer) Index(ctx context.Context, job IndexJob) (string, error) {
@@ -72,7 +103,7 @@ func (x esIndexer) indexFulltext(ctx context.Context, rid uuid.UUID, job IndexJo
 		return "", fmt.Errorf("refetch %s: %w", job.BestFetchURL, err)
 	}
 
-	content, err := x.processor.Process(ctx, bs, "")
+	content, err := x.processWhenFree(ctx, bs)
 	if err != nil {
 		return "", fmt.Errorf("pdf processing for file %s: %w", fid, err)
 	}

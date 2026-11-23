@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/miku/grobidclient"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/sethgrid/pester"
 	"github.com/spf13/viper"
 )
 
@@ -34,6 +36,21 @@ const defaultGrobidHost = "https://scholar.archive.org/_grobid"
 // defaultGrobidMaxFileSize bounds the input we hand to GROBID; larger PDFs
 // still get text + thumbnail but skip the GROBID step.
 const defaultGrobidMaxFileSize = 256 << 20 // 256 MiB
+
+// defaultGrobidTimeout and defaultGrobidAttempts are what grobidclient.New
+// uses, kept as the defaults so that leaving [grobid] timeout/attempts unset
+// changes nothing.
+//
+// Both matter more than they look. GROBID does not stop working on a request
+// when the client hangs up, so a timeout leaves a server slot busy until the
+// PDF is done anyway -- and each retry of a timed-out request starts the whole
+// job again in another slot. Long documents (theses run to hundreds of pages)
+// want a timeout well above how long GROBID actually takes, and a single
+// attempt, so the caller's own backoff decides when to try again.
+const (
+	defaultGrobidTimeout  = 60 * time.Second
+	defaultGrobidAttempts = 3
+)
 
 // Content holds the outputs produced for a single PDF.
 //
@@ -193,8 +210,26 @@ func newProcessor(mc *minio.Client, heartbeat func(string)) *Processor {
 		maxSize = defaultGrobidMaxFileSize
 	}
 
+	timeout := defaultGrobidTimeout
+	if viper.IsSet("grobid.timeout") {
+		timeout = viper.GetDuration("grobid.timeout")
+	}
+	attempts := defaultGrobidAttempts
+	if viper.IsSet("grobid.attempts") {
+		attempts = max(viper.GetInt("grobid.attempts"), 1)
+	}
+	g := grobidclient.New(host)
+	if timeout != defaultGrobidTimeout || attempts != defaultGrobidAttempts {
+		// Same client grobidclient.New builds, with our numbers in it.
+		pc := pester.NewExtendedClient(&http.Client{Timeout: timeout})
+		pc.MaxRetries = attempts
+		pc.Backoff = pester.ExponentialBackoff
+		pc.RetryOnHTTP429 = true
+		g.Client = pc
+	}
+
 	return &Processor{
-		grobid:            grobidclient.New(host),
+		grobid:            g,
 		s3:                mc,
 		grobidMaxFileSize: maxSize,
 		extractor:         newExtractor(),

@@ -13,6 +13,7 @@ require (
 	github.com/internetarchive/scholar/pubmed2json v1.0.0
 	github.com/miku/grobidclient v0.2.7
 	github.com/minio/minio-go/v7 v7.0.97
+	github.com/sethgrid/pester v1.2.0
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/uphold/temporal-sentry-interceptor v0.0.0-20260331134514-2523356788ee
@@ -63,7 +64,6 @@ require (
 	github.com/rogpeppe/go-internal v1.13.2-0.20241226121412-a5dc8ff20d0a // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
-	github.com/sethgrid/pester v1.2.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

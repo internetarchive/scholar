@@ -267,11 +267,13 @@ def _file_out(f: m.File, show_hidden: bool) -> FileSchema:
 
 
 def _entity_data(entity_in: Schema) -> dict:
-    """entity_in as a dict for a wholesale PUT, minus hidden_when and
-    hidden_reason if the request didn't send them. Otherwise any client that
-    doesn't know about hiding would un-hide an entity by updating it."""
+    """entity_in as a dict for a wholesale PUT, minus hidden_when,
+    hidden_reason, created and updated if the request didn't send them.
+    Otherwise any client that doesn't know about hiding would un-hide an entity
+    by updating it, and one that doesn't carry timestamps would null out
+    created (a NOT NULL column, so a 500)."""
     data = entity_in.dict()
-    for field in ("hidden_when", "hidden_reason"):
+    for field in ("hidden_when", "hidden_reason", "created", "updated"):
         if field not in entity_in.model_fields_set:
             data.pop(field)
     return data

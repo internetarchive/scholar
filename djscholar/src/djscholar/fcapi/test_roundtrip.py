@@ -131,3 +131,24 @@ class TestWebcaptureRoundTrip(RoundTripTestCase):
         WebcaptureCDXFactory.create(webcapture=wc)
         WebcaptureURLFactory.create(webcapture=wc)
         self.roundtrip("/webcapture", wc.id)
+
+
+class TestOmittedTimestamps(RoundTripTestCase):
+    """What happens when a PUT body leaves out created/updated."""
+
+    def _put_without(self, base, ident, *keys):
+        body = client.get(f"{base}/{ident}").data
+        for k in keys:
+            del body[k]
+        return client.put(base, data=json.dumps(body, default=str),
+                          headers=self.auth_headers | {"Content-Type": "application/json"})
+
+    def test_release_without_created(self):
+        r = ReleaseFactory.create()
+        put = self._put_without("/release", r.id, "created", "updated")
+        self.assertEqual(put.status_code, HTTPStatus.OK, put.content)
+
+    def test_file_without_created(self):
+        f = FileFactory.create()
+        put = self._put_without("/file", f.id, "created", "updated")
+        self.assertEqual(put.status_code, HTTPStatus.OK, put.content)

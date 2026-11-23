@@ -138,8 +138,12 @@ type Release struct {
 	// empty {} into NULL on a round trip.
 	Extra           map[string]any `json:"extra"`
 	WithdrawnStatus string         `json:"withdrawn_status,omitempty"`
-	Number          string         `json:"number,omitempty"`
-	Version         string         `json:"version,omitempty"`
+	// Created is carried, verbatim, so that a GET-modify-PUT sends it back:
+	// fc2 releases deployed before Nov 2026 null it out when it is absent,
+	// which fails the NOT NULL column with a 500. Never set it by hand.
+	Created string `json:"created,omitempty"`
+	Number  string `json:"number,omitempty"`
+	Version string `json:"version,omitempty"`
 
 	// Foreign keys
 
@@ -316,6 +320,8 @@ type File struct {
 	LegacyRevID *uuid.UUID `json:"legacy_rev_id"`
 	// fc2 reads an absent extra as NULL, so a GET-modify-PUT must carry it.
 	Extra map[string]any `json:"extra"`
+	// Created: see Release.Created.
+	Created string `json:"created,omitempty"`
 }
 
 func (f File) GetSource() string {
@@ -574,6 +580,26 @@ func CreateRelease(client *http.Client, r Release) (*uuid.UUID, error) {
 		panic("nothing without an external ID should get to this point")
 	}
 
+	return createRelease(client, r)
+}
+
+// CreateReleaseWithoutExtIDs is CreateRelease for sources whose records often
+// carry no external identifier at all -- theses and dissertations, mostly.
+// CreateRelease refuses those on purpose, since for the upstream feeds a release
+// without an ID is a sign of a mapping bug; callers here have decided otherwise.
+func CreateReleaseWithoutExtIDs(client *http.Client, r Release) (*uuid.UUID, error) {
+	if r.ID == uuid.Nil {
+		var err error
+		r.ID, err = uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("uuid creation failed: %w", err)
+		}
+	}
+	return createRelease(client, r)
+}
+
+func createRelease(client *http.Client, r Release) (*uuid.UUID, error) {
+	var err error
 	var legacy *LegacyData
 	for _, eid := range r.ExternalIDs {
 		if eid.Type == "doaj" {

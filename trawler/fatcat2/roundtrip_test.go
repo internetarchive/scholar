@@ -17,15 +17,17 @@ import (
 // PUT handling is (see djscholar fcapi/test_roundtrip.py for the server side):
 //   - a key may go missing if its value was null: fc2 reads absent as NULL.
 //   - a child list may go missing if it was empty: fc2 reads absent as [].
-//   - created, updated, hidden_when and hidden_reason may go missing from
-//     any entity (an object with an id, including releases embedded in a
-//     file): the server maintains or preserves them when absent.
+//   - updated, hidden_when and hidden_reason may go missing from any entity
+//     (an object with an id, including releases embedded in a file): the
+//     server maintains or preserves them when absent. created may NOT: until
+//     Nov 2026 fc2 nulled it out when absent, which 500s on its NOT NULL
+//     column -- this allowance is how that got past these tests once.
 //   - a key may appear if its value is null and fc2 ignores it (legacy_rev_id).
 // Anything else -- a value that changed, a non-empty list or non-null value
 // that vanished -- is data a PUT would destroy.
 
 var serverMaintained = map[string]bool{
-	"created": true, "updated": true, "hidden_when": true, "hidden_reason": true,
+	"updated": true, "hidden_when": true, "hidden_reason": true,
 }
 
 var ignoredByServer = map[string]bool{"legacy_rev_id": true}

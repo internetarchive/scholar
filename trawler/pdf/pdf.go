@@ -354,11 +354,12 @@ func (p *Processor) runGrobid(ctx context.Context, path string, size int64, dige
 	res, err := p.grobid.ProcessPDFContext(ctx, path, "processFulltextDocument", &grobidclient.Options{
 		GenerateIDs:            true,
 		ConsolidateHeader:      true,
-		ConsolidateCitations:   false, // "too expensive for now"
 		IncludeRawCitations:    true,
 		IncludeRawAffiliations: true,
-		TEICoordinates:         []string{"ref", "figure", "persName", "formula", "biblStruct"},
-		SegmentSentences:       true,
+		// these are not currently in use by us and are expensive to compute:
+		ConsolidateCitations: false, // uses xref api; far too costly
+		TEICoordinates:       nil,
+		SegmentSentences:     false,
 	})
 	if err != nil {
 		// A timeout is the one client failure that is not worth failing over:

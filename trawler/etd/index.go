@@ -103,14 +103,16 @@ func (x esIndexer) indexFulltext(ctx context.Context, rid uuid.UUID, job IndexJo
 		return "", fmt.Errorf("refetch %s: %w", job.BestFetchURL, err)
 	}
 
+	start := time.Now()
 	content, err := x.processWhenFree(ctx, bs)
+	took := fmt.Sprintf("pdf %d bytes, processing %s", len(bs), time.Since(start).Round(time.Second))
 	if err != nil {
-		return "", fmt.Errorf("pdf processing for file %s: %w", fid, err)
+		return "", fmt.Errorf("pdf processing for file %s (%s): %w", fid, took, err)
 	}
 	if len(content.GrobidXML) == 0 {
 		if content.GrobidOutcome == pdf.GrobidTimeout {
 			// About GROBID's afternoon, not the PDF: worth another go.
-			return "", fmt.Errorf("grobid timed out on file %s", fid)
+			return "", fmt.Errorf("grobid timed out on file %s (%s)", fid, took)
 		}
 		if len(content.PdfText) == 0 {
 			return fmt.Sprintf("no fulltext doc: no tei (%s) and no text", content.GrobidOutcome), nil
@@ -150,7 +152,7 @@ func (x esIndexer) indexFulltext(ctx context.Context, rid uuid.UUID, job IndexJo
 		return "", fmt.Errorf("index fulltext for %s: %w", rid, err)
 	}
 	if len(content.GrobidXML) == 0 {
-		return fmt.Sprintf("indexed fulltext from text only (grobid: %s)", content.GrobidOutcome), nil
+		return fmt.Sprintf("indexed fulltext from text only (grobid: %s; %s)", content.GrobidOutcome, took), nil
 	}
-	return "indexed fulltext", nil
+	return "indexed fulltext (" + took + ")", nil
 }

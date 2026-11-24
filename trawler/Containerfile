@@ -1,0 +1,47 @@
+# Container image for running trawler on hosts whose glibc is too old for a
+# binary built on a modern workstation (see the CGO note in the Makefile).
+# The image carries its own glibc; only the kernel is shared with the host.
+#
+# Build from this directory:
+#
+#   podman build \
+#     --build-arg VERSION=$(git describe --tags --match='trawler/v*' | cut -d v -f2 | cut -d- -f1) \
+#     -t trawler:latest .
+#
+# on nsmith-dev, i ran with:
+#
+# sudo podman run --rm -it --network=host -v ~/trawler/config:/etc/trawler/config:ro,Z -v ~/trawler/data:/var/data/trawler:Z,U localhost/trawler:latest ezb-backfill --file /var/data/trawler/ezb_2026.tsv --apply
+#
+# to do the ezb backfill.
+#
+# first, i had to do:
+#
+# sudo podman load < trawler_podman
+#
+# after creating that with podman save > trawler_podman
+#
+# i had to fuck with some file perms too bc running as root...
+
+FROM docker.io/library/golang:1.26-bookworm AS build
+ARG VERSION=dev
+WORKDIR /src
+# Build as a standalone module (not via ../go.work); deps come from go.sum.
+ENV GOWORK=off CGO_ENABLED=1
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -ldflags="-X main.version=${VERSION}" -o /out/trawler .
+
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates tzdata \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --create-home --home-dir /var/lib/trawler trawler \
+ && mkdir -p /etc/trawler /var/data/trawler \
+ && chown trawler: /var/data/trawler
+COPY --from=build /out/trawler /usr/local/bin/trawler
+USER trawler
+WORKDIR /var/data/trawler
+ENTRYPOINT ["/usr/local/bin/trawler"]

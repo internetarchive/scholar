@@ -1,0 +1,7 @@
+trawler
+data/
+config
+issn/2025.issn2issnl.tsv
+**/testdata/
+**/*.test
+coverage.*
